@@ -1,0 +1,4 @@
+mkschd_proc	: 10 : スケジュールの仕様
+mkschd		: 10 : スケジュールの実装
+opensslbook	: 5  : オープンSSLの本を読む
+mkca		: 20 : オレオレ認証局を立てる
