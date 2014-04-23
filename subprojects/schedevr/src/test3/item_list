@@ -1,0 +1,78 @@
+start : 0 : 初期状態
+opensslbook : 10 : OpenSSLの本を読む
+mkca : 15 : オレオレ認証局の作成
+schedule : 15 : スケジュール作成
+pa1_v0.1_proc : 5 : プロトタイプa1 v0.1 仕様書
+pa1_v0.1 : 5 : プロトタイプa1 v0.1
+pa1 : 10 : プロトタイプa1
+pa2 : 10 : プロトタイプa2
+pb1 : 20 : プロトタイプb1
+psqlite : 15 : プロトタイプsqlite
+pinput : 20 : プロトタイプinput
+spec2.0a : 40 : 2.0aの仕様書の作成
+libxml : 40 : 2.0aのXMLに関するライブラリ
+libpostgres : 20 : PostgreSQLとの接続部分
+main2.0a : 10 : Main部分
+spec2.0b : 40 : 2.0bの仕様書の作成
+learnxmpp : 20 : XMPPについて学ぶ
+libxmpp : 20 : XMPP部分の作成
+functions : 50 : テストツールによる実装されていない機能の実装
+specinput : 40 : ブラウザによる情報入力部分の仕様作成
+input : 30 : ブラウザによる情報入力部分の作成
+package : 10 : パッケージ化
+daemon : 5 : /etc/init.d/slothの作成
+ipc : 20 : インストール用PC用意(ftp, gitサーバ)
+mkpc : 40 : 本番用PC自作
+learnlb : 20 : ロードバランサについて学ぶ
+lb : 40 : ロードバランサの導入
+total : 530 : 計
+start		:  0 : 初期状態
+now		:  0 : (now)
+mkschd_proc	: 15 : スケジュール作成ソフト仕様書作成
+mkschd_spec	: 15 : スケジュール作成ソフト仕様書作成
+mkschd		: 15 : スケジュール作成ソフト作成
+begin_forest	: 10 : forestプロジェクトの開始
+opensslbook	: 10 : OpenSSLの本を読む
+mkca		: 15 : オレオレ認証局の作成
+schedule	: 15 : スケジュール作成
+pa1_v0.1_spec	:  5 : プロトタイプa1 v0.1 仕様書
+pa1_v0.1	:  5 : プロトタイプa1 v0.1
+pa1		: 10 : プロトタイプa1
+pa2		: 10 : プロトタイプa2
+learn_xmpp	: 10 : XMPPの勉強
+pb1		: 20 : プロトタイプb1
+psqlite		: 15 : プロトタイプsqlite
+pinput		: 20 : プロトタイプinput
+learn_issues	:  5 : githubのissuesについて学ぶ
+lec_issues_p	:  5 : githubのissuesのレクチャーの作成
+lec_issues	:  5 : githubのissuesのレクチャー
+spec2.0a	: 40 : 2.0aの仕様書の作成
+libxml		: 40 : 2.0aのXMLに関するライブラリ
+libpostgres	: 20 : PostgreSQLとの接続部分
+main2.0a	: 10 : Main部分
+spec2.0b	: 40 : 2.0bの仕様書の作成
+learnxmpp	: 20 : XMPPについて学ぶ
+libxmpp		: 20 : XMPP部分の作成
+functions	: 50 : テストツールによる実装されていない機能の実装
+specinput	: 40 : ブラウザによる情報入力部分の仕様作成
+input		: 30 : ブラウザによる情報入力部分の作成
+package		: 10 : パッケージ化
+daemon		:  5 : /etc/init.d/slothの作成
+ipc		: 20 : インストール用PC用意(ftp, gitサーバ)
+mkpc		: 40 : 本番用PC自作
+learnlb		: 20 : ロードバランサについて学ぶ
+lb		: 40 : ロードバランサの導入
+hs_prepare	: 10 : Haskell講座準備
+hs_function	: 10 : 打ち合わせ、Haskell講座(関数について理解する)
+hs_adt		: 10 : 打ち合わせ、Haskell講座(代数的データ型について理解)
+hs_typeclass	: 10 : 打ち合わせ、Haskell講座(型クラスについて理解)
+hs_monad	: 10 : 打ち合わせ、Haskell講座(モナドについて理解)
+hs_io		: 10 : IOについて理解
+hs_lazyio	: 10 : 遅延IOについて理解
+hs_lazyio_prb	: 10 : 遅延IOの問題点について理解
+hs_iteratee	: 10 : iterateeについて理解
+hs_iteratee_prb	: 10 : iterateeの問題点について理解
+hs_conduit	: 10 : conduitについて理解
+hs_lecture	:  5 : 打ち合わせ、Haskell講座
+private		:  0 : 私用
+total		: 530: 計
