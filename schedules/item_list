@@ -1,0 +1,7 @@
+mkschd_spec	: 15 : スケジュール作成ソフト仕様書作成
+mkschd		: 15 : スケジュール作成ソフト作成
+begin_forest	: 10 : forestプロジェクトの開始
+opensslbook	: 10 : OpenSSLの本を読む
+mkca		: 15 : オレオレ認証局の作成
+learn_xmpp	: 10 : XMPPの勉強
+learnxmpp	: 20 : XMPPについて学ぶ
