@@ -1,6 +1,9 @@
 *.hi
 *.o
 *.html
+*.swp
 /subprojects/schedevr/src/mkschd/marge-schedule
 /subprojects/schedevr/src/mkschd/marge-schedule-evr
 /subprojects/schedevr/src/prog_graph/mkGraph
+/subprojects/schedevr/dist/
+/subprojects/schedevr/*.ebuild
