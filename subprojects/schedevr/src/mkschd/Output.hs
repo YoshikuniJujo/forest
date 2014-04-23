@@ -54,7 +54,8 @@ fromItemN :: Day -> [[Item]] -> [Output]
 fromItemN _ [] = []
 fromItemN d ias
 	| any null ias = fromItemN d $ filter (not . null) ias
-	| any (flip isLate d) (map head ias) = error "too late"
+	| any (flip isLate d) (map head ias) = error $ "too late: " ++
+		show (head $ filter (flip isLate d) (map head ias))
 fromItemN d ias = fromItemNSelect [] d es diag ias
 	where
 	es = map (flip ending d . head) ias
