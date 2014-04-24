@@ -70,7 +70,8 @@ main = do
 	chart t "black" cnv (50, 100) (400, 200) dip
 	speed t "fastest"
 	goto t 200 100
-	write t "Kochi Gothic" fontsize $ take 4 (show pc) ++ "%"
+	write t "Kochi Gothic" fontsize $ take 4 (show pc) ++ "% (" ++
+		show (getPoint dip) ++ "/" ++ show (getPoint di) ++ ")"
 	hideturtle t
 	onkeypress f $ return . (/= 'q')
 	waitField f

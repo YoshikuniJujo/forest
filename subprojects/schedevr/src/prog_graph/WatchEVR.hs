@@ -1,6 +1,6 @@
 module WatchEVR (
 	idPoint', dayId, accumSecond, dayPoint, getConverter, progPercent,
-	waku, chart, fontsize
+	waku, chart, fontsize, getPoint
 ) where
 
 import Graphics.X11.Turtle
