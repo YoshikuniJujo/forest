@@ -13,6 +13,14 @@ import ScheduleEVR
 import System.Directory
 import System.FilePath
 
+import System.IO.Unsafe
+import System.Directory
+
+ratio :: Double
+ratio = unsafePerformIO $ do
+	ex <- doesFileExist "ratio"
+	if ex then read <$> readFile "ratio" else return 1
+
 evrItemsName, evrProgressName :: [FilePath]
 evrItemsName = [
 	"../test1/item_list",
@@ -52,25 +60,25 @@ main = do
 		esp = sortBy (on compare fst) $ map dayId $ lines espCnt
 		di = accumSecond (+) 0 $ dayPoint ei es
 		dip = accumSecond (+) 0 $ dayPoint ei esp
-		cnv = getConverter (50, 100) (400, 200) di
+		cnv = getConverter (50 * ratio, 100 * ratio) (400 * ratio, 200 * ratio) di
 		pc = progPercent dip di
 	f <- openField
 	topleft f
 	t <- newTurtle f
 	speed t "fastest"
 	flushoff t
-	waku t (50, 100) (400, 200) di
-	goto t 50 300
+	waku t (50 * ratio, 100 * ratio) (400 * ratio, 200 * ratio) di
+	goto t (50 * ratio) (300 * ratio)
 	flushon t
 	speed t "slowest"
-	chart t "grey" cnv (50, 100) (400, 200) di
+	chart t "grey" cnv (50 * ratio, 100 * ratio) (400 * ratio, 200 * ratio) di
 	speed t "slow"
-	goto t 50 300
+	goto t (50 * ratio) (300 * ratio)
 	speed t "slowest"
-	chart t "black" cnv (50, 100) (400, 200) dip
+	chart t "black" cnv (50 * ratio, 100 * ratio) (400 * ratio, 200 * ratio) dip
 	speed t "fastest"
-	goto t 200 100
-	write t "Kochi Gothic" fontsize $ take 4 (show pc) ++ "% (" ++
+	goto t (200 * ratio) (100 * ratio)
+	write t "Kochi Gothic" (fontsize * ratio) $ take 4 (show pc) ++ "% (" ++
 		show (getPoint dip) ++ "/" ++ show (getPoint di) ++ ")"
 	hideturtle t
 	onkeypress f $ return . (/= 'q')

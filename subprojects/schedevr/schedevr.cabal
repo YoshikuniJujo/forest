@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                schedevr
-version:             0.1.0.4
+version:             0.1.0.6
 synopsis:            Marge schedules and show EVR
 -- description:         
 license:             BSD3
