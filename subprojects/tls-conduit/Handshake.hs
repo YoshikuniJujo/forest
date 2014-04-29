@@ -17,6 +17,7 @@ import qualified Data.ByteString.Lazy as LBS
 import "monads-tf" Control.Monad.Identity
 
 import ClientHello
+import Tools
 
 readHandshake :: BS.ByteString -> Maybe Handshake
 readHandshake src = runIdentity $
@@ -25,7 +26,7 @@ readHandshake src = runIdentity $
 parseHandshake :: Monad m => Conduit BS.ByteString m Handshake
 parseHandshake = do
 	mt <- head
-	len <- toLen <$> take 3
+	len <- getLen 3
 	case mt of
 		Just t -> do
 			body <- take len
@@ -33,14 +34,6 @@ parseHandshake = do
 				Just hs -> yield hs
 				_ -> return ()
 		_ -> return ()
-
-toLen :: LBS.ByteString -> Int
-toLen bs = let
-	ws = map fromIntegral $ LBS.unpack bs in
-	mkOne (LBS.length bs - 1) ws
-	where
-	mkOne _ [] = 0
-	mkOne n (x : xs) = x * 256 ^ n + mkOne (n - 1) xs
 
 data Handshake
 	= HandshakeClientHello ClientHello

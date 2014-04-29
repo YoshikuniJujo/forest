@@ -16,6 +16,7 @@ import "monads-tf" Control.Monad.Identity
 import Version
 import Random
 import SessionId
+import CipherSuite
 
 readClientHello :: BS.ByteString -> Maybe ClientHello
 readClientHello src = runIdentity $
@@ -26,10 +27,11 @@ parseClientHello = do
 	v <- version
 	r <- random
 	msid <- sessionId
+	cs <- cipherSuites
 	case msid of
-		Just sid -> yield $ ClientHello v r sid
+		Just sid -> yield $ ClientHello v r sid cs
 		_ -> return ()
 
 data ClientHello
-	= ClientHello Version Random SessionId
+	= ClientHello Version Random SessionId CipherSuites
 	deriving Show
