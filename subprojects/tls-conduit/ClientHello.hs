@@ -1,39 +1,30 @@
 {-# LANGUAGE PackageImports #-}
 
-module ClientHello (
-	ClientHello,
-	readClientHello
-) where
-
-import Data.ByteString.Lazy (fromStrict, toStrict)
-import qualified Data.ByteString as BS
--- import qualified Data.ByteString.Lazy as LBS
+module ClientHello (ClientHello, clientHello) where
 
 import Data.Conduit
-import Data.Conduit.Binary
-import "monads-tf" Control.Monad.Identity
+import qualified Data.ByteString as BS
 
 import Version
 import Random
 import SessionId
 import CipherSuite
 import CompressionMethod
+import Extension
 
-readClientHello :: BS.ByteString -> Maybe ClientHello
-readClientHello src = runIdentity $
-	sourceLbs (fromStrict src) $$ parseClientHello =$ await
-
-parseClientHello :: Monad m => Conduit BS.ByteString m ClientHello
-parseClientHello = do
+clientHello :: Monad m => Conduit BS.ByteString m ClientHello
+clientHello = do
 	v <- version
 	r <- random
 	msid <- sessionId
 	cs <- cipherSuites
 	cm <- compressionMethods
+	me <- extensions
 	case msid of
-		Just sid -> yield $ ClientHello v r sid cs cm
+		Just sid -> yield $ ClientHello v r sid cs cm me
 		_ -> return ()
 
-data ClientHello
-	= ClientHello Version Random SessionId CipherSuites CompressionMethods
+data ClientHello = ClientHello
+	Version Random SessionId CipherSuites CompressionMethods
+	(Maybe Extensions)
 	deriving Show

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 
-module Tools (toLen, getLen) where
+module Tools (getLen, maybeLen) where
 
 import Prelude hiding (take)
 import Control.Applicative
@@ -20,3 +20,10 @@ toLen bs = let
 
 getLen :: Monad m => Int -> Consumer BS.ByteString m Int
 getLen n = toLen <$> take n
+
+maybeLen :: Monad m => Int -> Consumer BS.ByteString m (Maybe Int)
+maybeLen n = do
+	bs <- take n
+	if LBS.length bs < fromIntegral n
+		then return Nothing
+		else return $ Just $ toLen bs

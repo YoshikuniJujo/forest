@@ -1,16 +1,15 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes #-}
 
-module Handshake (
-	Handshake,
-	readHandshake
-) where
+module Handshake (Handshake, readHandshake) where
 
 import Prelude hiding (head, take)
-import Control.Applicative
+-- import Control.Applicative
 import Data.Word
 
 import Data.Conduit
+import qualified Data.Conduit.List as List
 import Data.Conduit.Binary
+import Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 
@@ -28,11 +27,7 @@ parseHandshake = do
 	mt <- head
 	len <- getLen 3
 	case mt of
-		Just t -> do
-			body <- take len
-			case handshake (handshakeType t) $ LBS.toStrict body of
-				Just hs -> yield hs
-				_ -> return ()
+		Just t -> handshake (handshakeType t) =<< take len
 		_ -> return ()
 
 data Handshake
@@ -40,10 +35,10 @@ data Handshake
 	| HandshakeOthers HandshakeType BS.ByteString
 	deriving Show
 
-handshake :: HandshakeType -> BS.ByteString -> Maybe Handshake
-handshake HandshakeTypeClientHello src =
-	HandshakeClientHello <$> readClientHello src
-handshake typ src = Just $ HandshakeOthers typ src
+handshake :: Monad m => HandshakeType -> LBS.ByteString -> Producer m Handshake
+handshake HandshakeTypeClientHello body =
+	sourceLbs body $= clientHello $= List.map HandshakeClientHello
+handshake typ body = yield $ HandshakeOthers typ $ toStrict body
 
 data HandshakeType
 	= HandshakeTypeClientHello
