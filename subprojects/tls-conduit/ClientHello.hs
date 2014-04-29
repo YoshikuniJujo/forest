@@ -17,6 +17,7 @@ import Version
 import Random
 import SessionId
 import CipherSuite
+import CompressionMethod
 
 readClientHello :: BS.ByteString -> Maybe ClientHello
 readClientHello src = runIdentity $
@@ -28,10 +29,11 @@ parseClientHello = do
 	r <- random
 	msid <- sessionId
 	cs <- cipherSuites
+	cm <- compressionMethods
 	case msid of
-		Just sid -> yield $ ClientHello v r sid cs
+		Just sid -> yield $ ClientHello v r sid cs cm
 		_ -> return ()
 
 data ClientHello
-	= ClientHello Version Random SessionId CipherSuites
+	= ClientHello Version Random SessionId CipherSuites CompressionMethods
 	deriving Show
