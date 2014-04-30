@@ -1,3 +1,8 @@
+module Main (main) where
+
+import Control.Applicative
+import Data.Maybe
+
 import Network
 import System.IO
 import System.Environment
@@ -5,17 +10,19 @@ import Control.Concurrent
 import Control.Monad
 import Data.Char
 import Numeric
-
-import ReadFragment
 import qualified Data.ByteString as BS
+
+import Fragment
+import Content
+import Handshake
 
 main :: IO ()
 main = do
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do
-		sock <- listenOn $ PortNumber $ fromIntegral $ read p1
+		sock <- listenOn $ PortNumber $ fromIntegral $ (read p1 :: Int)
 		putStrLn $ "Listening on " ++ p1
-		sockHandler sock (PortNumber $ fromIntegral $ read p2)
+		sockHandler sock (PortNumber $ fromIntegral $ (read p2 :: Int))
 
 sockHandler :: Socket -> PortID -> IO ()
 sockHandler sock pid = do
@@ -25,35 +32,57 @@ sockHandler sock pid = do
 	commandProcessor cl sv
 	sockHandler sock pid 
 
+readContent :: Handle -> IO (Maybe Content)
+readContent h = do
+	Fragment ct v body <- readFragment h
+	return $ content ct v body
+
+peek :: Handle -> Handle -> IO Content
+peek from to = do
+	Just cont <- readContent from
+	BS.hPutStr to $ contentToByteString cont
+	return cont
+
+peekServerHelloDone :: Handle -> Handle -> IO [Content]
+peekServerHelloDone sv cl = do
+	c <- peek sv cl
+	case contentToHandshakeList c of
+		Just hss -> do
+			let hts = map handshakeToHandshakeType hss
+			if (HandshakeTypeServerHelloDone `elem` hts ||
+				HandshakeTypeFinished `elem` hts)
+				then return [c]
+				else (c :) <$> peekServerHelloDone sv cl
+		_ -> do	putStrLn "NOT HANDSHAKE"
+			print c
+			return [c]
+--			(c :) <$> peekServerHelloDone sv cl
+
 commandProcessor :: Handle -> Handle -> IO ()
 commandProcessor cl sv = do
 	hSetBuffering cl NoBuffering
 	hSetBuffering sv NoBuffering
 	hSetBuffering stdout NoBuffering
 
-	f1 <- readFragment cl
 	putStrLn "CLIENT:"
-	print $ takeHandshake f1
-	BS.hPutStr sv $ fragmentToByteString f1
+	peek cl sv >>= print
 
-	f2 <- readFragment sv
 	putStrLn "SERVER:"
---	print f2
-	print $ takeHandshake f2
-	BS.hPutStr cl $ fragmentToByteString f2
+	peekServerHelloDone sv cl >>= print
 
-	f3 <- readFragment sv
-	putStrLn "SERVER:"
-	print $ takeHandshake f3
-	BS.hPutStr cl $ fragmentToByteString f3
+--	putStrLn "TEST:"
+--	peek sv cl >>= print
 
-	forkIO $ forever $ do
+--	putStrLn "CLIENT:"
+--	peek cl sv >>= print
+
+	_ <- forkIO $ forever $ do
 		c <- hGetChar cl
-		putEscChar 32 c
+		putEscChar c
 		hPutChar sv c
-	forkIO $ forever $ do
+	_ <- forkIO $ forever $ do
 		c <- hGetChar sv
-		putEscChar 31 c
+		putEscChar c
 		hPutChar cl c
 	return ()
 
@@ -63,8 +92,8 @@ printable = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ symbols ++ " "
 symbols :: [Char]
 symbols = "$+<=>^`|~!\"#%&'()*,-./:;?@[\\]_{}"
 
-putEscChar :: Int -> Char -> IO ()
-putEscChar clr c
+putEscChar :: Char -> IO ()
+putEscChar c
 	| c `elem` printable = do
 		putChar c
 	| otherwise = do
