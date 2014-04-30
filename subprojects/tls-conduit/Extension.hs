@@ -1,6 +1,6 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, OverloadedStrings #-}
 
-module Extension (Extensions, extensions) where
+module Extension (Extensions, extensions, extensionsToByteString) where
 
 import Prelude hiding (take)
 import Control.Monad
@@ -102,3 +102,31 @@ extensionType 35 = ExtensionTypeSessionTicketTLS
 extensionType 13172 = ExtensionTypeNextProtocolNegotiation
 extensionType 65281 = ExtensionTypeRenegotiationInfo
 extensionType w = ExtensionTypeOthers w
+
+extensionsToByteString :: Extensions -> BS.ByteString
+extensionsToByteString exts =
+	lenToBS 2 (BS.length bs)
+	`BS.append` bs
+	where
+	bs = BS.concat $ map extensionToByteString exts
+
+extensionToByteString :: Extension -> BS.ByteString
+extensionToByteString (ExtensionServerName sn) = "\x00\x00" `BS.append`
+	lenToBS 2 (BS.length bs) `BS.append` bs
+	where
+	bs = serverNameListToByteString sn
+extensionToByteString (ExtensionEllipticCurve ecs) = "\x00\x0a" `BS.append`
+	lenToBS 2 (BS.length bs) `BS.append` bs
+	where
+	bs = ellipticCurveListToByteString ecs
+extensionToByteString (ExtensionRenegotiationInfo r) = "\xff\x01" `BS.append`
+	lenToBS 2 (BS.length bs) `BS.append` bs
+	where
+	bs = renegotiationInfoToByteString r
+extensionToByteString (ExtensionECPointFormat pfs) = "\x00\x0b" `BS.append`
+	lenToBS 2 (BS.length bs) `BS.append` bs
+	where
+	bs = ecPointFormatListToByteString pfs
+extensionToByteString ExtensionSessionTicketTLS = "\x00\x23\x00\x00"
+extensionToByteString ExtensionNextProtocolNegotiation = "\x33\x74\x00\x00"
+extensionToByteString e = error $ "not implemented yet: " ++ show e

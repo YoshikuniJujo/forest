@@ -1,6 +1,6 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports, OverloadedStrings #-}
 
-module ClientHello (ClientHello, clientHello) where
+module ClientHello (ClientHello, clientHello, clientHelloToByteString) where
 
 import Data.Conduit
 import qualified Data.ByteString as BS
@@ -28,3 +28,12 @@ data ClientHello = ClientHello
 	Version Random SessionId CipherSuites CompressionMethods
 	(Maybe Extensions)
 	deriving Show
+
+clientHelloToByteString :: ClientHello -> BS.ByteString
+clientHelloToByteString (ClientHello v r sid cs cm mext) =
+	versionToByteString v
+		`BS.append` randomToByteString r
+		`BS.append` sessionIdToByteString sid
+		`BS.append` cipherSuitesToByteString cs
+		`BS.append` compressionMethodsToByteString cm
+		`BS.append` maybe "" extensionsToByteString mext

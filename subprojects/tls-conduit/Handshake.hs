@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes #-}
 
-module Handshake (Handshake, readHandshake) where
+module Handshake (Handshake, readHandshake, handshakeToByteString) where
 
 import Prelude hiding (head, take)
 -- import Control.Applicative
@@ -48,3 +48,12 @@ data HandshakeType
 handshakeType :: Word8 -> HandshakeType
 handshakeType 1 = HandshakeTypeClientHello
 handshakeType t = HandshakeTypeOthers t
+
+handshakeToByteString :: Handshake -> BS.ByteString
+handshakeToByteString (HandshakeClientHello ch) =
+	lenToBS 2 (BS.length bsch + 4)
+		`BS.append` "\x1"
+		`BS.append` lenToBS 3 (BS.length bsch)
+		`BS.append` bsch
+	where bsch = clientHelloToByteString ch
+handshakeToByteString _hs = error "not implemented yet"

@@ -1,12 +1,13 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 
-module Tools (getLen, maybeLen) where
+module Tools (getLen, maybeLen, lenToBS) where
 
 import Prelude hiding (take)
 import Control.Applicative
 import Data.Conduit
 import Data.Conduit.Binary
 
+import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 
@@ -27,3 +28,10 @@ maybeLen n = do
 	if LBS.length bs < fromIntegral n
 		then return Nothing
 		else return $ Just $ toLen bs
+
+lenToBS :: Int -> Int -> BS.ByteString
+lenToBS n = BS.pack . toWords (n - 1)
+
+toWords :: Int -> Int -> [Word8]
+toWords n _ | n < 0 = []
+toWords n x = fromIntegral (x `div` 256 ^ n) : toWords (n - 1) (x `mod` 256 ^ n)

@@ -2,7 +2,8 @@
 
 module Version (
 	Version,
-	version
+	version,
+	versionToByteString
 ) where
 
 import Prelude hiding (take)
@@ -24,3 +25,6 @@ version = do
 
 fromBS :: LBS.ByteString -> Version
 fromBS bs = let [vmjr, vmnr] = LBS.unpack bs in Version vmjr vmnr
+
+versionToByteString :: Version -> BS.ByteString
+versionToByteString (Version vmjr vmnr) = BS.pack [vmjr, vmnr]

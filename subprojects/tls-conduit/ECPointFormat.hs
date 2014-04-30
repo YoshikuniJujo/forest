@@ -1,4 +1,6 @@
-module ECPointFormat (ECPointFormatList, ecPointFormatList) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module ECPointFormat (ECPointFormatList, ecPointFormatList, ecPointFormatListToByteString) where
 
 import Prelude hiding (head, take)
 
@@ -34,3 +36,12 @@ data ECPointFormat
 ecPointFormat :: Word8 -> ECPointFormat
 ecPointFormat 0 = Uncompressed
 ecPointFormat w = ECPointFormatOthers w
+
+ecPointFormatListToByteString :: ECPointFormatList -> BS.ByteString
+ecPointFormatListToByteString pfs = lenToBS 1 (BS.length bs) `BS.append` bs
+	where
+	bs = BS.concat $ map ecPointFormatToByteString pfs
+
+ecPointFormatToByteString :: ECPointFormat -> BS.ByteString
+ecPointFormatToByteString Uncompressed = "\x00"
+ecPointFormatToByteString _ = error "not implemented"

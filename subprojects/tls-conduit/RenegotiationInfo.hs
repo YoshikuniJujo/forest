@@ -1,4 +1,4 @@
-module RenegotiationInfo (RenegotiationInfo, renegotiationInfo) where
+module RenegotiationInfo (RenegotiationInfo, renegotiationInfo, renegotiationInfoToByteString) where
 
 import Prelude hiding (take)
 
@@ -18,3 +18,7 @@ renegotiationInfo = do
 
 data RenegotiationInfo = RenegotiationInfo BS.ByteString
 	deriving Show
+
+renegotiationInfoToByteString :: RenegotiationInfo -> BS.ByteString
+renegotiationInfoToByteString (RenegotiationInfo bs) =
+	lenToBS 1 (BS.length bs) `BS.append` bs

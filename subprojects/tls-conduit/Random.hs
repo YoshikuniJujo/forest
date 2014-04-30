@@ -1,4 +1,4 @@
-module Random (Random, random) where
+module Random (Random, random, randomToByteString) where
 
 import Prelude hiding (take)
 import Numeric
@@ -25,3 +25,6 @@ random :: Monad m => Consumer BS.ByteString m Random
 random = do
 	bs <- take 32
 	return $ Random $ toStrict bs
+
+randomToByteString :: Random -> BS.ByteString
+randomToByteString (Random bs) = bs

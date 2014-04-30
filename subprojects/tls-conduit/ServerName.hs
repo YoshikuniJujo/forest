@@ -1,4 +1,6 @@
-module ServerName (ServerNameList, serverNameList) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module ServerName (ServerNameList, serverNameList, serverNameListToByteString) where
 
 import Prelude hiding (take, head)
 
@@ -51,3 +53,13 @@ data NameType
 nameType :: Word8 -> NameType
 nameType 0 = NameTypeHostName
 nameType w = NameTypeOthers w
+
+serverNameListToByteString :: ServerNameList -> BS.ByteString
+serverNameListToByteString sns = lenToBS 2 (BS.length bs) `BS.append` bs
+	where
+	bs = BS.concat $ map serverNameToByteString sns
+
+serverNameToByteString :: ServerName -> BS.ByteString
+serverNameToByteString (ServerNameHostName bs) =
+	"\x00" `BS.append` lenToBS 2 (BS.length bs) `BS.append` bs
+serverNameToByteString _ = error "not implemented"

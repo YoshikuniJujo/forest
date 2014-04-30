@@ -1,4 +1,6 @@
-module CompressionMethod (CompressionMethods, compressionMethods) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module CompressionMethod (CompressionMethods, compressionMethods, compressionMethodsToByteString) where
 
 import Prelude hiding (take)
 
@@ -29,3 +31,11 @@ compressionMethod :: Word8 -> CompressionMethod
 compressionMethod 0 = CompressionMethodNull
 compressionMethod 255 = CompressionMethod255
 compressionMethod w = CompressionMethodOthers w
+
+compressionMethodsToByteString :: CompressionMethods -> BS.ByteString
+compressionMethodsToByteString cms =
+	lenToBS 1 (length cms) `BS.append`
+	BS.concat (map compressionMethodToByteString cms)
+
+compressionMethodToByteString CompressionMethodNull = "\x00"
+compressionMethodToByteString _ = error "not implemented"

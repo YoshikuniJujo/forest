@@ -1,4 +1,6 @@
-module EllipticCurve (EllipticCurveList, ellipticCurveList) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module EllipticCurve (EllipticCurveList, ellipticCurveList, ellipticCurveListToByteString) where
 
 import Prelude hiding (take)
 import Control.Monad
@@ -46,3 +48,13 @@ namedCurve 23 = SECP256RL
 namedCurve 24 = SECP384RL
 namedCurve 25 = SECP521RL
 namedCurve w = NamedCurveOthers w
+
+ellipticCurveListToByteString :: EllipticCurveList -> BS.ByteString
+ellipticCurveListToByteString ecs = lenToBS 2 (2 * length ecs) `BS.append`
+	BS.concat (map ellipticCurveToByteString ecs)
+
+ellipticCurveToByteString :: NamedCurve -> BS.ByteString
+ellipticCurveToByteString SECP256RL = "\x00\x17"
+ellipticCurveToByteString SECP384RL = "\x00\x18"
+ellipticCurveToByteString SECP521RL = "\x00\x19"
+ellipticCurveToByteString _ = error "not implemented"
