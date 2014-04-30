@@ -32,7 +32,7 @@ main = runTCPServer (serverSettings 4492 "*") $ \ad -> do
 	when (toStrict bs /= contentToByteString dat) $ do
 		print bs
 		print $ contentToByteString dat
-	runTCPClient (clientSettings 3000 "localhost") $ \adsv -> do
+	runTCPClient (clientSettings 443 "localhost") $ \adsv -> do
 		sourceLbs (fromStrict $ contentToByteString dat) $$ appSink adsv
 --		appSource adsv $$ List.map (BSC.pack . show) =$
 --			conduitHandle stdout =$ appSink ad
