@@ -1,8 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module CompressionMethod (CompressionMethods, compressionMethods, compressionMethodsToByteString) where
+module CompressionMethod (
+	CompressionMethods,
+	compressionMethods,
+	compressionMethodsToByteString,
+	CompressionMethod,
+	parseCompressionMethod) where
 
-import Prelude hiding (take)
+import Prelude hiding (take, head)
 
 import Data.Conduit
 import Data.Conduit.Binary
@@ -18,6 +23,13 @@ compressionMethods = do
 	l <- getLen 1
 	body <- take l
 	return $ map compressionMethod $ LBS.unpack body
+
+parseCompressionMethod :: Monad m => Consumer BS.ByteString m CompressionMethod
+parseCompressionMethod = do
+	mw <- head
+	case mw of
+		Just w -> return $ compressionMethod w
+		_ -> error "parseCompressionMethod"
 
 type CompressionMethods = [CompressionMethod]
 

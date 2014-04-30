@@ -1,6 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module CipherSuite (CipherSuites, cipherSuites, cipherSuitesToByteString) where
+module CipherSuite (
+	CipherSuites,
+	cipherSuites,
+	cipherSuitesToByteString,
+	CipherSuite,
+	parseCipherSuite) where
 
 import Prelude hiding (take)
 
@@ -8,8 +13,9 @@ import Data.Conduit
 import Data.Conduit.Binary
 
 import Data.Word
-import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (toStrict)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 
 import Tools
 
@@ -27,6 +33,13 @@ readCipherSuites src = let
 	cs1 = BS.head src
 	cs2 = BS.head $ BS.tail src in
 	cipherSuite cs1 cs2 : readCipherSuites (BS.drop 2 src)
+
+parseCipherSuite :: Monad m => Consumer BS.ByteString m CipherSuite
+parseCipherSuite = do
+	cs <- take 2
+	let	cs1 = LBS.head cs
+		cs2 = LBS.head $ LBS.tail cs
+	return $ cipherSuite cs1 cs2
 
 data CipherSuite
 	= TLS_NULL_WITH_NULL_NULL

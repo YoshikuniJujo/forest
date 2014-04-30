@@ -55,6 +55,7 @@ parseContent = do
 			case content (contentType t) v (LBS.toStrict body) of
 				Just c -> yield c
 				_ -> return ()
+			parseContent
 		_ -> return ()
 
 data Content
@@ -69,11 +70,13 @@ content ct ver body = Just $ Content ct ver body
 
 data ContentType
 	= ContentTypeHandshake
+	| ContentTypeApplicationData
 	| ContentTypeOthers Word8
 	deriving Show
 
 contentType :: Word8 -> ContentType
 contentType 22 = ContentTypeHandshake
+contentType 23 = ContentTypeApplicationData
 contentType t = ContentTypeOthers t
 
 contentToByteString :: Content -> BS.ByteString

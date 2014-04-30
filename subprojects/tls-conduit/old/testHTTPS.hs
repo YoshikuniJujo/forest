@@ -23,7 +23,7 @@ import qualified Data.ByteString.Char8 as BSC
 import System.IO
 
 main :: IO ()
-main = runTCPServer (serverSettings 3000 "*") $ \ad -> do
+main = runTCPServer (serverSettings 4492 "*") $ \ad -> do
 --	dat <- readContent ad
 	bs <- fragment ad
 	Just dat <- sourceLbs bs $$ parseContent =$ await
@@ -32,7 +32,7 @@ main = runTCPServer (serverSettings 3000 "*") $ \ad -> do
 	when (toStrict bs /= contentToByteString dat) $ do
 		print bs
 		print $ contentToByteString dat
-	runTCPClient (clientSettings 443 "localhost") $ \adsv -> do
+	runTCPClient (clientSettings 3000 "localhost") $ \adsv -> do
 		sourceLbs (fromStrict $ contentToByteString dat) $$ appSink adsv
 --		appSource adsv $$ List.map (BSC.pack . show) =$
 --			conduitHandle stdout =$ appSink ad

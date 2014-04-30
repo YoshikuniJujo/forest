@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy as LBS
 import "monads-tf" Control.Monad.Identity
 
 import ClientHello
+import ServerHello
 import Tools
 
 readHandshake :: BS.ByteString -> Maybe Handshake
@@ -32,21 +33,26 @@ parseHandshake = do
 
 data Handshake
 	= HandshakeClientHello ClientHello
+	| HandshakeServerHello ServerHello
 	| HandshakeOthers HandshakeType BS.ByteString
 	deriving Show
 
 handshake :: Monad m => HandshakeType -> LBS.ByteString -> Producer m Handshake
 handshake HandshakeTypeClientHello body =
 	sourceLbs body $= clientHello $= List.map HandshakeClientHello
+handshake HandshakeTypeServerHello body =
+	sourceLbs body $= serverHello $= List.map HandshakeServerHello
 handshake typ body = yield $ HandshakeOthers typ $ toStrict body
 
 data HandshakeType
 	= HandshakeTypeClientHello
+	| HandshakeTypeServerHello
 	| HandshakeTypeOthers Word8
 	deriving Show
 
 handshakeType :: Word8 -> HandshakeType
 handshakeType 1 = HandshakeTypeClientHello
+handshakeType 2 = HandshakeTypeServerHello
 handshakeType t = HandshakeTypeOthers t
 
 handshakeToByteString :: Handshake -> BS.ByteString
