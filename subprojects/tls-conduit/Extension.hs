@@ -53,8 +53,9 @@ eachExtension ExtensionTypeEcPointFormats = do
 	_mlen <- maybeLen 2
 	ecPointFormatList =$= List.map ExtensionECPointFormat
 eachExtension ExtensionTypeSessionTicketTLS = do
-	0 <- getLen 2
-	yield ExtensionSessionTicketTLS
+	l <- getLen 2
+	body <- take l
+	yield $ ExtensionSessionTicketTLS $ toStrict body
 eachExtension ExtensionTypeNextProtocolNegotiation = do
 	0 <- getLen 2
 	yield ExtensionNextProtocolNegotiation
@@ -79,7 +80,7 @@ data Extension
 	| ExtensionRenegotiationInfo RenegotiationInfo
 	| ExtensionEllipticCurve EllipticCurveList
 	| ExtensionECPointFormat ECPointFormatList
-	| ExtensionSessionTicketTLS
+	| ExtensionSessionTicketTLS BS.ByteString
 	| ExtensionNextProtocolNegotiation
 	| ExtensionOthers ExtensionType BS.ByteString
 	deriving Show
@@ -127,6 +128,13 @@ extensionToByteString (ExtensionECPointFormat pfs) = "\x00\x0b" `BS.append`
 	lenToBS 2 (BS.length bs) `BS.append` bs
 	where
 	bs = ecPointFormatListToByteString pfs
-extensionToByteString ExtensionSessionTicketTLS = "\x00\x23\x00\x00"
+extensionToByteString (ExtensionSessionTicketTLS bs) = "\x00\x23" `BS.append`
+	lenToBS 2 (BS.length bs) `BS.append` bs
 extensionToByteString ExtensionNextProtocolNegotiation = "\x33\x74\x00\x00"
-extensionToByteString e = error $ "not implemented yet: " ++ show e
+extensionToByteString (ExtensionOthers (ExtensionTypeOthers t) bs) =
+	word16ToBS t `BS.append` lenToBS 2 (BS.length bs) `BS.append` bs
+
+word16ToBS :: Word16 -> BS.ByteString
+word16ToBS w = BS.pack $ map fromIntegral [w `div` 256, w `mod` 256]
+	
+-- extensionToByteString e = error $ "not implemented yet: " ++ show e
