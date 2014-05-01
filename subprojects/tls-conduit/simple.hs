@@ -32,6 +32,9 @@ import System.IO.Unsafe
 
 import Crypto.Cipher.AES
 
+import qualified Crypto.Hash.MD5 as MD5
+import qualified Crypto.Hash.SHA1 as SHA1
+
 private_key :: PrivateKey
 private_key = unsafePerformIO $ do
 	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
@@ -58,12 +61,23 @@ sockHandler sock pid = do
 
 readContent :: Handle -> IO (Either String Content)
 readContent h = do
-	Fragment ct v body <- readFragment h
+	(Fragment ct v body, _) <- readFragment h
 	return $ content ct v body
+
+peekWithHash :: Handle -> Handle -> IO (Either String Content, (MD5.Ctx, SHA1.Ctx))
+peekWithHash from to = do
+	(f@(Fragment ct v body), h) <- readFragment from
+	let econt = content ct v body
+	case econt of
+		Right cont -> BS.hPutStr to $ contentToByteString cont
+		Left err -> do
+			putStrLn err
+			BS.hPutStr to $ fragmentToByteString f
+	return (econt, h)
 
 peek :: Handle -> Handle -> IO (Either String Content)
 peek from to = do
-	f@(Fragment ct v body) <- readFragment from
+	(f@(Fragment ct v body), _) <- readFragment from
 	let econt = content ct v body
 	case econt of
 		Right cont -> BS.hPutStr to $ contentToByteString cont
@@ -74,7 +88,7 @@ peek from to = do
 
 peekFragment :: Handle -> Handle -> IO Fragment
 peekFragment from to = do
-	cont <- readFragment from
+	(cont, _) <- readFragment from
 	BS.hPutStr to $ fragmentToByteString cont
 	return cont
 
@@ -126,7 +140,7 @@ commandProcessor cl sv = do
 
 	putStrLn "CLIENT:"
 	Right c1 <- peek cl sv
-	putStrLn $ take 10 (show c1) ++ "...\n"
+	putStrLn $ take 50 (show c1) ++ "...\n"
 --	print c1
 
 	putStrLn "*** CLIENT RANDOM ***"
@@ -136,7 +150,7 @@ commandProcessor cl sv = do
 
 	putStrLn "SERVER:"
 	s1 <- peekServerHelloDone sv cl
-	putStrLn $ take 10 (show s1) ++ "...\n"
+	putStrLn $ take 50 (show s1) ++ "...\n"
 --	print s1
 
 	putStrLn "*** SERVER RANDOM ***"
@@ -145,9 +159,17 @@ commandProcessor cl sv = do
 	putStrLn ""
 
 	putStrLn "CLIENT AGAIN:"
-	Right c2 <- peek cl sv
+	(Right c2, (md5ctx, sha1ctx)) <- peekWithHash cl sv
 	print c2
 	putStrLn ""
+
+	putStrLn "*** HASHES ***"
+	let	md5 = MD5.finalize md5ctx
+		sha1 = SHA1.finalize sha1ctx
+		md5sha1 = md5 `BS.append` sha1
+	putStrLn $ "MD5     : " ++ show md5
+	putStrLn $ "SHA1    : " ++ show sha1
+	putStrLn $ "MD5-SHA1: " ++ show md5sha1
 
 	putStrLn "*** PREMASTER SECRET ***"
 	let Right pre_master_secret = decrypt Nothing private_key $ rawEncryptedPreMasterSecret $ fromJust $ takeEncryptedPreMasterSecret $ head $ fromJust $ takeHandshakes $ c2
@@ -160,15 +182,20 @@ commandProcessor cl sv = do
 	print master_secret
 	putStrLn ""
 
+	putStrLn "*** FINISHED DATA ***"
+	print $ generateFinished master_secret md5sha1
+
 	putStrLn "*** EXPANDED MASTER SECRET ***"
-	let expanded = keyBlock client_random server_random master_secret 96
+	let expanded = keyBlock client_random server_random master_secret 104
 	print expanded
 	print $ BS.length expanded
 	putStrLn ""
 
 	let [client_write_MAC_key, server_write_MAC_key,
 		client_write_key, server_write_key,
-		client_write_iv, server_write_iv] = divide 16 expanded
+		client_write_iv, server_write_iv] = divide [
+			20, 20, 16, 16, 16, 16
+		 ] expanded
 	putStrLn "*** KEY LIST ***"
 	putStrLn $ "client MAC: " ++ showKey client_write_MAC_key
 	putStrLn $ "server MAC: " ++ showKey server_write_MAC_key
@@ -227,10 +254,11 @@ putEscChar c
 toTwo :: String -> String
 toTwo n = replicate (2 - length n) '0' ++ n
 
-divide :: Int -> BS.ByteString -> [BS.ByteString]
-divide n bs
+divide :: [Int] -> BS.ByteString -> [BS.ByteString]
+divide [] _ = []
+divide (n : ns) bs
 	| bs == BS.empty = []
-	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide n xs
+	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
 
 showKey :: BS.ByteString -> String
 showKey = unwords . map showH . BS.unpack

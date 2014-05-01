@@ -11,7 +11,8 @@
 --
 module MasterSecret (
 	ClientRandom(..), ServerRandom(..),
-	masterSecret, keyBlock
+	masterSecret, keyBlock,
+	generateFinished
 ) where
 
 import MAC
@@ -39,6 +40,9 @@ generateMasterSecret_TLS :: PRF -> Bytes -> ClientRandom -> ServerRandom -> Byte
 generateMasterSecret_TLS prf premasterSecret (ClientRandom c) (ServerRandom s) =
     prf premasterSecret seed 48
   where seed = B.concat [ "master secret", c, s ]
+
+generateFinished :: Bytes -> Bytes -> Bytes
+generateFinished ms hash = prf_MD5SHA1 ms ("client finished" `B.append` hash) 12
 
 masterSecret :: B.ByteString -> ClientRandom -> ServerRandom -> B.ByteString
 masterSecret = generateMasterSecret TLS10
