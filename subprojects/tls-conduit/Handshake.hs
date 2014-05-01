@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module Handshake (
 	Handshake,
@@ -8,29 +8,33 @@ module Handshake (
 	handshakeToByteString
 ) where
 
+import Control.Applicative
+
 import Data.Word
 import qualified Data.ByteString as BS
 
+import ClientHello
 import Tools
 
-handshakeList :: BS.ByteString -> Maybe [Handshake]
-handshakeList "" = Just []
+handshakeList :: BS.ByteString -> Either String [Handshake]
+handshakeList "" = return []
 handshakeList src = do
 	(h, rest) <- handshakeOne src
 	hs <- handshakeList rest
 	return (h : hs)
 
-handshakeOne :: BS.ByteString -> Maybe (Handshake, BS.ByteString)
+handshakeOne :: BS.ByteString -> Either String (Handshake, BS.ByteString)
 handshakeOne src = do
-	(ht, rest) <- BS.uncons src
-	(bslen, rest') <- maybeSplitAt 3 rest
+	(ht, rest) <- eitherUncons src
+	(bslen, rest') <- eitherSplitAt "get len" 3 rest
 	len <- toLen bslen
-	(body, rest'') <- maybeSplitAt len rest'
-	return $ (handshake (handshakeType ht) body, rest'')
+	(body, rest'') <- eitherSplitAt
+		("get body: " ++ show bslen ++ "(" ++ show len ++ ")") len rest'
+	(, rest'') <$> handshake (handshakeType ht) body
 
 handshakeToByteString :: Handshake -> BS.ByteString
 handshakeToByteString (HandshakeClientHello body) = handshakeToByteString $
-	HandshakeRaw HandshakeTypeClientHello body
+	HandshakeRaw HandshakeTypeClientHello $ clientHelloToByteString body
 handshakeToByteString (HandshakeServerHello body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHello body
 handshakeToByteString (HandshakeCertificate body) = handshakeToByteString $
@@ -43,19 +47,20 @@ handshakeToByteString (HandshakeRaw ht body) =
 	body
 
 data Handshake
-	= HandshakeClientHello BS.ByteString
+	= HandshakeClientHello ClientHello
 	| HandshakeServerHello BS.ByteString
 	| HandshakeCertificate BS.ByteString
 	| HandshakeServerHelloDone BS.ByteString
 	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
 
-handshake :: HandshakeType -> BS.ByteString -> Handshake
-handshake HandshakeTypeClientHello body = HandshakeClientHello body
-handshake HandshakeTypeServerHello body = HandshakeServerHello body
-handshake HandshakeTypeCertificate body = HandshakeCertificate body
-handshake HandshakeTypeServerHelloDone body = HandshakeServerHelloDone body
-handshake ht body = HandshakeRaw ht body
+handshake :: HandshakeType -> BS.ByteString -> Either String Handshake
+handshake HandshakeTypeClientHello body =
+	HandshakeClientHello <$> parseClientHello body
+handshake HandshakeTypeServerHello body = return $ HandshakeServerHello body
+handshake HandshakeTypeCertificate body = return $ HandshakeCertificate body
+handshake HandshakeTypeServerHelloDone body = return $ HandshakeServerHelloDone body
+handshake ht body = return $ HandshakeRaw ht body
 
 handshakeToHandshakeType :: Handshake -> HandshakeType
 handshakeToHandshakeType (HandshakeClientHello _) = HandshakeTypeClientHello
@@ -70,6 +75,7 @@ data HandshakeType
 	| HandshakeTypeCertificate
 	| HandshakeTypeServerKeyExchange
 	| HandshakeTypeServerHelloDone
+	| HandshakeTypeClientKeyExchange
 	| HandshakeTypeFinished
 	| HandshakeTypeRaw Word8
 	deriving (Show, Eq)
@@ -80,6 +86,7 @@ handshakeType 2 = HandshakeTypeServerHello
 handshakeType 11 = HandshakeTypeCertificate
 handshakeType 12 = HandshakeTypeServerKeyExchange
 handshakeType 14 = HandshakeTypeServerHelloDone
+handshakeType 16 = HandshakeTypeClientKeyExchange
 handshakeType 20 = HandshakeTypeFinished
 handshakeType w = HandshakeTypeRaw w
 
@@ -89,5 +96,6 @@ handshakeTypeToByteString HandshakeTypeServerHello = "\x02"
 handshakeTypeToByteString HandshakeTypeCertificate = "\x0b"
 handshakeTypeToByteString HandshakeTypeServerKeyExchange = "\x0c"
 handshakeTypeToByteString HandshakeTypeServerHelloDone = "\x0e"
+handshakeTypeToByteString HandshakeTypeClientKeyExchange = "\x10"
 handshakeTypeToByteString HandshakeTypeFinished = "\x14"
 handshakeTypeToByteString (HandshakeTypeRaw w) = BS.pack [w]

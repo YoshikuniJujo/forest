@@ -16,7 +16,7 @@ readFragment :: Handle -> IO Fragment
 readFragment h = do
 	ctvl <- hGet h 5
 	let	[ct, vmjr, vmnr, l1, l2] = BS.unpack ctvl
-	fragment (contentType ct) (version vmjr vmnr) <$>
+	fragment (contentType ct) (versionGen vmjr vmnr) <$>
 		hGet h (fromIntegral l1 `shift` 8 .|. fromIntegral l2)
 
 data Fragment

@@ -1,7 +1,6 @@
 module Main (main) where
 
 import Control.Applicative
-import Data.Maybe
 
 import Network
 import System.IO
@@ -32,20 +31,37 @@ sockHandler sock pid = do
 	commandProcessor cl sv
 	sockHandler sock pid 
 
-readContent :: Handle -> IO (Maybe Content)
+readContent :: Handle -> IO (Either String Content)
 readContent h = do
 	Fragment ct v body <- readFragment h
 	return $ content ct v body
 
-peek :: Handle -> Handle -> IO Content
+peek :: Handle -> Handle -> IO (Either String Content)
 peek from to = do
-	Just cont <- readContent from
-	BS.hPutStr to $ contentToByteString cont
+	f@(Fragment ct v body) <- readFragment from
+	let econt = content ct v body
+	case econt of
+		Right cont -> BS.hPutStr to $ contentToByteString cont
+		Left err -> do
+			putStrLn err
+			BS.hPutStr to $ fragmentToByteString f
+	return econt
+
+peekFragment :: Handle -> Handle -> IO Fragment
+peekFragment from to = do
+	cont <- readFragment from
+	BS.hPutStr to $ fragmentToByteString cont
 	return cont
+
+peekChar :: Handle -> Handle -> IO Char
+peekChar from to = do
+	c <- hGetChar from
+	hPutChar to c
+	return c
 
 peekServerHelloDone :: Handle -> Handle -> IO [Content]
 peekServerHelloDone sv cl = do
-	c <- peek sv cl
+	Right c <- peek sv cl
 	case contentToHandshakeList c of
 		Just hss -> do
 			let hts = map handshakeToHandshakeType hss
@@ -58,6 +74,19 @@ peekServerHelloDone sv cl = do
 			return [c]
 --			(c :) <$> peekServerHelloDone sv cl
 
+peekFinished :: Handle -> Handle -> IO [Content]
+peekFinished from to = do
+	ec <- peek from to
+	case ec of
+		Right c -> case contentToHandshakeList c of
+			Just hss -> do
+				if (HandshakeTypeFinished `elem`
+					map handshakeToHandshakeType hss)
+					then return [c]
+					else (c :) <$> peekFinished from to
+			_ -> (c :) <$> peekFinished from to
+		Left err -> putStrLn err >> return []
+
 commandProcessor :: Handle -> Handle -> IO ()
 commandProcessor cl sv = do
 	hSetBuffering cl NoBuffering
@@ -69,6 +98,20 @@ commandProcessor cl sv = do
 
 	putStrLn "SERVER:"
 	peekServerHelloDone sv cl >>= print
+
+	putStrLn "CLIENT:"
+	peekFinished cl sv >>= print
+
+--	peekChar cl sv >>= print
+--	peekChar sv cl >>= print
+
+{-
+	f@(Fragment ct v body) <- peekFragment sv cl
+	print f
+	print $ content ct v body
+	-}
+
+--	peek sv cl >>= print
 
 --	putStrLn "TEST:"
 --	peek sv cl >>= print

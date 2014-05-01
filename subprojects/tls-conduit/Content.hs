@@ -18,10 +18,10 @@ data Content
 	| ContentRaw ContentType Version BS.ByteString
 	deriving Show
 
-content :: ContentType -> Version -> BS.ByteString -> Maybe Content
+content :: ContentType -> Version -> BS.ByteString -> Either String Content
 content ContentTypeHandshake v body =
 	ContentHandshake v <$> handshakeList body
-content ct v body = Just $ ContentRaw ct v body
+content ct v body = return $ ContentRaw ct v body
 
 contentToByteString :: Content -> BS.ByteString
 contentToByteString (ContentHandshake v hss) = contentToByteString $
