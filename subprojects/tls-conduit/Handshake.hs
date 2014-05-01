@@ -14,6 +14,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 
 import ClientHello
+import ServerHello
 import Tools
 
 handshakeList :: BS.ByteString -> Either String [Handshake]
@@ -36,7 +37,7 @@ handshakeToByteString :: Handshake -> BS.ByteString
 handshakeToByteString (HandshakeClientHello body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeClientHello $ clientHelloToByteString body
 handshakeToByteString (HandshakeServerHello body) = handshakeToByteString $
-	HandshakeRaw HandshakeTypeServerHello body
+	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString body
 handshakeToByteString (HandshakeCertificate body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeCertificate body
 handshakeToByteString (HandshakeServerHelloDone body) = handshakeToByteString $
@@ -48,7 +49,7 @@ handshakeToByteString (HandshakeRaw ht body) =
 
 data Handshake
 	= HandshakeClientHello ClientHello
-	| HandshakeServerHello BS.ByteString
+	| HandshakeServerHello ServerHello
 	| HandshakeCertificate BS.ByteString
 	| HandshakeServerHelloDone BS.ByteString
 	| HandshakeRaw HandshakeType BS.ByteString
@@ -57,7 +58,7 @@ data Handshake
 handshake :: HandshakeType -> BS.ByteString -> Either String Handshake
 handshake HandshakeTypeClientHello body =
 	HandshakeClientHello <$> parseClientHello body
-handshake HandshakeTypeServerHello body = return $ HandshakeServerHello body
+handshake HandshakeTypeServerHello body = HandshakeServerHello <$> serverHello body
 handshake HandshakeTypeCertificate body = return $ HandshakeCertificate body
 handshake HandshakeTypeServerHelloDone body = return $ HandshakeServerHelloDone body
 handshake ht body = return $ HandshakeRaw ht body

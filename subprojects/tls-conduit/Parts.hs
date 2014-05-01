@@ -5,7 +5,7 @@ module Parts (
 	ContentType(..), contentType, contentTypeToByteString,
 	Version, version, versionGen, versionToByteString,
 	Random, random, randomToByteString,
-	SessionID, sessionID, sessionIDToByteString,
+	SessionId, sessionId, sessionIdToByteString,
 	CipherSuite, cipherSuite, cipherSuiteToByteString,
 	CompressionMethod, compressionMethod, compressionMethodToByteString,
 ) where
@@ -62,21 +62,21 @@ random src = do
 	(r, rest) <- eitherSplitAt "random" 32 src
 	return (Random r, rest)
 
-data SessionID
-	= SessionID BS.ByteString
+data SessionId
+	= SessionId BS.ByteString
 
-instance Show SessionID where
-	show (SessionID bs) =
-		"(SessionID " ++ concat (map (flip showHex "") (BS.unpack bs)) ++ ")"
+instance Show SessionId where
+	show (SessionId bs) =
+		"(SessionId " ++ concat (map (flip showHex "") (BS.unpack bs)) ++ ")"
 
-sessionIDToByteString :: SessionID -> BS.ByteString
-sessionIDToByteString (SessionID sid) = lenToBS 1 sid `BS.append` sid
+sessionIdToByteString :: SessionId -> BS.ByteString
+sessionIdToByteString (SessionId sid) = lenToBS 1 sid `BS.append` sid
 
-sessionID :: BS.ByteString -> Either String (SessionID, BS.ByteString)
-sessionID src = do
+sessionId :: BS.ByteString -> Either String (SessionId, BS.ByteString)
+sessionId src = do
 	(len, r1) <- bsToLen 1 src
-	(sid, r2) <- eitherSplitAt "sessionID" len r1
-	return (SessionID sid, r2)
+	(sid, r2) <- eitherSplitAt "sessionId" len r1
+	return (SessionId sid, r2)
 
 data CipherSuite
 	= TLS_RSA_WITH_AES_128_CBC_SHA
