@@ -3,7 +3,8 @@
 module ClientHello (
 	ClientHello,
 	parseClientHello,
-	clientHelloToByteString
+	clientHelloToByteString,
+	takeClientRandom
 ) where
 
 import qualified Data.ByteString as BS
@@ -11,6 +12,7 @@ import qualified Data.ByteString as BS
 import Extension
 import Parts
 import Tools
+import MasterSecret
 
 parseClientHello :: BS.ByteString -> Either String ClientHello
 parseClientHello src = do
@@ -40,3 +42,7 @@ data ClientHello
 		(Maybe [Extension])
 	| ClientHelloRaw BS.ByteString
 	deriving Show
+
+takeClientRandom :: ClientHello -> Maybe ClientRandom
+takeClientRandom (ClientHello _ (Random r) _ _ _ _) = Just $ ClientRandom r
+takeClientRandom _ = Nothing

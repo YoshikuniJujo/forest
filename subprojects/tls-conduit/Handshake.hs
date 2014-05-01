@@ -6,7 +6,9 @@ module Handshake (
 	handshakeList,
 	handshakeToHandshakeType,
 	handshakeToByteString,
-	takeEncryptedPreMasterSecret
+	takeEncryptedPreMasterSecret,
+	takeClientHello,
+	takeServerHello
 ) where
 
 import Control.Applicative
@@ -118,3 +120,11 @@ handshakeTypeToByteString (HandshakeTypeRaw w) = BS.pack [w]
 takeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
 takeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
 takeEncryptedPreMasterSecret _ = Nothing
+
+takeClientHello :: Handshake -> Maybe ClientHello
+takeClientHello (HandshakeClientHello ch) = Just ch
+takeClientHello _ = Nothing
+
+takeServerHello :: Handshake -> Maybe ServerHello
+takeServerHello (HandshakeServerHello sh) = Just sh
+takeServerHello _ = Nothing

@@ -4,7 +4,7 @@ module Parts (
 	list, listToByteString,
 	ContentType(..), contentType, contentTypeToByteString,
 	Version, version, versionGen, versionToByteString,
-	Random, random, randomToByteString,
+	Random(..), random, randomToByteString,
 	SessionId, sessionId, sessionIdToByteString,
 	CipherSuite, cipherSuite, cipherSuiteToByteString,
 	CompressionMethod, compressionMethod, compressionMethodToByteString,

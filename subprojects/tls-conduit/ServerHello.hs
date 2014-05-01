@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module ServerHello (ServerHello, serverHello, serverHelloToByteString) where
+module ServerHello (
+	ServerHello, serverHello, serverHelloToByteString, takeServerRandom
+) where
 
 import qualified Data.ByteString as BS
 
 import Extension
 import Parts
 import Tools
+import MasterSecret
 
 data ServerHello
 	= ServerHello Version Random SessionId CipherSuite CompressionMethod
@@ -36,3 +39,7 @@ serverHelloToByteString (ServerHello v r sid cs cm ext) =
 	compressionMethodToByteString cm `BS.append`
 	maybe "" (listToByteString 2 extensionToByteString) ext
 serverHelloToByteString (ServerHelloRaw bs) = bs
+
+takeServerRandom :: ServerHello -> Maybe ServerRandom
+takeServerRandom (ServerHello _ (Random r) _ _ _ _) = Just $ ServerRandom r
+takeServerRandom _ = Nothing
