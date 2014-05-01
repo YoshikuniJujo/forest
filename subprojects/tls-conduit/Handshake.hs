@@ -15,6 +15,8 @@ import qualified Data.ByteString as BS
 
 import ClientHello
 import ServerHello
+import Certificate
+-- import Parts
 import Tools
 
 handshakeList :: BS.ByteString -> Either String [Handshake]
@@ -39,7 +41,8 @@ handshakeToByteString (HandshakeClientHello body) = handshakeToByteString $
 handshakeToByteString (HandshakeServerHello body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString body
 handshakeToByteString (HandshakeCertificate body) = handshakeToByteString $
-	HandshakeRaw HandshakeTypeCertificate body
+	HandshakeRaw HandshakeTypeCertificate $
+		certificateChainToByteString body
 handshakeToByteString (HandshakeServerHelloDone body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone body
 handshakeToByteString (HandshakeRaw ht body) =
@@ -50,7 +53,7 @@ handshakeToByteString (HandshakeRaw ht body) =
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
-	| HandshakeCertificate BS.ByteString
+	| HandshakeCertificate CertificateChain
 	| HandshakeServerHelloDone BS.ByteString
 	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
@@ -59,7 +62,8 @@ handshake :: HandshakeType -> BS.ByteString -> Either String Handshake
 handshake HandshakeTypeClientHello body =
 	HandshakeClientHello <$> parseClientHello body
 handshake HandshakeTypeServerHello body = HandshakeServerHello <$> serverHello body
-handshake HandshakeTypeCertificate body = return $ HandshakeCertificate body
+handshake HandshakeTypeCertificate body =
+	HandshakeCertificate . fst <$> certificateChain body
 handshake HandshakeTypeServerHelloDone body = return $ HandshakeServerHelloDone body
 handshake ht body = return $ HandshakeRaw ht body
 
