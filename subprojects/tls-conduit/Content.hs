@@ -2,7 +2,8 @@ module Content (
 	Content(..),
 	content,
 	contentToHandshakeList,
-	contentToByteString
+	contentToByteString,
+	takeHandshakes
 ) where
 
 import Control.Applicative
@@ -35,3 +36,7 @@ contentToByteString (ContentRaw ct v body) = contentTypeToByteString ct
 contentToHandshakeList :: Content -> Maybe [Handshake]
 contentToHandshakeList (ContentHandshake _ hss) = Just hss
 contentToHandshakeList _ = Nothing
+
+takeHandshakes :: Content -> Maybe [Handshake]
+takeHandshakes (ContentHandshake _ hss) = Just hss
+takeHandshakes _ = Nothing

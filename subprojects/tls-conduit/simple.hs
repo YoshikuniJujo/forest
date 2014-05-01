@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Control.Applicative
+import Data.Maybe
 
 import Network
 import System.IO
@@ -14,9 +15,25 @@ import qualified Data.ByteString as BS
 import Fragment
 import Content
 import Handshake
+import PreMasterSecret
+
+import Data.X509.File
+import Data.X509
+import Crypto.PubKey.RSA
+import Crypto.PubKey.RSA.PKCS15
+
+import System.IO.Unsafe
+
+private_key :: PrivateKey
+private_key = unsafePerformIO $ do
+	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
+	return priv
 
 main :: IO ()
 main = do
+--	print =<< readKeyFile "localhost.key"
+	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
+--	print priv
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do
 		sock <- listenOn $ PortNumber $ fromIntegral $ (read p1 :: Int)
@@ -94,13 +111,25 @@ commandProcessor cl sv = do
 	hSetBuffering stdout NoBuffering
 
 	putStrLn "CLIENT:"
-	peek cl sv >>= print
+	c1 <- peek cl sv
+	putStrLn $ take 10 (show c1) ++ "...\n"
+--	print c1
 
 	putStrLn "SERVER:"
-	peekServerHelloDone sv cl >>= print
+	s1 <- peekServerHelloDone sv cl
+	putStrLn $ take 10 (show s1) ++ "...\n"
+--	print s2
 
 	putStrLn "CLIENT:"
-	peekFinished cl sv >>= print
+	c2 <- peekFinished cl sv
+	putStrLn $ take 10 (show c2) ++ "...\n"
+--	print c2
+
+	putStrLn "*** CLIENTKEYEXCHANGE ***"
+	let Right preMasterSecret = decrypt Nothing private_key $ rawEncryptedPreMasterSecret $ fromJust $ takeEncryptedPreMasterSecret $ head $ fromJust $ takeHandshakes $ head c2
+	print preMasterSecret
+	print $ BS.length preMasterSecret
+	putStrLn ""
 
 --	peekChar cl sv >>= print
 --	peekChar sv cl >>= print

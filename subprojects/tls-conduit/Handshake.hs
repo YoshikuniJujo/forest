@@ -5,7 +5,8 @@ module Handshake (
 	HandshakeType(..),
 	handshakeList,
 	handshakeToHandshakeType,
-	handshakeToByteString
+	handshakeToByteString,
+	takeEncryptedPreMasterSecret
 ) where
 
 import Control.Applicative
@@ -16,6 +17,7 @@ import qualified Data.ByteString as BS
 import ClientHello
 import ServerHello
 import Certificate
+import PreMasterSecret
 -- import Parts
 import Tools
 
@@ -45,6 +47,9 @@ handshakeToByteString (HandshakeCertificate body) = handshakeToByteString $
 		certificateChainToByteString body
 handshakeToByteString (HandshakeServerHelloDone body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone body
+handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeClientKeyExchange $
+		encryptedPreMasterSecretToByteString epms
 handshakeToByteString (HandshakeRaw ht body) =
 	handshakeTypeToByteString ht `BS.append`
 	fromLen 3 (BS.length body) `BS.append`
@@ -55,6 +60,7 @@ data Handshake
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
 	| HandshakeServerHelloDone BS.ByteString
+	| HandshakeClientKeyExchange EncryptedPreMasterSecret
 	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
 
@@ -65,6 +71,8 @@ handshake HandshakeTypeServerHello body = HandshakeServerHello <$> serverHello b
 handshake HandshakeTypeCertificate body =
 	HandshakeCertificate . fst <$> certificateChain body
 handshake HandshakeTypeServerHelloDone body = return $ HandshakeServerHelloDone body
+handshake HandshakeTypeClientKeyExchange body = HandshakeClientKeyExchange . fst <$>
+	encryptedPreMasterSecret body
 handshake ht body = return $ HandshakeRaw ht body
 
 handshakeToHandshakeType :: Handshake -> HandshakeType
@@ -72,6 +80,8 @@ handshakeToHandshakeType (HandshakeClientHello _) = HandshakeTypeClientHello
 handshakeToHandshakeType (HandshakeServerHello _) = HandshakeTypeServerHello
 handshakeToHandshakeType (HandshakeCertificate _) = HandshakeTypeCertificate
 handshakeToHandshakeType (HandshakeServerHelloDone _) = HandshakeTypeServerHelloDone
+handshakeToHandshakeType (HandshakeClientKeyExchange _) =
+	HandshakeTypeClientKeyExchange
 handshakeToHandshakeType (HandshakeRaw ht _) = ht
 
 data HandshakeType
@@ -104,3 +114,7 @@ handshakeTypeToByteString HandshakeTypeServerHelloDone = "\x0e"
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = "\x10"
 handshakeTypeToByteString HandshakeTypeFinished = "\x14"
 handshakeTypeToByteString (HandshakeTypeRaw w) = BS.pack [w]
+
+takeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
+takeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
+takeEncryptedPreMasterSecret _ = Nothing
