@@ -1,5 +1,5 @@
 module Certificate (
-	CertificateChain,
+	X509.CertificateChain,
 	certificateChain,
 	certificateChainToByteString,
 
@@ -18,15 +18,15 @@ data CertificateChain
 	= CertificateChain X509.CertificateChain
 	deriving Show
 
-certificateChainToByteString :: CertificateChain -> BS.ByteString
-certificateChainToByteString (CertificateChain cc) =
+certificateChainToByteString :: X509.CertificateChain -> BS.ByteString
+certificateChainToByteString cc =
 	certificateListToByteString $ encode cc
 
-certificateChain :: BS.ByteString -> Either String (CertificateChain, BS.ByteString)
+certificateChain :: BS.ByteString -> Either String (X509.CertificateChain, BS.ByteString)
 certificateChain src = do
 	(c, rest) <- certificateList src
 	case decode c of
-		Right cc -> return (CertificateChain cc, rest)
+		Right cc -> return (cc, rest)
 		Left (n, err) -> Left $ show n ++ " : " ++ err
 
 type CertificateList = [Certificate]
