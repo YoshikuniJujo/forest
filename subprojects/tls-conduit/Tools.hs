@@ -5,7 +5,11 @@ module Tools (
 	toLen, fromLen,
 	maybeSplitAt,
 	eitherSplitAt,
-	eitherUncons
+	eitherUncons,
+	word16ToWords, wordsToWord16,
+	check,
+	getBody,
+	bodyToBS,
 ) where
 
 import Control.Applicative
@@ -30,6 +34,13 @@ fromLen n l = BS.pack $ intToWords (n - 1) l
 intToWords :: Int -> Int -> [Word8]
 intToWords n _ | n < 0 = []
 intToWords n l = fromIntegral (l `shiftR` (8 * n)) : intToWords (n - 1) l
+
+word16ToWords :: Word16 -> [Word8]
+word16ToWords w = [fromIntegral $ w `shiftR` 8, fromIntegral w]
+
+wordsToWord16 :: [Word8] -> Word16
+wordsToWord16 [w1, w2] = fromIntegral w1 `shift` 8 .|. fromIntegral w2
+wordsToWord16 _ = error "wordsToWord16: bad word list"
 
 toLen :: BS.ByteString -> Either String Int
 toLen bs = do
@@ -62,3 +73,11 @@ instance Monoid a => MonadPlus (Either a) where
 	mzero = Left mempty
 	mplus r@(Right _) _ = r
 	mplus _ e = e
+
+getBody :: Int -> BS.ByteString -> Either String (BS.ByteString, BS.ByteString)
+getBody n src = do
+	(len, src') <- bsToLen n src
+	eitherSplitAt "getBody" len src'
+
+bodyToBS :: Int -> BS.ByteString -> BS.ByteString
+bodyToBS n body = lenToBS n body `BS.append` body
