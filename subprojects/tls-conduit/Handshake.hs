@@ -4,6 +4,7 @@ module Handshake (
 	Handshake,
 	HandshakeType(..),
 	handshakeList,
+	handshakeOne,
 	handshakeToHandshakeType,
 	handshakeToByteString,
 	takeEncryptedPreMasterSecret,

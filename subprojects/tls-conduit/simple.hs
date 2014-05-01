@@ -22,6 +22,9 @@ import ClientHello
 import ServerHello
 import PreMasterSecret
 import MasterSecret
+import Parts
+import Tools
+import MAC
 
 import Data.X509.File
 import Data.X509
@@ -113,6 +116,7 @@ peekServerHelloDone sv cl = do
 			return [c]
 --			(c :) <$> peekServerHelloDone sv cl
 
+{-
 peekFinished :: BS.ByteString -> BS.ByteString -> Handle -> Handle -> IO [Content]
 peekFinished key iv from to = do
 	Fragment ct v body <- peekFragment from to
@@ -131,6 +135,36 @@ peekFinished key iv from to = do
 			let aes = initAES key
 			print $ decryptCBC aes iv body
 			return []
+-}
+
+peekFragmentCipher :: BS.ByteString -> BS.ByteString -> Handle -> Handle ->
+	IO (BS.ByteString)
+peekFragmentCipher key iv from to = do
+	Fragment ct v cbody <- peekFragment from to
+	let	body = decryptCBC (initAES key) iv cbody
+	return body
+
+peekFinished :: BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
+	IO (Either String (Handshake, BS.ByteString))
+peekFinished key iv mac_key from to = do
+	(Fragment ct v cbody, _) <- readFragment from
+	print cbody
+	let	body = decryptCBC (initAES key) iv cbody
+		cont@(Right (hs, _)) = handshakeOne body
+		body' = handshakeToByteString hs
+		cbody' = encryptCBC (initAES key) iv body
+	print cbody'
+	print $ BS.length cbody'
+	print $ BS.length body
+	let hash_input = "\0\0\0\0\0\0\0\0" `BS.append`
+		contentTypeToByteString ct `BS.append`
+		versionToByteString v `BS.append`
+		lenToBS 2 body' `BS.append`
+		body'
+	print hash_input
+	print $ hmac SHA1.hash 64 mac_key hash_input
+	BS.hPutStr to $ fragmentToByteString $ Fragment ct v cbody'
+	return cont
 
 commandProcessor :: Handle -> Handle -> IO ()
 commandProcessor cl sv = do
@@ -151,7 +185,7 @@ commandProcessor cl sv = do
 	putStrLn "SERVER:"
 	s1 <- peekServerHelloDone sv cl
 	putStrLn $ take 50 (show s1) ++ "...\n"
---	print s1
+--	print s1 >> putStrLn ""
 
 	putStrLn "*** SERVER RANDOM ***"
 	let server_random = fromJust $ takeServerRandom $ fromJust $ takeServerHello $ head $ fromJust $ takeHandshakes $ head s1
@@ -183,7 +217,8 @@ commandProcessor cl sv = do
 	putStrLn ""
 
 	putStrLn "*** FINISHED DATA ***"
-	print $ generateFinished master_secret md5sha1
+	let finished_data = generateFinished master_secret md5sha1
+	print finished_data
 
 	putStrLn "*** EXPANDED MASTER SECRET ***"
 	let expanded = keyBlock client_random server_random master_secret 104
@@ -205,10 +240,27 @@ commandProcessor cl sv = do
 	putStrLn $ "server iv : " ++ showKey server_write_iv
 	putStrLn ""
 
-	putStrLn "CLIENT CRYPTED AGAIN:"
-	c3 <- peekFinished client_write_key client_write_iv cl sv
---	putStrLn $ take 10 (show c2) ++ "...\n"
+	putStrLn "Change Cipher Spec"
+	c3 <- peek cl sv
 	print c3
+	putStrLn ""
+
+	putStrLn "CLIENT CRYPTED AGAIN:"
+--	c4 <- peekFragmentCipher client_write_key client_write_iv cl sv
+	c4 <- peekFinished client_write_key client_write_iv client_write_MAC_key cl sv
+--	putStrLn $ take 10 (show c2) ++ "...\n"
+	print finished_data
+	print c4
+	putStrLn ""
+
+	putStrLn "Server Change Cipher Spec"
+	c5 <- peek sv cl
+	print c5
+	putStrLn ""
+
+	putStrLn "SERVER FINISHED"
+	c6 <- peekFinished server_write_key server_write_iv server_write_MAC_key sv cl
+	print c6
 	putStrLn ""
 
 --	peekChar cl sv >>= print
