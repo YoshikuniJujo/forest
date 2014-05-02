@@ -1,10 +1,10 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 module ByteStringMonad (
-	ByteString, Word8, BS.pack, BS.unpack, BS.append, BS.concat,
+	ByteString, Word8, Word16, BS.pack, BS.unpack, BS.append, BS.concat,
 
 	ByteStringM, evalByteStringM, throwError,
-	head, take, takeWords, takeInt, takeLen, empty,
+	head, take, takeWords, takeInt, takeWord16, takeLen, empty,
 	list1, list, section, whole
 ) where
 
@@ -12,6 +12,7 @@ import Prelude hiding (head, take)
 
 import Control.Applicative ((<$>), (<*>))
 
+import Data.Bits
 import Data.Word
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -47,6 +48,11 @@ takeWords = (BS.unpack <$>) . take
 
 takeInt :: Int -> ByteStringM Int
 takeInt = (byteStringToInt <$>) . take
+
+takeWord16 :: ByteStringM Word16
+takeWord16 = do
+	[w1, w2] <- takeWords 2
+	return $ fromIntegral w1 `shift` 8 .|. fromIntegral w2
 
 takeLen :: Int -> ByteStringM ByteString
 takeLen n = do
