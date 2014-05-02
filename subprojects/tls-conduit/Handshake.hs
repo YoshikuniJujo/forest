@@ -1,8 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Handshake (Handshake, parseHandshake, handshakeToByteString) where
 
 import Prelude hiding (head, take, concat)
 
 import Control.Applicative ((<$>))
+import Control.Monad
 
 import Data.Word
 
@@ -16,6 +19,7 @@ data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
+	| HandshakeServerHelloDone
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
 
@@ -29,6 +33,10 @@ parseHandshake = do
 			HandshakeServerHello <$> parseServerHello
 		HandshakeTypeCertificate ->
 			HandshakeCertificate <$> parseCertificateChain
+		HandshakeTypeServerHelloDone -> do
+			e <- empty
+			when (not e) $ throwError "ServerHelloDone must empty"
+			return HandshakeServerHelloDone
 		_ -> HandshakeRaw mt <$> whole
 
 handshakeToByteString :: Handshake -> ByteString
@@ -38,6 +46,8 @@ handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeCertificate $ certificateChainToByteString crts
+handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
+	HandshakeRaw HandshakeTypeServerHelloDone ""
 handshakeToByteString (HandshakeRaw mt bs) =
 	handshakeTypeToByteString mt `append` lenBodyToByteString 3 bs
 
@@ -45,6 +55,7 @@ data HandshakeType
 	= HandshakeTypeClientHello
 	| HandshakeTypeServerHello
 	| HandshakeTypeCertificate
+	| HandshakeTypeServerHelloDone
 	| HandshakeTypeRaw Word8
 	deriving Show
 
@@ -55,10 +66,12 @@ parseHandshakeType = do
 		1 -> HandshakeTypeClientHello
 		2 -> HandshakeTypeServerHello
 		11 -> HandshakeTypeCertificate
+		14 -> HandshakeTypeServerHelloDone
 		_ -> HandshakeTypeRaw ht
 
 handshakeTypeToByteString :: HandshakeType -> ByteString
 handshakeTypeToByteString HandshakeTypeClientHello = pack [1]
 handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
 handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
+handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
 handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]
