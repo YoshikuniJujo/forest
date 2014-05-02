@@ -2,9 +2,9 @@
 
 module Parts (
 	ProtocolVersion, parseProtocolVersion, protocolVersionToByteString,
-	Random, parseRandom, randomToByteString,
+	Random(..), parseRandom, randomToByteString,
 	SessionId, parseSessionId, sessionIdToByteString,
-	CipherSuite, parseCipherSuite, cipherSuiteToByteString,
+	CipherSuite(..), parseCipherSuite, cipherSuiteToByteString,
 		parseCipherSuiteList, cipherSuiteListToByteString,
 	CompressionMethod, parseCompressionMethod, compressionMethodToByteString,
 		parseCompressionMethodList, compressionMethodListToByteString,
@@ -53,7 +53,8 @@ sessionIdToByteString :: SessionId -> ByteString
 sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
 
 data CipherSuite
-	= TLS_RSA_WITH_AES_128_CBC_SHA
+	= TLS_NULL_WITH_NULL_NULL
+	| TLS_RSA_WITH_AES_128_CBC_SHA
 	| CipherSuiteRaw Word8 Word8
 	deriving Show
 
@@ -68,10 +69,12 @@ parseCipherSuite :: ByteStringM CipherSuite
 parseCipherSuite = do
 	[w1, w2] <- takeWords 2
 	return $ case (w1, w2) of
+		(0x00, 0x00) -> TLS_NULL_WITH_NULL_NULL
 		(0x00, 0x2f) -> TLS_RSA_WITH_AES_128_CBC_SHA
 		_ -> CipherSuiteRaw w1 w2
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
+cipherSuiteToByteString TLS_NULL_WITH_NULL_NULL = "\x00\x00"
 cipherSuiteToByteString TLS_RSA_WITH_AES_128_CBC_SHA = "\x00\x2f"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 

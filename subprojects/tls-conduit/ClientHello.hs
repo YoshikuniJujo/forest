@@ -1,9 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module ClientHello (
-	ClientHello,
-	parseClientHello,
-	clientHelloToByteString
+	ClientHello(..), parseClientHello, clientHelloToByteString,
+	clientHelloClientRandom,
 ) where
 
 import Prelude hiding (concat)
@@ -20,8 +19,12 @@ data ClientHello
 	| ClientHelloRaw ByteString
 	deriving Show
 
+clientHelloClientRandom :: ClientHello -> Maybe Random
+clientHelloClientRandom (ClientHello _ r _ _ _ _) = Just r
+clientHelloClientRandom _ = Nothing
+
 parseClientHello :: ByteStringM ClientHello
-parseClientHello = do -- ClientHelloRaw <$> whole
+parseClientHello = do
 	pv <- parseProtocolVersion
 	r <- parseRandom
 	sid <- parseSessionId

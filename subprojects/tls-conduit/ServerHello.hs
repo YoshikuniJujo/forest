@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module ServerHello (ServerHello, parseServerHello, serverHelloToByteString) where
+module ServerHello (
+	ServerHello(..), parseServerHello, serverHelloToByteString,
+	serverHelloServerRandom
+) where
 
 import Prelude hiding (concat)
 
@@ -9,13 +12,17 @@ import Control.Applicative ((<$>))
 import Parts
 import Extension
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 
 data ServerHello
 	= ServerHello ProtocolVersion Random SessionId CipherSuite
 		CompressionMethod (Maybe ExtensionList)
 	| ServerHelloRaw ByteString
 	deriving Show
+
+serverHelloServerRandom :: ServerHello -> Maybe Random
+serverHelloServerRandom (ServerHello _ r _ _ _ _) = Just r
+serverHelloServerRandom _ = Nothing
 
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do

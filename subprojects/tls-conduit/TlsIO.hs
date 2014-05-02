@@ -4,12 +4,21 @@ module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
 	Partner(..), ServerHandle(..), ClientHandle(..),
 	read, write, readLen, writeLen,
-	decryptRSA,
+
+	setClientRandom, setServerRandom, decryptRSA,
+	generateMasterSecret,
+
+	masterSecret, expandedMasterSecret,
+
+	debugPrintKeys,
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack
 ) where
 
 import Prelude hiding (read)
+
+import Control.Applicative
+import Numeric
 
 import System.IO
 import "monads-tf" Control.Monad.Error
@@ -22,6 +31,8 @@ import qualified Data.ByteString as BS
 import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
 
+import qualified MasterSecret as MS
+import Parts
 import Tools
 
 type TlsIO = ErrorT String (StateT TlsState IO)
@@ -29,7 +40,19 @@ type TlsIO = ErrorT String (StateT TlsState IO)
 data TlsState = TlsState {
 	tlssServerHandle :: Handle,
 	tlssClientHandle :: Handle,
-	privateKey :: PrivateKey
+	tlssPrivateKey :: PrivateKey,
+	tlssCipherSuite :: CipherSuite,
+	tlssCachedCipherSuite :: Maybe CipherSuite,
+	tlssClientRandom :: Maybe ByteString,
+	tlssServerRandom :: Maybe ByteString,
+	tlssMasterSecret :: Maybe ByteString,
+	tlssExpandedMasterSecret :: Maybe ByteString,
+	tlssClientWriteMacKey :: Maybe ByteString,
+	tlssServerWriteMacKey :: Maybe ByteString,
+	tlssClientWriteKey :: Maybe ByteString,
+	tlssServerWriteKey :: Maybe ByteString,
+	tlssClientWriteIv :: Maybe ByteString,
+	tlssServerWriteIv :: Maybe ByteString
  } deriving Show
 
 data ServerHandle = ServerHandle Handle deriving Show
@@ -39,7 +62,19 @@ initTlsState :: ClientHandle -> ServerHandle -> PrivateKey -> TlsState
 initTlsState (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssServerHandle = sv,
 	tlssClientHandle = cl,
-	privateKey = pk
+	tlssPrivateKey = pk,
+	tlssCipherSuite = TLS_NULL_WITH_NULL_NULL,
+	tlssCachedCipherSuite = Nothing,
+	tlssClientRandom = Nothing,
+	tlssServerRandom = Nothing,
+	tlssMasterSecret = Nothing,
+	tlssExpandedMasterSecret = Nothing,
+	tlssClientWriteMacKey = Nothing,
+	tlssServerWriteMacKey = Nothing,
+	tlssClientWriteKey = Nothing,
+	tlssServerWriteKey = Nothing,
+	tlssClientWriteIv = Nothing,
+	tlssServerWriteIv = Nothing
  }
 
 data Partner = Server | Client deriving Show
@@ -84,7 +119,78 @@ writeLen partner n bs = do
 
 decryptRSA :: ByteString -> TlsIO ByteString
 decryptRSA e = do
-	pk <- gets privateKey
+	pk <- gets tlssPrivateKey
 	case decrypt Nothing pk e of
 		Right d -> return d
 		Left err -> throwError $ show err
+
+setClientRandom, setServerRandom :: ByteString -> TlsIO ()
+setClientRandom cr = do
+	tlss <- get
+	put $ tlss { tlssClientRandom = Just cr }
+setServerRandom sr = do
+	tlss <- get
+	put $ tlss { tlssServerRandom = Just sr }
+
+generateMasterSecret :: ByteString -> TlsIO ()
+generateMasterSecret pms = do
+	mcr <- gets $ (MS.ClientRandom <$>) . tlssClientRandom
+	msr <- gets $ (MS.ServerRandom <$>) . tlssServerRandom
+	case (mcr, msr) of
+		(Just cr, Just sr) -> do
+			let	ms = MS.masterSecret pms cr sr
+				ems = MS.keyBlock cr sr ms 104
+				[cwmk, swmk, cwk, swk, cwi, swi] =
+					divide [
+						20, 20,
+						16, 16,
+						16, 16 ] ems
+			tlss <- get
+			put $ tlss {
+				tlssMasterSecret = Just ms,
+				tlssExpandedMasterSecret = Just ems,
+				tlssClientWriteMacKey = Just cwmk,
+				tlssServerWriteMacKey = Just swmk,
+				tlssClientWriteKey = Just cwk,
+				tlssServerWriteKey = Just swk,
+				tlssClientWriteIv = Just cwi,
+				tlssServerWriteIv = Just swi
+			 }
+		_ -> throwError "No client random / No server random"
+
+masterSecret :: TlsIO (Maybe ByteString)
+masterSecret = gets tlssMasterSecret
+
+expandedMasterSecret :: TlsIO (Maybe ByteString)
+expandedMasterSecret = gets tlssExpandedMasterSecret
+
+divide :: [Int] -> BS.ByteString -> [BS.ByteString]
+divide [] _ = []
+divide (n : ns) bs
+	| bs == BS.empty = []
+	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
+
+debugPrintKeys :: TlsIO ()
+debugPrintKeys = do
+	Just cwmk <- gets tlssClientWriteMacKey
+	Just swmk <- gets tlssServerWriteMacKey
+	Just cwk <- gets tlssClientWriteKey
+	Just swk <- gets tlssServerWriteKey
+	Just cwi <- gets tlssClientWriteIv
+	Just swi <- gets tlssServerWriteIv
+	liftIO $ do
+		putStrLn $ "###### GENERATED KEYS ######"
+		putStrLn $ "Client Write MAC Key: " ++ showKey cwmk
+		putStrLn $ "Server Write MAC Key: " ++ showKey swmk
+		putStrLn $ "Client Write Key    : " ++ showKey cwk
+		putStrLn $ "Server Write Key    : " ++ showKey swk
+		putStrLn $ "Client Write IV     : " ++ showKey cwi
+		putStrLn $ "Server Write IV     : " ++ showKey swi
+
+showKey :: ByteString -> String
+showKey = unwords . map showH . BS.unpack
+
+showH :: Word8 -> String
+showH w = replicate (2 - length s) '0' ++ s
+	where
+	s = showHex w ""

@@ -2,7 +2,13 @@ module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version(..),
 	readFragment, writeFragment,
 	readRawFragment, writeRawFragment,
-	decryptRSA,
+
+	decryptRSA, setClientRandom, setServerRandom,
+	generateMasterSecret,
+	
+	masterSecret, expandedMasterSecret,
+
+	debugPrintKeys,
 
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,

@@ -1,6 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Handshake (Handshake(..), parseHandshake, handshakeToByteString) where
+module Handshake (
+	Handshake(..), parseHandshake, handshakeToByteString,
+	handshakeDoesServerHelloFinish, handshakeDoesFinish,
+	handshakeDoesClientKeyExchange,
+	handshakeClientRandom, handshakeServerRandom,
+	handshakeEncryptedPreMasterSecret,
+) where
 
 import Prelude hiding (head, take, concat)
 
@@ -15,6 +21,7 @@ import Certificate
 import PreMasterSecret
 import ByteStringMonad
 import ToByteString
+import Parts
 
 data Handshake
 	= HandshakeClientHello ClientHello
@@ -24,6 +31,31 @@ data Handshake
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
+
+handshakeClientRandom :: Handshake -> Maybe Random
+handshakeClientRandom (HandshakeClientHello ch) = clientHelloClientRandom ch
+handshakeClientRandom _ = Nothing
+
+handshakeServerRandom :: Handshake -> Maybe Random
+handshakeServerRandom (HandshakeServerHello sh) = serverHelloServerRandom sh
+handshakeServerRandom _ = Nothing
+
+handshakeDoesServerHelloFinish :: Handshake -> Bool
+handshakeDoesServerHelloFinish HandshakeServerHelloDone = True
+handshakeDoesServerHelloFinish (HandshakeRaw HandshakeTypeFinished _) = True
+handshakeDoesServerHelloFinish _ = False
+
+handshakeDoesClientKeyExchange :: Handshake -> Bool
+handshakeDoesClientKeyExchange (HandshakeClientKeyExchange _) = True
+handshakeDoesClientKeyExchange _ = False
+
+handshakeDoesFinish :: Handshake -> Bool
+handshakeDoesFinish (HandshakeRaw HandshakeTypeFinished _) = True
+handshakeDoesFinish _ = False
+
+handshakeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
+handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
+handshakeEncryptedPreMasterSecret _ = Nothing
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do
@@ -64,6 +96,7 @@ data HandshakeType
 	| HandshakeTypeCertificate
 	| HandshakeTypeServerHelloDone
 	| HandshakeTypeClientKeyExchange
+	| HandshakeTypeFinished
 	| HandshakeTypeRaw Word8
 	deriving Show
 
@@ -76,6 +109,7 @@ parseHandshakeType = do
 		11 -> HandshakeTypeCertificate
 		14 -> HandshakeTypeServerHelloDone
 		16 -> HandshakeTypeClientKeyExchange
+		20 -> HandshakeTypeFinished
 		_ -> HandshakeTypeRaw ht
 
 handshakeTypeToByteString :: HandshakeType -> ByteString
@@ -84,4 +118,5 @@ handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
 handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
 handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]
+handshakeTypeToByteString HandshakeTypeFinished = pack [20]
 handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]
