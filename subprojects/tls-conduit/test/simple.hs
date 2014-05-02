@@ -38,6 +38,13 @@ import Crypto.Cipher.AES
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Crypto.Hash.SHA1 as SHA1
 
+import System.IO.Unsafe
+import Data.IORef
+
+client_write_iv_ref, server_write_iv_ref :: IORef BS.ByteString
+client_write_iv_ref = unsafePerformIO $ newIORef ""
+server_write_iv_ref = unsafePerformIO $ newIORef ""
+
 private_key :: PrivateKey
 private_key = unsafePerformIO $ do
 	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
@@ -95,10 +102,11 @@ peekFragment from to = do
 	BS.hPutStr to $ fragmentToByteString cont
 	return cont
 
-peekChar :: Handle -> Handle -> IO Char
+peekChar :: Handle -> Handle -> IO BS.ByteString
 peekChar from to = do
-	c <- hGetChar from
-	hPutChar to c
+	c <- BS.hGet from 1
+	print c
+	BS.hPut to c
 	return c
 
 peekServerHelloDone :: Handle -> Handle -> IO [Content]
@@ -137,22 +145,28 @@ peekFinished key iv from to = do
 			return []
 -}
 
-peekFragmentCipher :: BS.ByteString -> BS.ByteString -> Handle -> Handle ->
-	IO (BS.ByteString)
-peekFragmentCipher key iv from to = do
+peekFragmentCipher :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
+	IO (ContentType, Version, BS.ByteString)
+peekFragmentCipher isSv key _iv mac_key from to = do
+	iv <- readIORef (if isSv then server_write_iv_ref else client_write_iv_ref)
 	Fragment ct v cbody <- peekFragment from to
 	let	body = decryptCBC (initAES key) iv cbody
-	return body
+		last16 = BS.drop (BS.length cbody - 16) cbody
+	writeIORef (if isSv then server_write_iv_ref else client_write_iv_ref) last16
+	return (ct, v, body)
 
-peekFinished :: BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
+peekFinished :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
 	IO (Either String (Handshake, BS.ByteString))
-peekFinished key iv mac_key from to = do
+peekFinished isSv key iv mac_key from to = do
 	(Fragment ct v cbody, _) <- readFragment from
 	print cbody
-	let	body = decryptCBC (initAES key) iv cbody
+	let	last16 = BS.drop (BS.length cbody - 16) cbody
+		body = decryptCBC (initAES key) iv cbody
 		cont@(Right (hs, _)) = handshakeOne body
 		body' = handshakeToByteString hs
 		cbody' = encryptCBC (initAES key) iv body
+	writeIORef
+		(if isSv then server_write_iv_ref else client_write_iv_ref) last16
 	print cbody'
 	print $ BS.length cbody'
 	print $ BS.length body
@@ -164,6 +178,7 @@ peekFinished key iv mac_key from to = do
 	print hash_input
 	print $ hmac SHA1.hash 64 mac_key hash_input
 	BS.hPutStr to $ fragmentToByteString $ Fragment ct v cbody'
+--	BS.hPutStr to $ fragmentToByteString $ Fragment ct v cbody
 	return cont
 
 commandProcessor :: Handle -> Handle -> IO ()
@@ -247,7 +262,7 @@ commandProcessor cl sv = do
 
 	putStrLn "CLIENT CRYPTED AGAIN:"
 --	c4 <- peekFragmentCipher client_write_key client_write_iv cl sv
-	c4 <- peekFinished client_write_key client_write_iv client_write_MAC_key cl sv
+	c4 <- peekFinished False client_write_key client_write_iv client_write_MAC_key cl sv
 --	putStrLn $ take 10 (show c2) ++ "...\n"
 	print finished_data
 	print c4
@@ -259,9 +274,43 @@ commandProcessor cl sv = do
 	putStrLn ""
 
 	putStrLn "SERVER FINISHED"
-	c6 <- peekFinished server_write_key server_write_iv server_write_MAC_key sv cl
+	c6 <- peekFinished True server_write_key server_write_iv server_write_MAC_key sv cl
 	print c6
 	putStrLn ""
+
+{-
+	putStrLn "SERVER"
+	c7 <- peekFragmentCipher server_write_key server_write_iv server_write_MAC_key sv cl
+	print c7
+	putStrLn ""
+	-}
+
+{-
+	forkIO $ do
+		putStrLn "CLIENT"
+		c8 <- peekFragmentCipher client_write_key client_write_iv client_write_MAC_key cl sv
+--	c8 <- peekFragment sv cl
+		print c8
+		putStrLn ""
+-}
+
+{-
+
+	putStrLn "CLIENT AGAIN 2"
+	peekFragmentCipher client_write_key client_write_iv client_write_MAC_key cl sv >>= print
+	putStrLn ""
+
+{-
+	putStrLn "CLIENT AGAIN 3"
+	peekFragmentCipher client_write_key client_write_iv client_write_MAC_key cl sv >>= print
+	putStrLn ""
+	-}
+
+	putStrLn "SERVER AGAIN 2"
+	peekFragmentCipher server_write_key server_write_iv server_write_MAC_key sv  cl >>= print
+	putStrLn ""
+
+-}
 
 --	peekChar cl sv >>= print
 --	peekChar sv cl >>= print
@@ -281,13 +330,23 @@ commandProcessor cl sv = do
 --	peek cl sv >>= print
 
 	_ <- forkIO $ forever $ do
-		c <- hGetChar cl
-		putEscChar c
-		hPutChar sv c
+		peekFragmentCipher False client_write_key client_write_iv
+			client_write_MAC_key cl sv >>= print
+--		c <- BS.hGet cl 1
+--		c <- hGetChar cl
+--		putStr $ show c
+--		putEscChar c
+--		BS.hPut sv c
+--		hPutChar sv c
 	_ <- forkIO $ forever $ do
-		c <- hGetChar sv
-		putEscChar c
-		hPutChar cl c
+		peekFragmentCipher True server_write_key server_write_iv
+			server_write_MAC_key sv cl >>= print
+--		peekFragment sv cl >>= print
+--		c <- BS.hGet sv 1
+--		c <- hGetChar sv
+--		putStr $ show c
+--		putEscChar c
+--		hPutChar cl c
 	return ()
 
 printable :: [Char]
