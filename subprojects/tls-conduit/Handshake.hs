@@ -1,39 +1,27 @@
-module Handshake (
-	Handshake,
-	byteStringToHandshakeList,
-	handshakeListToByteString
-) where
+module Handshake (Handshake, parseHandshake, handshakeToByteString) where
 
-import Prelude hiding (head, take)
+import Prelude hiding (head, take, concat)
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 
 import Data.Word
-import Data.ByteString (ByteString, append, pack)
-import qualified Data.ByteString as BS
 
 import ClientHello
 import ByteStringMonad
 import ToByteString
 
-byteStringToHandshakeList :: ByteString -> Either String [Handshake]
-byteStringToHandshakeList = evalByteStringM parseHandshakeList
-
-parseHandshakeList :: ByteStringM [Handshake]
-parseHandshakeList = do
-	hs <- parseHandshake
-	e <- empty
-	if e then return [hs] else (hs :) <$> parseHandshakeList
+data Handshake
+	= HandshakeClientHello ClientHello
+	| HandshakeRaw HandshakeType ByteString
+	deriving Show
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do
-	eh <- handshake <$> (byteStringToHandshakeType <$> head) <*> takeLen 3
-	case eh of
-		Right h -> return h
-		Left err -> throwError err
-
-handshakeListToByteString :: [Handshake] -> ByteString
-handshakeListToByteString = BS.concat . map handshakeToByteString
+	mt <- parseHandshakeType
+	section 3 $ case mt of
+		HandshakeTypeClientHello ->
+			HandshakeClientHello <$> parseClientHello
+		_ -> HandshakeRaw mt <$> whole
 
 handshakeToByteString :: Handshake -> ByteString
 handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString $
@@ -41,24 +29,17 @@ handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString $
 handshakeToByteString (HandshakeRaw mt bs) =
 	handshakeTypeToByteString mt `append` lenBodyToByteString 3 bs
 
-data Handshake
-	= HandshakeClientHello ClientHello
-	| HandshakeRaw HandshakeType ByteString
-	deriving Show
-
-handshake :: HandshakeType -> ByteString -> Either String Handshake
-handshake HandshakeTypeClientHello body = HandshakeClientHello <$>
-	byteStringToClientHello body
-handshake mt body = Right $ HandshakeRaw mt body
-
 data HandshakeType
 	= HandshakeTypeClientHello
 	| HandshakeTypeRaw Word8
 	deriving Show
 
-byteStringToHandshakeType :: Word8 -> HandshakeType
-byteStringToHandshakeType 1 = HandshakeTypeClientHello
-byteStringToHandshakeType ht = HandshakeTypeRaw ht
+parseHandshakeType :: ByteStringM HandshakeType
+parseHandshakeType = do
+	ht <- head
+	return $ case ht of
+		1 -> HandshakeTypeClientHello
+		_ -> HandshakeTypeRaw ht
 
 handshakeTypeToByteString :: HandshakeType -> ByteString
 handshakeTypeToByteString HandshakeTypeClientHello = pack [1]

@@ -1,15 +1,16 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 module ByteStringMonad (
-	ByteString, Word8, BS.pack, BS.unpack,
+	ByteString, Word8, BS.pack, BS.unpack, BS.append, BS.concat,
 
 	ByteStringM, evalByteStringM, throwError,
 	head, take, takeWords, takeInt, takeLen, empty,
+	list1, list, section, whole
 ) where
 
 import Prelude hiding (head, take)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 
 import Data.Word
 import Data.ByteString (ByteString)
@@ -54,3 +55,24 @@ takeLen n = do
 
 empty :: ByteStringM Bool
 empty = (== BS.empty) <$> get
+
+list1 :: ByteStringM a -> ByteStringM [a]
+list1 m = do
+	x <- m
+	e <- empty
+	if e then return [x] else (x :) <$> list1 m
+
+list :: ByteStringM a -> ByteStringM [a]
+list m = do
+	e <- empty
+	if e then return [] else (:) <$> m <*> list m
+
+section :: Int -> ByteStringM a -> ByteStringM a
+section n m = do
+	e <- evalByteStringM m <$> takeLen n
+	case e of
+		Right x -> return x
+		Left err -> throwError err
+
+whole :: ByteStringM ByteString
+whole = do w <- get; put ""; return w

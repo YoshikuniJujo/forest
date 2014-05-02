@@ -3,22 +3,24 @@ module Content (
 	contentToFragment
 ) where
 
-import Control.Applicative
+import Prelude hiding (concat)
 
-import Data.ByteString (ByteString)
+import Control.Applicative
 
 import Fragment
 import Handshake
+import ByteStringMonad
 
 fragmentToContent :: Fragment -> Either String Content
-fragmentToContent (Fragment ContentTypeHandshake v body) = ContentHandshake v <$>
-	byteStringToHandshakeList body
-fragmentToContent (Fragment ct v body) = return $ ContentRaw ct v body
+fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) body
+
+parseContent :: ContentType -> Version -> ByteStringM Content
+parseContent ContentTypeHandshake v = ContentHandshake v <$> list1 parseHandshake
+parseContent ct v = ContentRaw ct v <$> whole
 
 contentToFragment :: Content -> Fragment
-contentToFragment (ContentHandshake v hss) =
-	Fragment ContentTypeHandshake v $
-		handshakeListToByteString hss
+contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
+		concat $ map handshakeToByteString hss
 contentToFragment (ContentRaw ct v body) = Fragment ct v body
 
 data Content

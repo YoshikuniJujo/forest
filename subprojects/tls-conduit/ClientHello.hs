@@ -1,17 +1,43 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module ClientHello (
 	ClientHello,
-	byteStringToClientHello,
+	parseClientHello,
 	clientHelloToByteString
 ) where
 
-import Data.ByteString (ByteString)
+import Prelude hiding (concat)
 
-byteStringToClientHello :: ByteString -> Either String ClientHello
-byteStringToClientHello bs = Right $ ClientHelloRaw bs
+import Control.Applicative ((<$>))
 
-clientHelloToByteString :: ClientHello -> ByteString
-clientHelloToByteString (ClientHelloRaw bs) = bs
+import Extension
+import Parts
+import ByteStringMonad
 
 data ClientHello
-	= ClientHelloRaw ByteString
+	= ClientHello ProtocolVersion Random SessionId [CipherSuite]
+		[CompressionMethod] (Maybe ExtensionList)
+	| ClientHelloRaw ByteString
 	deriving Show
+
+parseClientHello :: ByteStringM ClientHello
+parseClientHello = do -- ClientHelloRaw <$> whole
+	pv <- parseProtocolVersion
+	r <- parseRandom
+	sid <- parseSessionId
+	css <- parseCipherSuiteList
+	cms <- parseCompressionMethodList
+	e <- empty
+	mel <- if e then return Nothing else Just <$> parseExtensionList
+	return $ ClientHello pv r sid css cms mel
+
+clientHelloToByteString :: ClientHello -> ByteString
+clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
+	protocolVersionToByteString pv,
+	randomToByteString r,
+	sessionIdToByteString sid,
+	cipherSuiteListToByteString css,
+	compressionMethodListToByteString cms,
+	maybe "" extensionListToByteString mel
+ ]
+clientHelloToByteString (ClientHelloRaw bs) = bs
