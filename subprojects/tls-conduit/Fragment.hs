@@ -2,6 +2,7 @@ module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version(..),
 	readFragment, writeFragment,
 	readRawFragment, writeRawFragment,
+	decryptRSA,
 
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,

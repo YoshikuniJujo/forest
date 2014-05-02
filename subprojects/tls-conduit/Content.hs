@@ -1,4 +1,5 @@
 module Content (
+	Content(..),
 	fragmentToContent,
 	contentToFragment
 ) where

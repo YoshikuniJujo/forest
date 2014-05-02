@@ -4,6 +4,7 @@ module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
 	Partner(..), ServerHandle(..), ClientHandle(..),
 	read, write, readLen, writeLen,
+	decryptRSA,
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack
 ) where
@@ -18,22 +19,27 @@ import Data.Word
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
+import Crypto.PubKey.RSA
+import Crypto.PubKey.RSA.PKCS15
+
 import Tools
 
 type TlsIO = ErrorT String (StateT TlsState IO)
 
 data TlsState = TlsState {
 	tlssServerHandle :: Handle,
-	tlssClientHandle :: Handle
+	tlssClientHandle :: Handle,
+	privateKey :: PrivateKey
  } deriving Show
 
 data ServerHandle = ServerHandle Handle deriving Show
 data ClientHandle = ClientHandle Handle deriving Show
 
-initTlsState :: ClientHandle -> ServerHandle -> TlsState
-initTlsState (ClientHandle cl) (ServerHandle sv) = TlsState {
+initTlsState :: ClientHandle -> ServerHandle -> PrivateKey -> TlsState
+initTlsState (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssServerHandle = sv,
-	tlssClientHandle = cl
+	tlssClientHandle = cl,
+	privateKey = pk
  }
 
 data Partner = Server | Client deriving Show
@@ -45,9 +51,9 @@ handle Client = tlssClientHandle
 runTlsIO :: TlsIO a -> TlsState -> IO (Either String a, TlsState)
 runTlsIO io ts = runErrorT io `runStateT` ts
 
-evalTlsIO :: TlsIO a -> ClientHandle -> ServerHandle -> IO a
-evalTlsIO io cl sv = do
-	ret <- runErrorT io `evalStateT` initTlsState cl sv
+evalTlsIO :: TlsIO a -> ClientHandle -> ServerHandle -> PrivateKey -> IO a
+evalTlsIO io cl sv pk = do
+	ret <- runErrorT io `evalStateT` initTlsState cl sv pk
 	case ret of
 		Right r -> return r
 		Left err -> error err
@@ -75,3 +81,10 @@ writeLen :: Partner -> Int -> ByteString -> TlsIO ()
 writeLen partner n bs = do
 	write partner $ intToByteString n $ BS.length bs
 	write partner bs
+
+decryptRSA :: ByteString -> TlsIO ByteString
+decryptRSA e = do
+	pk <- gets privateKey
+	case decrypt Nothing pk e of
+		Right d -> return d
+		Left err -> throwError $ show err
