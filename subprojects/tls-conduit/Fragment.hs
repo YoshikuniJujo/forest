@@ -30,7 +30,9 @@ import TlsIO
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
 	RawFragment ct v body <- readRawFragment p
-	updateHash body
+	case ct of
+		ContentTypeHandshake -> updateHash body
+		_ -> return ()
 	return $ Fragment ct v body
 
 writeFragment :: Partner -> Fragment -> TlsIO ()
