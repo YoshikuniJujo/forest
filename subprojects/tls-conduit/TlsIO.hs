@@ -5,7 +5,7 @@ module TlsIO (
 	Partner(..), ServerHandle(..), ClientHandle(..),
 	read, write, readLen, writeLen,
 
-	clientId,
+	clientId, clientWriteMacKey,
 
 	setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
@@ -18,6 +18,8 @@ module TlsIO (
 	debugPrintKeys,
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
+
+	updateHash, finishedHash,
 ) where
 
 import Prelude hiding (read)
@@ -41,6 +43,9 @@ import qualified MasterSecret as MS
 import Parts
 import Tools
 
+import qualified Crypto.Hash.MD5 as MD5
+import qualified Crypto.Hash.SHA1 as SHA1
+
 type TlsIO = ErrorT String (StateT TlsState IO)
 
 data TlsState = TlsState {
@@ -60,8 +65,16 @@ data TlsState = TlsState {
 	tlssClientWriteKey :: Maybe ByteString,
 	tlssServerWriteKey :: Maybe ByteString,
 	tlssClientWriteIv :: Maybe ByteString,
-	tlssServerWriteIv :: Maybe ByteString
+	tlssServerWriteIv :: Maybe ByteString,
+	tlssMd5Ctx :: MD5.Ctx,
+	tlssSha1Ctx :: SHA1.Ctx
  } deriving Show
+
+instance Show MD5.Ctx where
+	show = show . MD5.finalize
+
+instance Show SHA1.Ctx where
+	show = show . SHA1.finalize
 
 data ServerHandle = ServerHandle Handle deriving Show
 data ClientHandle = ClientHandle Handle deriving Show
@@ -84,7 +97,9 @@ initTlsState cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssClientWriteKey = Nothing,
 	tlssServerWriteKey = Nothing,
 	tlssClientWriteIv = Nothing,
-	tlssServerWriteIv = Nothing
+	tlssServerWriteIv = Nothing,
+	tlssMd5Ctx = MD5.init,
+	tlssSha1Ctx = SHA1.init
  }
 
 data Partner = Server | Client deriving Show
@@ -229,3 +244,28 @@ clientWriteDecrypt e = do
 
 clientId :: TlsIO Int
 clientId = gets tlssClientId
+
+clientWriteMacKey :: TlsIO (Maybe ByteString)
+clientWriteMacKey = gets tlssClientWriteMacKey
+
+updateHash :: ByteString -> TlsIO ()
+updateHash bs = do
+	md5 <- gets tlssMd5Ctx
+	sha1 <- gets tlssSha1Ctx
+	tlss <- get
+	liftIO $ do
+		putStrLn $ "MD5 : " ++ show (MD5.update md5 bs)
+		putStrLn $ "SHA1: " ++ show (SHA1.update sha1 bs)
+	put tlss {
+		tlssMd5Ctx = MD5.update md5 bs,
+		tlssSha1Ctx = SHA1.update sha1 bs
+	 }
+
+finishedHash :: TlsIO ByteString
+finishedHash = do
+	mms <- gets tlssMasterSecret
+	md5 <- MD5.finalize <$> gets tlssMd5Ctx
+	sha1 <- SHA1.finalize <$> gets tlssSha1Ctx
+	case mms of
+		Just ms -> return $ MS.generateFinished ms $ md5 `BS.append` sha1
+		_ -> throwError "No master secrets"

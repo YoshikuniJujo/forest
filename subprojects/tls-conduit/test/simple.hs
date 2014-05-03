@@ -47,13 +47,13 @@ server_write_iv_ref = unsafePerformIO $ newIORef ""
 
 private_key :: PrivateKey
 private_key = unsafePerformIO $ do
-	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
+	[PrivKeyRSA priv] <- readKeyFile "../localhost.key"
 	return priv
 
 main :: IO ()
 main = do
 --	print =<< readKeyFile "localhost.key"
-	[PrivKeyRSA priv] <- readKeyFile "localhost.key"
+	[PrivKeyRSA priv] <- readKeyFile "../localhost.key"
 --	print priv
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do

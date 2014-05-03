@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main (main) where
 
 import Control.Monad
@@ -11,10 +13,13 @@ import Numeric
 -- import Data.List
 import Data.Word
 import Data.ByteString (ByteString, unpack)
+import qualified Data.ByteString as BS
 
 import Data.X509.File
 import Data.X509
 import Crypto.PubKey.RSA
+import MAC
+import qualified Crypto.Hash.SHA1 as SHA1
 
 import Fragment
 import Content
@@ -101,6 +106,7 @@ conversation = do
 				putStrLn $ showKey ems
 			debugPrintKeys
 		_ -> return ()
+	fh0 <- finishedHash
 	changeCipherSpec Client Server
 	cid <- clientId
 	liftIO $ putStrLn $ ("CLIENT ID: " ++) $ show cid
@@ -110,7 +116,17 @@ conversation = do
 		liftIO $ do
 			putStrLn "---------- CLIENT FINISHED ----------"
 			print f
-		liftIO . print =<< clientWriteDecrypt body
+		decrypted <- clientWriteDecrypt body
+		liftIO $ print decrypted
+		let body = BS.take 16 decrypted
+		liftIO $ print body
+		let hash_input = "\0\0\0\0\0\0\0\0\x16\x03\x01\x00\x10" `BS.append` body
+		liftIO $ print hash_input
+		Just mac_key <- clientWriteMacKey
+		liftIO $ putStrLn $ "HASH: " ++ show (hmac SHA1.hash 64 mac_key hash_input)
+		fh <- finishedHash
+		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
+		liftIO $ putStrLn $ "FINISHED: " ++ show fh
 --	f@(RawFragment ct v body) <- readRawFragment Server -- Client
 --	f@(RawFragment ct v body) <- readRawFragment Client
 --	liftIO $ print f

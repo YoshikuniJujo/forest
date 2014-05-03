@@ -3,13 +3,13 @@ module Fragment (
 	readFragment, writeFragment,
 	readRawFragment, writeRawFragment,
 
-	clientId,
+	clientId, clientWriteMacKey,
 
 	setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
-	decryptRSA, clientWriteDecrypt,
+	decryptRSA, clientWriteDecrypt, finishedHash,
 	
 	masterSecret, expandedMasterSecret,
 
@@ -30,6 +30,7 @@ import TlsIO
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
 	RawFragment ct v body <- readRawFragment p
+	updateHash body
 	return $ Fragment ct v body
 
 writeFragment :: Partner -> Fragment -> TlsIO ()
