@@ -3,8 +3,13 @@ module Fragment (
 	readFragment, writeFragment,
 	readRawFragment, writeRawFragment,
 
-	decryptRSA, setClientRandom, setServerRandom,
+	clientId,
+
+	setClientRandom, setServerRandom,
+	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
+
+	decryptRSA, clientWriteDecrypt,
 	
 	masterSecret, expandedMasterSecret,
 
@@ -12,6 +17,8 @@ module Fragment (
 
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,
+
+	throwError,
 ) where
 
 import Prelude hiding (read)

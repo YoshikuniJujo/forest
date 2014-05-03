@@ -4,7 +4,7 @@ module Handshake (
 	Handshake(..), parseHandshake, handshakeToByteString,
 	handshakeDoesServerHelloFinish, handshakeDoesFinish,
 	handshakeDoesClientKeyExchange,
-	handshakeClientRandom, handshakeServerRandom,
+	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
 	handshakeEncryptedPreMasterSecret,
 ) where
 
@@ -39,6 +39,10 @@ handshakeClientRandom _ = Nothing
 handshakeServerRandom :: Handshake -> Maybe Random
 handshakeServerRandom (HandshakeServerHello sh) = serverHelloServerRandom sh
 handshakeServerRandom _ = Nothing
+
+handshakeCipherSuite :: Handshake -> Maybe CipherSuite
+handshakeCipherSuite (HandshakeServerHello sh) = serverHelloCipherSuite sh
+handshakeCipherSuite _ = Nothing
 
 handshakeDoesServerHelloFinish :: Handshake -> Bool
 handshakeDoesServerHelloFinish HandshakeServerHelloDone = True

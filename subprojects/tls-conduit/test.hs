@@ -7,7 +7,7 @@ import System.IO
 import Network
 import Numeric
 
-import Data.Maybe
+-- import Data.Maybe
 -- import Data.List
 import Data.Word
 import Data.ByteString (ByteString, unpack)
@@ -18,38 +18,43 @@ import Crypto.PubKey.RSA
 
 import Fragment
 import Content
-import Handshake
-import ClientHello
-import ServerHello
+-- import Handshake
+-- import ClientHello
+-- import ServerHello
 import PreMasterSecret
 import Parts
 -- import Basic
 
+import Data.IORef
+
 main :: IO ()
 main = do
+	cidRef <- newIORef 0
 	[PrivKeyRSA privateKey] <- readKeyFile "localhost.key"
 --	print privateKey
 	[pcl, psv] <- getArgs
 	withSocketsDo $ do
 		sock <- listenOn . PortNumber . fromIntegral =<< (readIO pcl :: IO Int)
 		putStrLn $ "Listening on " ++ pcl
-		sockHandler privateKey sock . PortNumber . fromIntegral =<<
+		sockHandler cidRef privateKey sock . PortNumber . fromIntegral =<<
 			(readIO psv :: IO Int)
 
-sockHandler :: PrivateKey -> Socket -> PortID -> IO ()
-sockHandler pk sock pid = do
+sockHandler :: IORef Int -> PrivateKey -> Socket -> PortID -> IO ()
+sockHandler cidRef pk sock pid = do
+	cid <- readIORef cidRef
+	modifyIORef cidRef succ
 	(cl, _, _) <- accept sock
 	hSetBuffering cl NoBuffering
 	sv <- connectTo "localhost" pid
-	_ <- forkIO $ commandProcessor cl sv pk		-- forkIO
-	sockHandler pk sock pid
+	_ <- forkIO $ commandProcessor cid cl sv pk		-- forkIO
+	sockHandler cidRef pk sock pid
 
-commandProcessor :: Handle -> Handle -> PrivateKey -> IO ()
-commandProcessor cl sv pk = do
-	evalTlsIO conversation (ClientHandle cl) (ServerHandle sv) pk
-	_ <- forkIO $ evalTlsIO clientToServer
+commandProcessor :: Int -> Handle -> Handle -> PrivateKey -> IO ()
+commandProcessor cid cl sv pk = do
+	evalTlsIO conversation cid (ClientHandle cl) (ServerHandle sv) pk
+	_ <- forkIO $ evalTlsIO clientToServer cid
 		(ClientHandle cl) (ServerHandle sv) pk
-	evalTlsIO serverToClient
+	evalTlsIO serverToClient cid
 		(ClientHandle cl) (ServerHandle sv) pk
 
 conversation :: TlsIO ()
@@ -64,13 +69,16 @@ conversation = do
 				putStrLn $ showKey cr
 		_ -> return ()
 	liftIO $ putStrLn "-------- Server Say Hello --------"
-	msr <- serverHello Nothing
-	case msr of
-		Just (Random sr) -> do
+	msrcs <- serverHello Nothing Nothing
+	case msrcs of
+		(Just (Random sr), Just cs) -> do
 			setServerRandom sr
+			cacheCipherSuite cs
 			liftIO $ do
 				putStrLn "### SERVER RANDOM ###"
 				putStrLn $ showKey sr
+				putStrLn "### CIPHER SUITE ###"
+				print cs
 		_ -> return ()
 	liftIO $ putStrLn "-------- Server Hello Done --------"
 	liftIO $ putStrLn "-------- Client Key Exchange ----------"
@@ -93,6 +101,25 @@ conversation = do
 				putStrLn $ showKey ems
 			debugPrintKeys
 		_ -> return ()
+	changeCipherSpec Client Server
+	cid <- clientId
+	liftIO $ putStrLn $ ("CLIENT ID: " ++) $ show cid
+--	when (cid == 0) $ readRawFragment Server >>= liftIO . print
+	when (cid == 0) $ do
+		f@(RawFragment ct v body) <- readRawFragment Client
+		liftIO $ do
+			putStrLn "---------- CLIENT FINISHED ----------"
+			print f
+		liftIO . print =<< clientWriteDecrypt body
+--	f@(RawFragment ct v body) <- readRawFragment Server -- Client
+--	f@(RawFragment ct v body) <- readRawFragment Client
+--	liftIO $ print f
+	{-
+	liftIO $ do
+		print ct
+		print v
+	liftIO . print =<< clientWriteDecrypt body
+	-}
 
 clientHello :: TlsIO (Maybe Random)
 clientHello = do
@@ -103,16 +130,17 @@ clientHello = do
 	writeFragment Server f'
 	return $ clientRandom c
 
-serverHello :: Maybe Random -> TlsIO (Maybe Random)
-serverHello msr = do
+serverHello :: Maybe Random -> Maybe CipherSuite ->
+	TlsIO (Maybe Random, Maybe CipherSuite)
+serverHello msr mcs = do
 	f <- readFragment Server
 	let	Right c = fragmentToContent f
 		f' = contentToFragment c
 	liftIO $ print c
 	writeFragment Client f'
 	if doesServerHelloFinish c
-		then return $ msr `mplus` serverRandom c
-		else serverHello $ msr `mplus` serverRandom c
+		then return (msr `mplus` serverRandom c, mcs `mplus` cipherSuite c)
+		else serverHello (msr `mplus` serverRandom c) (mcs `mplus` cipherSuite c)
 
 clientKeyExchange :: TlsIO (Maybe EncryptedPreMasterSecret)
 clientKeyExchange = do
@@ -129,7 +157,6 @@ clientKeyExchange = do
 
 clientToServer :: TlsIO ()
 clientToServer = do
-	toChangeCipherSpec Client Server
 	liftIO $ putStrLn "-------- Client Change Cipher Spec --------"
 	forever $ do
 		f <- readRawFragment Client
@@ -138,7 +165,6 @@ clientToServer = do
 
 serverToClient :: TlsIO ()
 serverToClient = do
-	toChangeCipherSpec Server Client
 	liftIO $ putStrLn "-------- Server Change Cipher Spec --------"
 	forever $ do
 		f <- readRawFragment Server
@@ -153,30 +179,16 @@ showH w = replicate (2 - length s) '0' ++ s
 	where
 	s = showHex w ""
 
-toChangeCipherSpec :: Partner -> Partner -> TlsIO ()
-toChangeCipherSpec from to = do
-	f@(Fragment ct _ _) <- readFragment from
+changeCipherSpec :: Partner -> Partner -> TlsIO ()
+changeCipherSpec from to = do
+	f <- readFragment from
 	let	Right c = fragmentToContent f
 		f' = contentToFragment c
 	liftIO $ print c
 	writeFragment to f'
 	case c of
-		ContentHandshake _ hss -> forM_ hss $ \hs -> do
-			case hs of
-				HandshakeClientHello (ClientHello _ (Random r) _ _ _ _) -> do
-					setClientRandom r
-				HandshakeServerHello (ServerHello _ (Random r) _ _ _ _) -> do
-					setServerRandom r
-				HandshakeClientKeyExchange
-					(EncryptedPreMasterSecret epms) -> do
-					liftIO $ putStrLn "Pre-Master Secret"
-					decryptRSA epms >>= liftIO . putStrLn . showKey
---					generateMasterSecret =<< decryptRSA epms
-				_ -> return ()
-		_ -> return ()
-	case ct of
-		ContentTypeChangeCipherSpec -> return ()
-		_ -> toChangeCipherSpec from to
+		ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite from
+		_ -> throwError "Not Change Cipher Spec"
 
 separateN :: Int -> [a] -> [[a]]
 separateN _ [] = []

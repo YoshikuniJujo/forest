@@ -5,14 +5,19 @@ module TlsIO (
 	Partner(..), ServerHandle(..), ClientHandle(..),
 	read, write, readLen, writeLen,
 
-	setClientRandom, setServerRandom, decryptRSA,
+	clientId,
+
+	setClientRandom, setServerRandom,
+	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
+
+	decryptRSA, clientWriteDecrypt,
 
 	masterSecret, expandedMasterSecret,
 
 	debugPrintKeys,
 
-	Handle, Word8, ByteString, BS.unpack, BS.pack
+	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 ) where
 
 import Prelude hiding (read)
@@ -30,6 +35,7 @@ import qualified Data.ByteString as BS
 
 import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
+import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
 import Parts
@@ -38,10 +44,12 @@ import Tools
 type TlsIO = ErrorT String (StateT TlsState IO)
 
 data TlsState = TlsState {
+	tlssClientId :: Int,
 	tlssServerHandle :: Handle,
 	tlssClientHandle :: Handle,
 	tlssPrivateKey :: PrivateKey,
-	tlssCipherSuite :: CipherSuite,
+	tlssClientWriteCipherSuite :: CipherSuite,
+	tlssServerWriteCipherSuite :: CipherSuite,
 	tlssCachedCipherSuite :: Maybe CipherSuite,
 	tlssClientRandom :: Maybe ByteString,
 	tlssServerRandom :: Maybe ByteString,
@@ -58,12 +66,14 @@ data TlsState = TlsState {
 data ServerHandle = ServerHandle Handle deriving Show
 data ClientHandle = ClientHandle Handle deriving Show
 
-initTlsState :: ClientHandle -> ServerHandle -> PrivateKey -> TlsState
-initTlsState (ClientHandle cl) (ServerHandle sv) pk = TlsState {
+initTlsState :: Int -> ClientHandle -> ServerHandle -> PrivateKey -> TlsState
+initTlsState cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
+	tlssClientId = cid,
 	tlssServerHandle = sv,
 	tlssClientHandle = cl,
 	tlssPrivateKey = pk,
-	tlssCipherSuite = TLS_NULL_WITH_NULL_NULL,
+	tlssClientWriteCipherSuite = TLS_NULL_WITH_NULL_NULL,
+	tlssServerWriteCipherSuite = TLS_NULL_WITH_NULL_NULL,
 	tlssCachedCipherSuite = Nothing,
 	tlssClientRandom = Nothing,
 	tlssServerRandom = Nothing,
@@ -86,9 +96,9 @@ handle Client = tlssClientHandle
 runTlsIO :: TlsIO a -> TlsState -> IO (Either String a, TlsState)
 runTlsIO io ts = runErrorT io `runStateT` ts
 
-evalTlsIO :: TlsIO a -> ClientHandle -> ServerHandle -> PrivateKey -> IO a
-evalTlsIO io cl sv pk = do
-	ret <- runErrorT io `evalStateT` initTlsState cl sv pk
+evalTlsIO :: TlsIO a -> Int -> ClientHandle -> ServerHandle -> PrivateKey -> IO a
+evalTlsIO io cid cl sv pk = do
+	ret <- runErrorT io `evalStateT` initTlsState cid cl sv pk
 	case ret of
 		Right r -> return r
 		Left err -> error err
@@ -131,6 +141,20 @@ setClientRandom cr = do
 setServerRandom sr = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
+
+cacheCipherSuite :: CipherSuite -> TlsIO ()
+cacheCipherSuite cs = do
+	tlss <- get
+	put $ tlss { tlssCachedCipherSuite = Just cs }
+
+flushCipherSuite :: Partner -> TlsIO ()
+flushCipherSuite p = do
+	tlss <- get
+	case tlssCachedCipherSuite tlss of
+		Just cs -> case p of
+			Client -> put tlss { tlssClientWriteCipherSuite = cs }
+			Server -> put tlss { tlssServerWriteCipherSuite = cs }
+		_ -> throwError "No cached cipher suites"
 
 generateMasterSecret :: ByteString -> TlsIO ()
 generateMasterSecret pms = do
@@ -194,3 +218,14 @@ showH :: Word8 -> String
 showH w = replicate (2 - length s) '0' ++ s
 	where
 	s = showHex w ""
+
+clientWriteDecrypt :: ByteString -> TlsIO ByteString
+clientWriteDecrypt e = do
+	mkey <- gets tlssClientWriteKey
+	miv <- gets tlssClientWriteIv
+	case (mkey, miv) of
+		(Just key, Just iv) -> return $ decryptCBC (initAES key) iv e
+		_ -> throwError "clientWriteDecrypt: No keys"
+
+clientId :: TlsIO Int
+clientId = gets tlssClientId

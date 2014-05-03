@@ -2,7 +2,7 @@
 
 module ServerHello (
 	ServerHello(..), parseServerHello, serverHelloToByteString,
-	serverHelloServerRandom
+	serverHelloServerRandom, serverHelloCipherSuite,
 ) where
 
 import Prelude hiding (concat)
@@ -23,6 +23,10 @@ data ServerHello
 serverHelloServerRandom :: ServerHello -> Maybe Random
 serverHelloServerRandom (ServerHello _ r _ _ _ _) = Just r
 serverHelloServerRandom _ = Nothing
+
+serverHelloCipherSuite :: ServerHello -> Maybe CipherSuite
+serverHelloCipherSuite (ServerHello _ _ _ cs _ _) = Just cs
+serverHelloCipherSuite _ = Nothing
 
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do
