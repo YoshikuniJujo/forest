@@ -112,6 +112,19 @@ conversation = do
 	liftIO $ putStrLn $ ("CLIENT ID: " ++) $ show cid
 --	when (cid == 0) $ readRawFragment Server >>= liftIO . print
 	when (cid == 0) $ do
+		liftIO $ putStrLn "----------- CLIENT FINISHED --------"
+		Fragment ct v body <- readFragment Client
+		liftIO $ print body
+		liftIO $ print body
+		let hash_input = "\0\0\0\0\0\0\0\0\x16\x03\x01\x00\x10" `BS.append` body
+		liftIO $ print hash_input
+		Just mac_key <- clientWriteMacKey
+		liftIO $ putStrLn $ "HASH: " ++ show (hmac SHA1.hash 64 mac_key hash_input)
+		fh <- finishedHash
+		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
+		liftIO $ putStrLn $ "FINISHED: " ++ show fh
+
+	{-
 		f@(RawFragment ct v body) <- readRawFragment Client
 		liftIO $ do
 			putStrLn "---------- CLIENT FINISHED ----------"
@@ -127,6 +140,11 @@ conversation = do
 		fh <- finishedHash
 		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
 		liftIO $ putStrLn $ "FINISHED: " ++ show fh
+		let (bodyMac, padd) = separatePadd decrypted
+		liftIO $ do
+			print $ BS.splitAt (BS.length bodyMac - 20) bodyMac
+			print padd
+			-}
 --	f@(RawFragment ct v body) <- readRawFragment Server -- Client
 --	f@(RawFragment ct v body) <- readRawFragment Client
 --	liftIO $ print f
@@ -136,6 +154,9 @@ conversation = do
 		print v
 	liftIO . print =<< clientWriteDecrypt body
 	-}
+
+separatePadd :: ByteString -> (ByteString, ByteString)
+separatePadd bs = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs
 
 clientHello :: TlsIO (Maybe Random)
 clientHello = do

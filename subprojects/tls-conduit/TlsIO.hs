@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
@@ -11,7 +11,7 @@ module TlsIO (
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
-	decryptRSA, clientWriteDecrypt,
+	decryptRSA, clientWriteDecrypt, takeBodyMac,
 
 	masterSecret, expandedMasterSecret,
 
@@ -236,11 +236,27 @@ showH w = replicate (2 - length s) '0' ++ s
 
 clientWriteDecrypt :: ByteString -> TlsIO ByteString
 clientWriteDecrypt e = do
+	cs <- gets tlssClientWriteCipherSuite
 	mkey <- gets tlssClientWriteKey
 	miv <- gets tlssClientWriteIv
-	case (mkey, miv) of
-		(Just key, Just iv) -> return $ decryptCBC (initAES key) iv e
-		_ -> throwError "clientWriteDecrypt: No keys"
+	case (cs, mkey, miv) of
+		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) ->
+			return $ decryptCBC (initAES key) iv e
+		(TLS_NULL_WITH_NULL_NULL, _, _) -> return e
+		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
+
+takeBodyMac :: ByteString -> TlsIO (ByteString, ByteString)
+takeBodyMac bmp = do
+	cs <- gets tlssClientWriteCipherSuite
+	case cs of
+		TLS_RSA_WITH_AES_128_CBC_SHA -> return $ bodyMac bmp
+		TLS_NULL_WITH_NULL_NULL -> return (bmp, "")
+		_ -> throwError "takeBodyMac: Bad cipher suite"
+
+bodyMac :: ByteString -> (ByteString, ByteString)
+bodyMac bs = let
+	(bm, _) = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs in
+	BS.splitAt (BS.length bm - 20) bm
 
 clientId :: TlsIO Int
 clientId = gets tlssClientId

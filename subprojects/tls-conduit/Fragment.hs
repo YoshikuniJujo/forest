@@ -24,12 +24,17 @@ module Fragment (
 import Prelude hiding (read)
 
 import Control.Applicative
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
 import TlsIO
 
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
-	RawFragment ct v body <- readRawFragment p
+	RawFragment ct v cbody <- readRawFragment p
+	bm <- clientWriteDecrypt cbody
+	(body, mac) <- takeBodyMac bm
+	liftIO $ putStrLn $ "MAC: " ++ show mac
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
