@@ -113,7 +113,7 @@ conversation = do
 --	when (cid == 0) $ readRawFragment Server >>= liftIO . print
 	when (cid == 0) $ do
 		liftIO $ putStrLn "----------- CLIENT FINISHED --------"
-		Fragment ct v body <- readFragment Client
+		Fragment _ _ body <- readFragment Client
 		liftIO $ print body
 		liftIO $ print body
 		let hash_input = "\0\0\0\0\0\0\0\0\x16\x03\x01\x00\x10" `BS.append` body
@@ -155,8 +155,10 @@ conversation = do
 	liftIO . print =<< clientWriteDecrypt body
 	-}
 
+{-
 separatePadd :: ByteString -> (ByteString, ByteString)
 separatePadd bs = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs
+-}
 
 clientHello :: TlsIO (Maybe Random)
 clientHello = do
@@ -209,7 +211,7 @@ serverToClient = do
 		writeRawFragment Client f
 
 showKey :: ByteString -> String
-showKey = unlines . map ('\t' :) . map unwords . separateN 16 . map showH . unpack
+showKey = unlines . map (('\t' :) . unwords) . separateN 16 . map showH . unpack
 
 showH :: Word8 -> String
 showH w = replicate (2 - length s) '0' ++ s

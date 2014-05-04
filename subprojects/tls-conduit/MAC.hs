@@ -11,10 +11,10 @@ module MAC
     , hmacSHA256
     , macSSL
     , hmac
-    , prf_MD5
-    , prf_SHA1
-    , prf_SHA256
-    , prf_MD5SHA1
+    , prfMd5
+    , prfSha1
+    , prfSha256
+    , prfMd5Sha1
     ) where
 
 import qualified Crypto.Hash.MD5 as MD5
@@ -60,18 +60,18 @@ hmacIter f secret seed aprev len =
         then [ B.take (fromIntegral len) out ]
         else out : hmacIter f secret seed an (len - digestsize)
 
-prf_SHA1 :: ByteString -> ByteString -> Int -> ByteString
-prf_SHA1 secret seed len = B.concat $ hmacIter hmacSHA1 secret seed seed len
+prfSha1 :: ByteString -> ByteString -> Int -> ByteString
+prfSha1 secret seed len = B.concat $ hmacIter hmacSHA1 secret seed seed len
 
-prf_MD5 :: ByteString -> ByteString -> Int -> ByteString
-prf_MD5 secret seed len = B.concat $ hmacIter hmacMD5 secret seed seed len
+prfMd5 :: ByteString -> ByteString -> Int -> ByteString
+prfMd5 secret seed len = B.concat $ hmacIter hmacMD5 secret seed seed len
 
-prf_MD5SHA1 :: ByteString -> ByteString -> Int -> ByteString
-prf_MD5SHA1 secret seed len =
-    B.pack $ B.zipWith xor (prf_MD5 s1 seed len) (prf_SHA1 s2 seed len)
+prfMd5Sha1 :: ByteString -> ByteString -> Int -> ByteString
+prfMd5Sha1 secret seed len =
+    B.pack $ B.zipWith xor (prfMd5 s1 seed len) (prfSha1 s2 seed len)
   where slen  = B.length secret
         s1    = B.take (slen `div` 2 + slen `mod` 2) secret
         s2    = B.drop (slen `div` 2) secret
 
-prf_SHA256 :: ByteString -> ByteString -> Int -> ByteString
-prf_SHA256 secret seed len = B.concat $ hmacIter hmacSHA256 secret seed seed len
+prfSha256 :: ByteString -> ByteString -> Int -> ByteString
+prfSha256 secret seed len = B.concat $ hmacIter hmacSHA256 secret seed seed len

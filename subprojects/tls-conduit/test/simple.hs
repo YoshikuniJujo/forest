@@ -31,8 +31,6 @@ import Data.X509
 import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
 
-import System.IO.Unsafe
-
 import Crypto.Cipher.AES
 
 import qualified Crypto.Hash.MD5 as MD5
@@ -41,12 +39,12 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import System.IO.Unsafe
 import Data.IORef
 
-client_write_iv_ref, server_write_iv_ref :: IORef BS.ByteString
-client_write_iv_ref = unsafePerformIO $ newIORef ""
-server_write_iv_ref = unsafePerformIO $ newIORef ""
+clientWriteIvRef, serverWriteIvRef :: IORef BS.ByteString
+clientWriteIvRef = unsafePerformIO $ newIORef ""
+serverWriteIvRef = unsafePerformIO $ newIORef ""
 
-private_key :: PrivateKey
-private_key = unsafePerformIO $ do
+privateKey :: PrivateKey
+privateKey = unsafePerformIO $ do
 	[PrivKeyRSA priv] <- readKeyFile "../localhost.key"
 	return priv
 
@@ -57,9 +55,9 @@ main = do
 --	print priv
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do
-		sock <- listenOn $ PortNumber $ fromIntegral $ (read p1 :: Int)
+		sock <- listenOn $ PortNumber $ fromIntegral (read p1 :: Int)
 		putStrLn $ "Listening on " ++ p1
-		sockHandler sock (PortNumber $ fromIntegral $ (read p2 :: Int))
+		sockHandler sock (PortNumber $ fromIntegral (read p2 :: Int))
 
 sockHandler :: Socket -> PortID -> IO ()
 sockHandler sock pid = do
@@ -115,8 +113,8 @@ peekServerHelloDone sv cl = do
 	case contentToHandshakeList c of
 		Just hss -> do
 			let hts = map handshakeToHandshakeType hss
-			if (HandshakeTypeServerHelloDone `elem` hts ||
-				HandshakeTypeFinished `elem` hts)
+			if HandshakeTypeServerHelloDone `elem` hts ||
+				HandshakeTypeFinished `elem` hts
 				then return [c]
 				else (c :) <$> peekServerHelloDone sv cl
 		_ -> do	putStrLn "NOT HANDSHAKE"
@@ -148,11 +146,11 @@ peekFinished key iv from to = do
 peekFragmentCipher :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
 	IO (ContentType, Version, BS.ByteString)
 peekFragmentCipher isSv key _iv mac_key from to = do
-	iv <- readIORef (if isSv then server_write_iv_ref else client_write_iv_ref)
+	iv <- readIORef (if isSv then serverWriteIvRef else clientWriteIvRef)
 	Fragment ct v cbody <- peekFragment from to
 	let	body = decryptCBC (initAES key) iv cbody
 		last16 = BS.drop (BS.length cbody - 16) cbody
-	writeIORef (if isSv then server_write_iv_ref else client_write_iv_ref) last16
+	writeIORef (if isSv then serverWriteIvRef else clientWriteIvRef) last16
 	return (ct, v, body)
 
 peekFinished :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
@@ -166,7 +164,7 @@ peekFinished isSv key iv mac_key from to = do
 		body' = handshakeToByteString hs
 		cbody' = encryptCBC (initAES key) iv body
 	writeIORef
-		(if isSv then server_write_iv_ref else client_write_iv_ref) last16
+		(if isSv then serverWriteIvRef else clientWriteIvRef) last16
 	print cbody'
 	print $ BS.length cbody'
 	print $ BS.length body
@@ -221,7 +219,7 @@ commandProcessor cl sv = do
 	putStrLn $ "MD5-SHA1: " ++ show md5sha1
 
 	putStrLn "*** PREMASTER SECRET ***"
-	let Right pre_master_secret = decrypt Nothing private_key $ rawEncryptedPreMasterSecret $ fromJust $ takeEncryptedPreMasterSecret $ head $ fromJust $ takeHandshakes $ c2
+	let Right pre_master_secret = decrypt Nothing privateKey $ rawEncryptedPreMasterSecret $ fromJust $ takeEncryptedPreMasterSecret $ head $ fromJust $ takeHandshakes c2
 	print pre_master_secret
 	print $ BS.length pre_master_secret
 	putStrLn ""
@@ -329,7 +327,7 @@ commandProcessor cl sv = do
 --	putStrLn "CLIENT:"
 --	peek cl sv >>= print
 
-	_ <- forkIO $ forever $ do
+	_ <- forkIO $ forever $
 		peekFragmentCipher False client_write_key client_write_iv
 			client_write_MAC_key cl sv >>= print
 --		c <- BS.hGet cl 1
@@ -338,7 +336,7 @@ commandProcessor cl sv = do
 --		putEscChar c
 --		BS.hPut sv c
 --		hPutChar sv c
-	_ <- forkIO $ forever $ do
+	_ <- forkIO $ forever $
 		peekFragmentCipher True server_write_key server_write_iv
 			server_write_MAC_key sv cl >>= print
 --		peekFragment sv cl >>= print
@@ -349,18 +347,16 @@ commandProcessor cl sv = do
 --		hPutChar cl c
 	return ()
 
-printable :: [Char]
+printable :: String
 printable = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ symbols ++ " "
 
-symbols :: [Char]
+symbols :: String
 symbols = "$+<=>^`|~!\"#%&'()*,-./:;?@[\\]_{}"
 
 putEscChar :: Char -> IO ()
 putEscChar c
-	| c `elem` printable = do
-		putChar c
-	| otherwise = do
-		putStr (toTwo (showHex (ord c) ""))
+	| c `elem` printable = putChar c
+	| otherwise = putStr (toTwo (showHex (ord c) ""))
 
 toTwo :: String -> String
 toTwo n = replicate (2 - length n) '0' ++ n

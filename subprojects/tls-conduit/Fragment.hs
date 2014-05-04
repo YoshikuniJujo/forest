@@ -24,8 +24,8 @@ module Fragment (
 import Prelude hiding (read)
 
 import Control.Applicative
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+-- import Data.ByteString (ByteString)
+-- import qualified Data.ByteString as BS
 
 import TlsIO
 

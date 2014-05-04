@@ -52,7 +52,7 @@ data Random
 
 instance Show Random where
 	show (Random bs) =
-		"(Random " ++ concat (map (flip showHex "") (BS.unpack bs)) ++ ")"
+		"(Random " ++ concatMap (`showHex` "") (BS.unpack bs) ++ ")"
 
 randomToByteString :: Random -> BS.ByteString
 randomToByteString (Random bs) = bs
@@ -67,7 +67,7 @@ data SessionId
 
 instance Show SessionId where
 	show (SessionId bs) =
-		"(SessionId " ++ concat (map (flip showHex "") (BS.unpack bs)) ++ ")"
+		"(SessionId " ++ concatMap (`showHex` "") (BS.unpack bs) ++ ")"
 
 sessionIdToByteString :: SessionId -> BS.ByteString
 sessionIdToByteString (SessionId sid) = lenToBS 1 sid `BS.append` sid
