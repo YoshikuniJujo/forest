@@ -73,22 +73,22 @@ parseHandshake = do
 			HandshakeCertificate <$> parseCertificateChain
 		HandshakeTypeServerHelloDone -> do
 			e <- empty
-			when (not e) $ throwError "ServerHelloDone must empty"
+			unless e $ throwError "ServerHelloDone must empty"
 			return HandshakeServerHelloDone
 		HandshakeTypeClientKeyExchange ->
 			HandshakeClientKeyExchange <$> parseEncryptedPreMasterSecret
 		_ -> HandshakeRaw mt <$> whole
 
 handshakeToByteString :: Handshake -> ByteString
-handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString $
+handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientHello $ clientHelloToByteString ch
-handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString $
+handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString sh
-handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString $
+handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ certificateChainToByteString crts
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
-handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString $
+handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientKeyExchange $
 		encryptedPreMasterSecretToByteString epms
 handshakeToByteString (HandshakeRaw mt bs) =

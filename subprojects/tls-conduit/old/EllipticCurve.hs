@@ -25,7 +25,7 @@ ellipticCurve :: Monad m => Conduit BS.ByteString m NamedCurve
 ellipticCurve = do
 	nc <- take 2
 	when (LBS.length nc == 2) $ do
-		yield $ namedCurve $ toWord16 nc
+		yield . namedCurve $ toWord16 nc
 		ellipticCurve
 
 type EllipticCurveList = [NamedCurve]

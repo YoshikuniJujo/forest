@@ -22,7 +22,7 @@ compressionMethods :: Monad m => Consumer BS.ByteString m CompressionMethods
 compressionMethods = do
 	l <- getLen 1
 	body <- take l
-	return $ map compressionMethod $ LBS.unpack body
+	return . map compressionMethod $ LBS.unpack body
 
 parseCompressionMethod :: Monad m => Consumer BS.ByteString m CompressionMethod
 parseCompressionMethod = do

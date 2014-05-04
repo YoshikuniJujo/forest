@@ -41,16 +41,16 @@ handshakeOne src = do
 	(, rest'') <$> handshake (handshakeType ht) body
 
 handshakeToByteString :: Handshake -> BS.ByteString
-handshakeToByteString (HandshakeClientHello body) = handshakeToByteString $
+handshakeToByteString (HandshakeClientHello body) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientHello $ clientHelloToByteString body
-handshakeToByteString (HandshakeServerHello body) = handshakeToByteString $
+handshakeToByteString (HandshakeServerHello body) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString body
-handshakeToByteString (HandshakeCertificate body) = handshakeToByteString $
+handshakeToByteString (HandshakeCertificate body) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $
 		certificateChainToByteString body
 handshakeToByteString (HandshakeServerHelloDone body) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone body
-handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString $
+handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientKeyExchange $
 		encryptedPreMasterSecretToByteString epms
 handshakeToByteString (HandshakeRaw ht body) =

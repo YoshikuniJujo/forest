@@ -60,7 +60,7 @@ generateKeyBlockTls prf (ClientRandom c) (ServerRandom s) mastersecret =
 
 generateKeyBlockSsl :: ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
 generateKeyBlockSsl (ClientRandom c) (ServerRandom s) mastersecret kbsize =
-    B.concat $ map computeMD5 $ take ((kbsize `div` 16) + 1) labels
+    B.concat . map computeMD5 $ take ((kbsize `div` 16) + 1) labels
   where labels            = [ uncurry BC.replicate x | x <- zip [1..] ['A'..'Z'] ]
         computeMD5  label = MD5.hash $ B.concat [ mastersecret, computeSHA1 label ]
         computeSHA1 label = SHA1.hash $ B.concat [ label, mastersecret, s, c ]

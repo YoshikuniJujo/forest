@@ -23,7 +23,7 @@ cipherSuites :: Monad m => Consumer BS.ByteString m CipherSuites
 cipherSuites = do
 	len <- getLen 2
 	css <- take len
-	return $ readCipherSuites $ toStrict css
+	return . readCipherSuites $ toStrict css
 
 type CipherSuites = [CipherSuite]
 

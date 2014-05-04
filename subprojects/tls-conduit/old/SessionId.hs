@@ -19,7 +19,7 @@ sessionId = do
 	case ml of
 		Just l -> do
 			body <- take $ fromIntegral l
-			return $ Just $ SessionId $ toStrict body
+			return . Just . SessionId $ toStrict body
 		_ -> return Nothing
 
 sessionIdToByteString :: SessionId -> BS.ByteString

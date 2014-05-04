@@ -25,9 +25,9 @@ content ContentTypeHandshake v body =
 content ct v body = return $ ContentRaw ct v body
 
 contentToByteString :: Content -> BS.ByteString
-contentToByteString (ContentHandshake v hss) = contentToByteString $
-	ContentRaw ContentTypeHandshake v $
-		BS.concat $ map handshakeToByteString hss
+contentToByteString (ContentHandshake v hss) =
+	contentToByteString .  ContentRaw ContentTypeHandshake v .  BS.concat $
+		map handshakeToByteString hss
 contentToByteString (ContentRaw ct v body) = contentTypeToByteString ct
 	`BS.append` versionToByteString v
 	`BS.append` fromLen 2 (BS.length body)

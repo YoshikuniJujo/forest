@@ -48,20 +48,20 @@ parseExtension = do
 
 
 extensionToByteString :: Extension -> ByteString
-extensionToByteString (ExtensionServerName sns) = extensionToByteString $
-	ExtensionRaw ExtensionTypeServerName $ lenBodyToByteString 2 $
+extensionToByteString (ExtensionServerName sns) = extensionToByteString .
+	ExtensionRaw ExtensionTypeServerName . lenBodyToByteString 2 .
 		concat $ map serverNameToByteString sns
-extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString $
-	ExtensionRaw ExtensionTypeEllipticCurve $ lenBodyToByteString 2 $
+extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
+	ExtensionRaw ExtensionTypeEllipticCurve . lenBodyToByteString 2 .
 		concat $ map namedCurveToByteString ecs
-extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString $
-	ExtensionRaw ExtensionTypeEcPointFormat $ lenBodyToByteString 1 $
+extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
+	ExtensionRaw ExtensionTypeEcPointFormat . lenBodyToByteString 1 .
 		concat $ map ecPointFormatToByteString epf
 extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
 	ExtensionRaw ExtensionTypeSessionTicketTls stt
 extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
 	ExtensionRaw ExtensionTypeNextProtocolNegotiation npn
-extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString $
+extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString .
 	ExtensionRaw ExtensionTypeRenegotiationInfo $ lenBodyToByteString 1 ri
 extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `append`
 	lenBodyToByteString 2 body

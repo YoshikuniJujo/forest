@@ -42,7 +42,7 @@ handshake HandshakeTypeClientHello body =
 	sourceLbs body $= clientHello $= List.map HandshakeClientHello
 handshake HandshakeTypeServerHello body =
 	sourceLbs body $= serverHello $= List.map HandshakeServerHello
-handshake typ body = yield $ HandshakeOthers typ $ toStrict body
+handshake typ body = yield . HandshakeOthers typ $ toStrict body
 
 data HandshakeType
 	= HandshakeTypeClientHello

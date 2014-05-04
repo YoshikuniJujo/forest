@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module ClientHello (ClientHello, clientHello, clientHelloToByteString) where
 

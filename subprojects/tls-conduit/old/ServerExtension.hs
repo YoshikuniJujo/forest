@@ -26,7 +26,7 @@ extensions = do
 	case mlen of
 		Just len -> do
 			body <- take len
-			return $ Just $ Extensions $ toStrict body
+			return . Just . Extensions $ toStrict body
 --			sourceLbs body $= parseExtensions $$ await
 		_ -> return Nothing
 
@@ -37,7 +37,7 @@ parseExtension :: Monad m => Conduit BS.ByteString m Extension
 parseExtension = do
 	t <- take 2
 	when (LBS.length t == 2) $ do
-		eachExtension $ extensionType $ toWord16 t
+		eachExtension . extensionType $ toWord16 t
 		parseExtension
 
 eachExtension :: Monad m => ExtensionType -> Conduit BS.ByteString m Extension
@@ -56,7 +56,7 @@ eachExtension ExtensionTypeEcPointFormats = do
 eachExtension ExtensionTypeSessionTicketTLS = do
 	l <- getLen 2
 	body <- take l
-	yield $ ExtensionSessionTicketTLS $ toStrict body
+	yield . ExtensionSessionTicketTLS $ toStrict body
 eachExtension ExtensionTypeNextProtocolNegotiation = do
 	0 <- getLen 2
 	yield ExtensionNextProtocolNegotiation
@@ -65,7 +65,7 @@ eachExtension et = do
 	case mlen of
 		Just len -> do
 			body <- take len
-			yield $ ExtensionOthers et $ toStrict body
+			yield . ExtensionOthers et $ toStrict body
 		_ -> return ()
 
 toWord16 :: LBS.ByteString -> Word16

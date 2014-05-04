@@ -1,5 +1,5 @@
 module Fragment (
-	Fragment(..), RawFragment(..), ContentType(..), Version(..),
+	Fragment(..), RawFragment(..), ContentType(..), Version,
 	readFragment, writeFragment,
 	readRawFragment, writeRawFragment,
 
@@ -35,9 +35,9 @@ readFragment p = do
 	RawFragment ct v cbody <- readRawFragment p
 	bm <- clientWriteDecrypt cbody
 	(body, mac) <- takeBodyMac bm
-	liftIO $ putStrLn $ "MAC : " ++ show mac
+	liftIO . putStrLn $ "MAC : " ++ show mac
 	cmac <- calcMac p ct v body
-	liftIO $ putStrLn $ ("CMAC: " ++) $ show cmac
+	liftIO . putStrLn . ("CMAC: " ++) $ show cmac
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()

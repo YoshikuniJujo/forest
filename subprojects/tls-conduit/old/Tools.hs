@@ -25,9 +25,9 @@ getLen n = toLen <$> take n
 maybeLen :: Monad m => Int -> Consumer BS.ByteString m (Maybe Int)
 maybeLen n = do
 	bs <- take n
-	if LBS.length bs < fromIntegral n
-		then return Nothing
-		else return $ Just $ toLen bs
+	return $ if LBS.length bs < fromIntegral n
+		then Nothing
+		else Just $ toLen bs
 
 lenToBS :: Int -> Int -> BS.ByteString
 lenToBS n = BS.pack . toWords (n - 1)

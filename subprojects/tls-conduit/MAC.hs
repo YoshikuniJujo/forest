@@ -30,7 +30,7 @@ macSSL :: (ByteString -> ByteString) -> HMAC
 macSSL f secret msg = f $! B.concat [ secret, B.replicate padlen 0x5c,
                         f $! B.concat [ secret, B.replicate padlen 0x36, msg ] ]
   where -- get the type of algorithm out of the digest length by using the hash fct.
-        padlen = if (B.length $ f B.empty) == 16 then 48 else 40
+        padlen = if B.length (f B.empty) == 16 then 48 else 40
 
 hmac :: (ByteString -> ByteString) -> Int -> HMAC
 hmac f bl secret msg =
@@ -43,13 +43,13 @@ hmac f bl secret msg =
                 pad = B.replicate (fromIntegral bl - B.length kt) 0
 
 hmacMD5 :: HMAC
-hmacMD5 secret msg = hmac MD5.hash 64 secret msg
+hmacMD5 = hmac MD5.hash 64
 
 hmacSHA1 :: HMAC
-hmacSHA1 secret msg = hmac SHA1.hash 64 secret msg
+hmacSHA1 = hmac SHA1.hash 64
 
 hmacSHA256 :: HMAC
-hmacSHA256 secret msg = hmac SHA256.hash 64 secret msg
+hmacSHA256 = hmac SHA256.hash 64
 
 hmacIter :: HMAC -> ByteString -> ByteString -> ByteString -> Int -> [ByteString]
 hmacIter f secret seed aprev len =

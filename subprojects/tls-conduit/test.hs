@@ -12,16 +12,12 @@ import Numeric
 
 -- import Data.Maybe
 -- import Data.List
-import Data.Bits
 import Data.Word
 import Data.ByteString (ByteString, unpack)
-import qualified Data.ByteString as BS
 
 import Data.X509.File
 import Data.X509
 import Crypto.PubKey.RSA
-import MAC
-import qualified Crypto.Hash.SHA1 as SHA1
 
 import Fragment
 import Content
@@ -33,8 +29,6 @@ import Parts
 -- import Basic
 
 import Data.IORef
-
-import ToByteString
 
 main :: IO ()
 main = do
@@ -113,15 +107,15 @@ conversation = do
 	fh0 <- finishedHash
 	changeCipherSpec Client Server
 	cid <- clientId
-	liftIO $ putStrLn $ ("CLIENT ID: " ++) $ show cid
+	liftIO . putStrLn . ("CLIENT ID: " ++) $ show cid
 --	when (cid == 0) $ readRawFragment Server >>= liftIO . print
 	when (cid == 0) $ do
 		liftIO $ putStrLn "----------- CLIENT FINISHED --------"
 		Right c <- fragmentToContent <$> readFragment Client
 		liftIO $ print c
 		fh <- finishedHash
-		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
-		liftIO $ putStrLn $ "FINISHED: " ++ show fh
+		liftIO . putStrLn $ "FINISHED: " ++ show fh0
+		liftIO . putStrLn $ "FINISHED: " ++ show fh
 
 	{-
 		f@(RawFragment ct v body) <- readRawFragment Client
@@ -153,11 +147,6 @@ conversation = do
 		print v
 	liftIO . print =<< clientWriteDecrypt body
 	-}
-
-{-
-separatePadd :: ByteString -> (ByteString, ByteString)
-separatePadd bs = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs
--}
 
 clientHello :: TlsIO (Maybe Random)
 clientHello = do

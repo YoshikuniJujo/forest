@@ -54,7 +54,7 @@ main = do
 --	print priv
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do
-		sock <- listenOn $ PortNumber $ fromIntegral (read p1 :: Int)
+		sock <- listenOn . PortNumber $ fromIntegral (read p1 :: Int)
 		putStrLn $ "Listening on " ++ p1
 		sockHandler sock (PortNumber $ fromIntegral (read p2 :: Int))
 
@@ -162,7 +162,7 @@ peekFinished isSv key iv mac_key from to = do
 		body'
 	print hash_input
 	print $ hmac SHA1.hash 64 mac_key hash_input
-	BS.hPutStr to $ fragmentToByteString $ Fragment ct v cbody'
+	BS.hPutStr to . fragmentToByteString $ Fragment ct v cbody'
 --	BS.hPutStr to $ fragmentToByteString $ Fragment ct v cbody
 	return cont
 
@@ -178,7 +178,10 @@ commandProcessor cl sv = do
 --	print c1
 
 	putStrLn "*** CLIENT RANDOM ***"
-	let client_random = fromJust $ takeClientRandom $ fromJust $ takeClientHello $ head $ fromJust $ takeHandshakes c1
+	let client_random =
+		fromJust . takeClientRandom . fromJust . takeClientHello .
+			head . fromJust $
+			takeHandshakes c1
 	print client_random
 	putStrLn ""
 
@@ -188,7 +191,10 @@ commandProcessor cl sv = do
 --	print s1 >> putStrLn ""
 
 	putStrLn "*** SERVER RANDOM ***"
-	let server_random = fromJust $ takeServerRandom $ fromJust $ takeServerHello $ head $ fromJust $ takeHandshakes $ head s1
+	let server_random =
+		fromJust . takeServerRandom . fromJust . takeServerHello .
+			head . fromJust . takeHandshakes $
+			head s1
 	print server_random
 	putStrLn ""
 
@@ -206,7 +212,10 @@ commandProcessor cl sv = do
 	putStrLn $ "MD5-SHA1: " ++ show md5sha1
 
 	putStrLn "*** PREMASTER SECRET ***"
-	let Right pre_master_secret = decrypt Nothing privateKey $ rawEncryptedPreMasterSecret $ fromJust $ takeEncryptedPreMasterSecret $ head $ fromJust $ takeHandshakes c2
+	let Right pre_master_secret =
+		decrypt Nothing privateKey . rawEncryptedPreMasterSecret .
+		fromJust . takeEncryptedPreMasterSecret . head . fromJust $
+			takeHandshakes c2
 	print pre_master_secret
 	print $ BS.length pre_master_secret
 	putStrLn ""
@@ -314,7 +323,7 @@ commandProcessor cl sv = do
 --	putStrLn "CLIENT:"
 --	peek cl sv >>= print
 
-	_ <- forkIO $ forever $
+	_ <- forkIO . forever $
 		peekFragmentCipher False client_write_key client_write_iv
 			client_write_MAC_key cl sv >>= print
 --		c <- BS.hGet cl 1
@@ -323,7 +332,7 @@ commandProcessor cl sv = do
 --		putEscChar c
 --		BS.hPut sv c
 --		hPutChar sv c
-	_ <- forkIO $ forever $
+	_ <- forkIO . forever $
 		peekFragmentCipher True server_write_key server_write_iv
 			server_write_MAC_key sv cl >>= print
 --		peekFragment sv cl >>= print

@@ -148,7 +148,7 @@ namedCurveToByteString (NamedCurveRaw w) = BS.pack $ word16ToWords w
 namedCurve :: BS.ByteString -> Either String (NamedCurve, BS.ByteString)
 namedCurve src = do
 	(nc, rest) <- eitherSplitAt "namedCurve" 2 src
-	return (namedCurveSelect $ wordsToWord16 $ BS.unpack nc, rest)
+	return (namedCurveSelect . wordsToWord16 $ BS.unpack nc, rest)
 
 data EcPointFormat
 	= EcPointFormatUncompressed

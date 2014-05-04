@@ -29,7 +29,7 @@ parseContent ct v = ContentRaw ct v <$> whole
 contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =
 	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
-contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
+contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v .
 		concat $ map handshakeToByteString hss
 contentToFragment (ContentRaw ct v body) = Fragment ct v body
 

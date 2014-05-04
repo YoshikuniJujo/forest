@@ -14,7 +14,7 @@ renegotiationInfo :: Monad m => Conduit BS.ByteString m RenegotiationInfo
 renegotiationInfo = do
 	len <- getLen 1
 	body <- take len
-	yield $ RenegotiationInfo $ toStrict body
+	yield . RenegotiationInfo $ toStrict body
 
 data RenegotiationInfo = RenegotiationInfo BS.ByteString
 	deriving Show

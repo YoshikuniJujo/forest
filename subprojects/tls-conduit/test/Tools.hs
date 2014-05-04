@@ -46,7 +46,7 @@ wordsToWord16 _ = error "wordsToWord16: bad word list"
 toLen :: BS.ByteString -> Either String Int
 toLen bs = do
 	check "toLen" $ l <= 4
-	return $ ti (l - 1) $ map fromIntegral $ BS.unpack bs
+	return . ti (l - 1) . map fromIntegral $ BS.unpack bs
 	where
 	l = BS.length bs
 	ti n _ | n < 0 = 0

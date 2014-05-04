@@ -46,8 +46,7 @@ main = runTCPServer (serverSettings 4492 "*") $ \ad -> do
 --	hGetContents sv >>= print
 
 serverToClient :: AppData -> AppData -> IO ()
-serverToClient adsv ad = do
-	appSource adsv $= peek $$ appSink ad
+serverToClient adsv ad = appSource adsv $= peek $$ appSink ad
 	
 peek :: (Monad m, MonadIO m) => Conduit BS.ByteString m BS.ByteString
 peek = do

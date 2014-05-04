@@ -24,7 +24,7 @@ instance Show Random where
 random :: Monad m => Consumer BS.ByteString m Random
 random = do
 	bs <- take 32
-	return $ Random $ toStrict bs
+	return . Random $ toStrict bs
 
 randomToByteString :: Random -> BS.ByteString
 randomToByteString (Random bs) = bs

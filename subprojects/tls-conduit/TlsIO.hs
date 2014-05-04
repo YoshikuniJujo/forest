@@ -1,4 +1,5 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
@@ -22,7 +23,7 @@ module TlsIO (
 	updateHash, finishedHash, calcMac,
 
 	ContentType(..), readContentType, writeContentType,
-	Version(..), readVersion, writeVersion,
+	Version, readVersion, writeVersion,
 ) where
 
 import Prelude hiding (read)
@@ -155,7 +156,7 @@ readLen partner n = do
 
 writeLen :: Partner -> Int -> ByteString -> TlsIO ()
 writeLen partner n bs = do
-	write partner $ intToByteString n $ BS.length bs
+	write partner . intToByteString n $ BS.length bs
 	write partner bs
 
 decryptRSA :: ByteString -> TlsIO ByteString
@@ -234,7 +235,7 @@ debugPrintKeys = do
 	Just cwi <- gets tlssClientWriteIv
 	Just swi <- gets tlssServerWriteIv
 	liftIO $ do
-		putStrLn $ "###### GENERATED KEYS ######"
+		putStrLn "###### GENERATED KEYS ######"
 		putStrLn $ "Client Write MAC Key: " ++ showKey cwmk
 		putStrLn $ "Server Write MAC Key: " ++ showKey swmk
 		putStrLn $ "Client Write Key    : " ++ showKey cwk
@@ -299,7 +300,7 @@ finishedHash = do
 	md5 <- MD5.finalize <$> gets tlssMd5Ctx
 	sha1 <- SHA1.finalize <$> gets tlssSha1Ctx
 	case mms of
-		Just ms -> return $ MS.generateFinished ms $ md5 `BS.append` sha1
+		Just ms -> return . MS.generateFinished ms $ md5 `BS.append` sha1
 		_ -> throwError "No master secrets"
 
 updateSequenceNumber :: Partner -> TlsIO Word64
@@ -323,9 +324,9 @@ calcMac partner ct v body = do
 calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> ByteString ->
 	TlsIO ByteString
 calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
-	seq <- updateSequenceNumber partner
+	sn <- updateSequenceNumber partner
 	let hashInput = BS.concat [
-		word64ToByteString seq ,
+		word64ToByteString sn ,
 		contentTypeToByteString ct,
 		versionToByteString v,
 		lenBodyToByteString 2 body ]
