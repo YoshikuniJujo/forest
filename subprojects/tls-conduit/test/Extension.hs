@@ -89,7 +89,8 @@ data ServerName
 	deriving Show
 
 serverNameSelect :: NameType -> BS.ByteString -> ServerName
-serverNameSelect nt bs = ServerName nt bs
+-- serverNameSelect nt bs = ServerName nt bs
+serverNameSelect = ServerName
 
 serverNameToByteString :: ServerName -> BS.ByteString
 serverNameToByteString (ServerName nt bs) =
@@ -102,7 +103,8 @@ data NameType
 	deriving Show
 
 nameTypeSelect :: Word8 -> NameType
-nameTypeSelect w = NameTypeRaw w
+-- nameTypeSelect w = NameTypeRaw w
+nameTypeSelect = NameTypeRaw
 
 nameTypeToByteString :: NameType -> BS.ByteString
 nameTypeToByteString (NameTypeRaw w) = BS.pack [w]

@@ -6,7 +6,6 @@ module Fragment (
 
 import Prelude hiding (init)
 
-import Control.Applicative
 import System.IO
 
 import Data.Bits
@@ -29,10 +28,10 @@ sha1Ctx :: IORef SHA1.Ctx
 sha1Ctx = unsafePerformIO $ newIORef SHA1.init
 
 updateMD5 :: BS.ByteString -> IO ()
-updateMD5 bs = modifyIORef md5Ctx (flip MD5.update bs)
+updateMD5 bs = modifyIORef md5Ctx (`MD5.update` bs)
 
 updateSHA1 :: BS.ByteString -> IO ()
-updateSHA1 bs = modifyIORef sha1Ctx (flip SHA1.update bs)
+updateSHA1 bs = modifyIORef sha1Ctx (`SHA1.update` bs)
 
 readFragment :: Handle -> IO (Fragment, (MD5.Ctx, SHA1.Ctx))
 readFragment h = do
@@ -55,7 +54,8 @@ data Fragment
 	deriving Show
 
 fragment :: ContentType -> Version -> BS.ByteString -> Fragment
-fragment ct v body = Fragment ct v body
+-- fragment ct v body = Fragment ct v body
+fragment = Fragment
 
 fragmentToByteString :: Fragment -> BS.ByteString
 fragmentToByteString (Fragment ct v cnt) = contentTypeToByteString ct

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TupleSections #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Tools (
 	bsToLen, lenToBS,

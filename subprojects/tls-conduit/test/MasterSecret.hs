@@ -42,7 +42,7 @@ generateMasterSecretTls prf premasterSecret (ClientRandom c) (ServerRandom s) =
   where seed = B.concat [ "master secret", c, s ]
 
 generateFinished :: Bytes -> Bytes -> Bytes
-generateFinished ms hash = prf_MD5SHA1 ms ("client finished" `B.append` hash) 12
+generateFinished ms hash = prfMd5Sha1 ms ("client finished" `B.append` hash) 12
 
 masterSecret :: B.ByteString -> ClientRandom -> ServerRandom -> B.ByteString
 masterSecret = generateMasterSecret TLS10
@@ -50,9 +50,9 @@ masterSecret = generateMasterSecret TLS10
 generateMasterSecret :: Version -> Bytes -> ClientRandom -> ServerRandom -> Bytes
 generateMasterSecret SSL2  = generateMasterSecretSsl
 generateMasterSecret SSL3  = generateMasterSecretSsl
-generateMasterSecret TLS10 = generateMasterSecretTls prf_MD5SHA1
-generateMasterSecret TLS11 = generateMasterSecretTls prf_MD5SHA1
-generateMasterSecret TLS12 = generateMasterSecretTls prf_SHA256
+generateMasterSecret TLS10 = generateMasterSecretTls prfMd5Sha1
+generateMasterSecret TLS11 = generateMasterSecretTls prfMd5Sha1
+generateMasterSecret TLS12 = generateMasterSecretTls prfSha256
 
 generateKeyBlockTls :: PRF -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
 generateKeyBlockTls prf (ClientRandom c) (ServerRandom s) mastersecret =
@@ -74,6 +74,6 @@ keyBlock = generateKeyBlock TLS10
 generateKeyBlock :: Version -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
 generateKeyBlock SSL2  = generateKeyBlockSsl
 generateKeyBlock SSL3  = generateKeyBlockSsl
-generateKeyBlock TLS10 = generateKeyBlockTls prf_MD5SHA1
-generateKeyBlock TLS11 = generateKeyBlockTls prf_MD5SHA1
-generateKeyBlock TLS12 = generateKeyBlockTls prf_SHA256
+generateKeyBlock TLS10 = generateKeyBlockTls prfMd5Sha1
+generateKeyBlock TLS11 = generateKeyBlockTls prfMd5Sha1
+generateKeyBlock TLS12 = generateKeyBlockTls prfSha256

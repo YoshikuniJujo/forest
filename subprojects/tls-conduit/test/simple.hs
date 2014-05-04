@@ -11,7 +11,6 @@ import System.IO
 import System.Environment
 import Control.Concurrent
 import Control.Monad
-import Data.Char
 import Numeric
 import qualified Data.ByteString as BS
 
@@ -51,7 +50,7 @@ privateKey = unsafePerformIO $ do
 main :: IO ()
 main = do
 --	print =<< readKeyFile "localhost.key"
-	[PrivKeyRSA priv] <- readKeyFile "../localhost.key"
+--	[PrivKeyRSA priv] <- readKeyFile "../localhost.key"
 --	print priv
 	p1 : p2 : _ <- getArgs
 	withSocketsDo $ do
@@ -66,11 +65,6 @@ sockHandler sock pid = do
 	sv <- connectTo "localhost" pid
 	commandProcessor cl sv
 	sockHandler sock pid 
-
-readContent :: Handle -> IO (Either String Content)
-readContent h = do
-	(Fragment ct v body, _) <- readFragment h
-	return $ content ct v body
 
 peekWithHash :: Handle -> Handle -> IO (Either String Content, (MD5.Ctx, SHA1.Ctx))
 peekWithHash from to = do
@@ -99,13 +93,6 @@ peekFragment from to = do
 	(cont, _) <- readFragment from
 	BS.hPutStr to $ fragmentToByteString cont
 	return cont
-
-peekChar :: Handle -> Handle -> IO BS.ByteString
-peekChar from to = do
-	c <- BS.hGet from 1
-	print c
-	BS.hPut to c
-	return c
 
 peekServerHelloDone :: Handle -> Handle -> IO [Content]
 peekServerHelloDone sv cl = do
@@ -145,7 +132,7 @@ peekFinished key iv from to = do
 
 peekFragmentCipher :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Handle -> Handle ->
 	IO (ContentType, Version, BS.ByteString)
-peekFragmentCipher isSv key _iv mac_key from to = do
+peekFragmentCipher isSv key _iv _mac_key from to = do
 	iv <- readIORef (if isSv then serverWriteIvRef else clientWriteIvRef)
 	Fragment ct v cbody <- peekFragment from to
 	let	body = decryptCBC (initAES key) iv cbody
@@ -346,20 +333,6 @@ commandProcessor cl sv = do
 --		putEscChar c
 --		hPutChar cl c
 	return ()
-
-printable :: String
-printable = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ symbols ++ " "
-
-symbols :: String
-symbols = "$+<=>^`|~!\"#%&'()*,-./:;?@[\\]_{}"
-
-putEscChar :: Char -> IO ()
-putEscChar c
-	| c `elem` printable = putChar c
-	| otherwise = putStr (toTwo (showHex (ord c) ""))
-
-toTwo :: String -> String
-toTwo n = replicate (2 - length n) '0' ++ n
 
 divide :: [Int] -> BS.ByteString -> [BS.ByteString]
 divide [] _ = []
