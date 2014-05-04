@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import Control.Applicative
 import Control.Monad
 import Control.Concurrent
 import System.Environment
@@ -11,6 +12,7 @@ import Numeric
 
 -- import Data.Maybe
 -- import Data.List
+import Data.Bits
 import Data.Word
 import Data.ByteString (ByteString, unpack)
 import qualified Data.ByteString as BS
@@ -31,6 +33,8 @@ import Parts
 -- import Basic
 
 import Data.IORef
+
+import ToByteString
 
 main :: IO ()
 main = do
@@ -113,13 +117,8 @@ conversation = do
 --	when (cid == 0) $ readRawFragment Server >>= liftIO . print
 	when (cid == 0) $ do
 		liftIO $ putStrLn "----------- CLIENT FINISHED --------"
-		Fragment _ _ body <- readFragment Client
-		liftIO $ print body
-		liftIO $ print body
-		let hash_input = "\0\0\0\0\0\0\0\0\x16\x03\x01\x00\x10" `BS.append` body
-		liftIO $ print hash_input
-		Just mac_key <- clientWriteMacKey
-		liftIO $ putStrLn $ "HASH: " ++ show (hmac SHA1.hash 64 mac_key hash_input)
+		Right c <- fragmentToContent <$> readFragment Client
+		liftIO $ print c
 		fh <- finishedHash
 		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
 		liftIO $ putStrLn $ "FINISHED: " ++ show fh

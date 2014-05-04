@@ -8,6 +8,8 @@ module Parts (
 		parseCipherSuiteList, cipherSuiteListToByteString,
 	CompressionMethod, parseCompressionMethod, compressionMethodToByteString,
 		parseCompressionMethodList, compressionMethodListToByteString,
+	ContentType(..), byteStringToContentType, contentTypeToByteString,
+	Version, byteStringToVersion, versionToByteString,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -17,6 +19,9 @@ import Control.Applicative ((<$>))
 
 import ByteStringMonad
 import ToByteString
+
+import System.IO
+import qualified Data.ByteString as BS
 
 data ProtocolVersion = ProtocolVersion Word8 Word8 deriving Show
 
@@ -100,3 +105,50 @@ parseCompressionMethod = do
 compressionMethodToByteString :: CompressionMethod -> ByteString
 compressionMethodToByteString CompressionMethodNull = "\0"
 compressionMethodToByteString (CompressionMethodRaw cm) = pack [cm]
+
+data ContentType
+	= ContentTypeChangeCipherSpec
+	| ContentTypeHandshake
+	| ContentTypeRaw Word8
+	deriving Show
+
+readContentType :: Handle -> IO ContentType
+readContentType partner = do
+	t <- BS.hGet partner 1
+	let [ct] = unpack t
+	return $ case ct of
+		20 -> ContentTypeChangeCipherSpec
+		22 -> ContentTypeHandshake
+		_ -> ContentTypeRaw ct
+
+byteStringToContentType :: ByteString -> ContentType
+byteStringToContentType "\20" = ContentTypeChangeCipherSpec
+byteStringToContentType "\22" = ContentTypeHandshake
+byteStringToContentType bs = let [ct] = unpack bs in ContentTypeRaw ct
+
+writeContentType :: Handle -> ContentType -> IO ()
+writeContentType partner ct = BS.hPut partner $ contentTypeToByteString ct
+
+contentTypeToByteString :: ContentType -> ByteString
+contentTypeToByteString ContentTypeChangeCipherSpec = pack [20]
+contentTypeToByteString ContentTypeHandshake = pack [22]
+contentTypeToByteString (ContentTypeRaw ct) = pack [ct]
+
+data Version
+	= Version Word8 Word8
+	deriving Show
+
+readVersion :: Handle -> IO Version
+readVersion partner = do
+	v <- BS.hGet partner 2
+	let [vmjr, vmnr] = unpack v
+	return $ Version vmjr vmnr
+
+byteStringToVersion :: ByteString -> Version
+byteStringToVersion v = let [vmjr, vmnr] = unpack v in Version vmjr vmnr
+
+writeVersion :: Handle -> Version -> IO ()
+writeVersion partner v = BS.hPut partner $ versionToByteString v
+
+versionToByteString :: Version -> ByteString
+versionToByteString (Version vmjr vmnr) = pack [vmjr, vmnr]

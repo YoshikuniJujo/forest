@@ -19,7 +19,10 @@ module TlsIO (
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 
-	updateHash, finishedHash,
+	updateHash, finishedHash, calcMac,
+
+	ContentType(..), readContentType, writeContentType,
+	Version(..), readVersion, writeVersion,
 ) where
 
 import Prelude hiding (read)
@@ -40,11 +43,20 @@ import Crypto.PubKey.RSA.PKCS15
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
+{-
+import Parts (
+	CipherSuite(..),
+	ContentType, contentTypeToByteString,
+	Version, versionToByteString,)
+	-}
 import Parts
 import Tools
 
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Crypto.Hash.SHA1 as SHA1
+
+import MAC
+import ToByteString
 
 type TlsIO = ErrorT String (StateT TlsState IO)
 
@@ -67,7 +79,9 @@ data TlsState = TlsState {
 	tlssClientWriteIv :: Maybe ByteString,
 	tlssServerWriteIv :: Maybe ByteString,
 	tlssMd5Ctx :: MD5.Ctx,
-	tlssSha1Ctx :: SHA1.Ctx
+	tlssSha1Ctx :: SHA1.Ctx,
+	tlssClientSequenceNumber :: Word64,
+	tlssServerSequenceNumber :: Word64
  } deriving Show
 
 instance Show MD5.Ctx where
@@ -99,7 +113,9 @@ initTlsState cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssClientWriteIv = Nothing,
 	tlssServerWriteIv = Nothing,
 	tlssMd5Ctx = MD5.init,
-	tlssSha1Ctx = SHA1.init
+	tlssSha1Ctx = SHA1.init,
+	tlssClientSequenceNumber = 0,
+	tlssServerSequenceNumber = 0
  }
 
 data Partner = Server | Client deriving Show
@@ -285,3 +301,49 @@ finishedHash = do
 	case mms of
 		Just ms -> return $ MS.generateFinished ms $ md5 `BS.append` sha1
 		_ -> throwError "No master secrets"
+
+updateSequenceNumber :: Partner -> TlsIO Word64
+updateSequenceNumber partner = do
+	sn <- gets $ case partner of
+		Client -> tlssClientSequenceNumber
+		Server -> tlssServerSequenceNumber
+	tlss <- get
+	put $ case partner of
+		Client -> tlss { tlssClientSequenceNumber = succ sn }
+		Server -> tlss { tlssServerSequenceNumber = succ sn }
+	return sn
+
+calcMac :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
+calcMac partner ct v body = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
+	calcMacCs cs partner ct v body
+
+calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> ByteString ->
+	TlsIO ByteString
+calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
+	seq <- updateSequenceNumber partner
+	let hashInput = BS.concat [
+		word64ToByteString seq ,
+		contentTypeToByteString ct,
+		versionToByteString v,
+		lenBodyToByteString 2 body ]
+	Just macKey <- case partner of
+		Client -> gets tlssClientWriteMacKey
+		Server -> gets tlssServerWriteMacKey
+	return $ hmac SHA1.hash 64 macKey hashInput
+calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
+calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"
+
+readVersion :: Partner -> TlsIO Version
+readVersion partner = byteStringToVersion <$> read partner 2
+
+writeVersion :: Partner -> Version -> TlsIO ()
+writeVersion partner v = write partner $ versionToByteString v
+
+readContentType :: Partner -> TlsIO ContentType
+readContentType partner = byteStringToContentType <$> read partner 1
+
+writeContentType :: Partner -> ContentType -> TlsIO ()
+writeContentType partner ct = write partner $ contentTypeToByteString ct
