@@ -3,7 +3,7 @@
 
 module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
-	Partner(..), ServerHandle(..), ClientHandle(..),
+	Partner(..), opponent, ServerHandle(..), ClientHandle(..),
 	read, write, readLen, writeLen,
 
 	clientId, clientWriteMacKey,
@@ -12,7 +12,7 @@ module TlsIO (
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
-	decryptRSA, clientWriteDecrypt, takeBodyMac,
+	decryptRSA, decrypt, encrypt, takeBodyMac,
 
 	masterSecret, expandedMasterSecret,
 
@@ -20,10 +20,12 @@ module TlsIO (
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 
-	updateHash, finishedHash, calcMac,
+	updateHash, finishedHash, calcMac, updateSequenceNumber,
 
 	ContentType(..), readContentType, writeContentType,
 	Version, readVersion, writeVersion,
+
+	getCipherSuite, CipherSuite(..)
 ) where
 
 import Prelude hiding (read)
@@ -40,7 +42,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
 import Crypto.PubKey.RSA
-import Crypto.PubKey.RSA.PKCS15
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
@@ -121,6 +123,10 @@ initTlsState cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 
 data Partner = Server | Client deriving Show
 
+opponent :: Partner -> Partner
+opponent Server = Client
+opponent Client = Server
+
 handle :: Partner -> TlsState -> Handle
 handle Server = tlssServerHandle
 handle Client = tlssClientHandle
@@ -162,7 +168,7 @@ writeLen partner n bs = do
 decryptRSA :: ByteString -> TlsIO ByteString
 decryptRSA e = do
 	pk <- gets tlssPrivateKey
-	case decrypt Nothing pk e of
+	case RSA.decrypt Nothing pk e of
 		Right d -> return d
 		Left err -> throwError $ show err
 
@@ -235,13 +241,13 @@ debugPrintKeys = do
 	Just cwi <- gets tlssClientWriteIv
 	Just swi <- gets tlssServerWriteIv
 	liftIO $ do
-		putStrLn "###### GENERATED KEYS ######"
-		putStrLn $ "Client Write MAC Key: " ++ showKey cwmk
-		putStrLn $ "Server Write MAC Key: " ++ showKey swmk
-		putStrLn $ "Client Write Key    : " ++ showKey cwk
-		putStrLn $ "Server Write Key    : " ++ showKey swk
-		putStrLn $ "Client Write IV     : " ++ showKey cwi
-		putStrLn $ "Server Write IV     : " ++ showKey swi
+		putStrLn "### GENERATED KEYS ###"
+		putStrLn $ "\tClntWr MAC Key: " ++ showKey cwmk
+		putStrLn $ "\tSrvrWr MAC Key: " ++ showKey swmk
+		putStrLn $ "\tClntWr Key    : " ++ showKey cwk
+		putStrLn $ "\tSrvrWr Key    : " ++ showKey swk
+		putStrLn $ "\tClntWr IV     : " ++ showKey cwi
+		putStrLn $ "\tSrvrWr IV     : " ++ showKey swi
 
 showKey :: ByteString -> String
 showKey = unwords . map showH . BS.unpack
@@ -251,20 +257,45 @@ showH w = replicate (2 - length s) '0' ++ s
 	where
 	s = showHex w ""
 
-clientWriteDecrypt :: ByteString -> TlsIO ByteString
-clientWriteDecrypt e = do
-	cs <- gets tlssClientWriteCipherSuite
-	mkey <- gets tlssClientWriteKey
-	miv <- gets tlssClientWriteIv
+decrypt :: Partner -> ByteString -> TlsIO ByteString
+decrypt partner e = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
+	mkey <- gets $ case partner of
+		Client -> tlssClientWriteKey
+		Server -> tlssServerWriteKey
+	miv <- gets $ case partner of
+		Client -> tlssClientWriteIv
+		Server -> tlssServerWriteIv
 	case (cs, mkey, miv) of
 		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) ->
 			return $ decryptCBC (initAES key) iv e
 		(TLS_NULL_WITH_NULL_NULL, _, _) -> return e
 		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
-takeBodyMac :: ByteString -> TlsIO (ByteString, ByteString)
-takeBodyMac bmp = do
-	cs <- gets tlssClientWriteCipherSuite
+encrypt :: Partner -> ByteString -> TlsIO ByteString
+encrypt partner d = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
+	mkey <- gets $ case partner of
+		Client -> tlssClientWriteKey
+		Server -> tlssServerWriteKey
+	miv <- gets $ case partner of
+		Client -> tlssClientWriteIv
+		Server -> tlssServerWriteIv
+	case (cs, mkey, miv) of
+		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) ->
+			return $ encryptCBC (initAES key) iv d
+		(TLS_NULL_WITH_NULL_NULL, _, _) -> return d
+		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
+
+takeBodyMac :: Partner -> ByteString -> TlsIO (ByteString, ByteString)
+takeBodyMac partner bmp = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
 	case cs of
 		TLS_RSA_WITH_AES_128_CBC_SHA -> return $ bodyMac bmp
 		TLS_NULL_WITH_NULL_NULL -> return (bmp, "")
@@ -303,6 +334,12 @@ finishedHash = do
 		Just ms -> return . MS.generateFinished ms $ md5 `BS.append` sha1
 		_ -> throwError "No master secrets"
 
+getSequenceNumber :: Partner -> TlsIO Word64
+getSequenceNumber partner = do
+	gets $ case partner of
+		Client -> tlssClientSequenceNumber
+		Server -> tlssServerSequenceNumber
+
 updateSequenceNumber :: Partner -> TlsIO Word64
 updateSequenceNumber partner = do
 	sn <- gets $ case partner of
@@ -324,7 +361,7 @@ calcMac partner ct v body = do
 calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> ByteString ->
 	TlsIO ByteString
 calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
-	sn <- updateSequenceNumber partner
+	sn <- getSequenceNumber partner
 	let hashInput = BS.concat [
 		word64ToByteString sn ,
 		contentTypeToByteString ct,
@@ -348,3 +385,8 @@ readContentType partner = byteStringToContentType <$> read partner 1
 
 writeContentType :: Partner -> ContentType -> TlsIO ()
 writeContentType partner ct = write partner $ contentTypeToByteString ct
+
+getCipherSuite :: Partner -> TlsIO CipherSuite
+getCipherSuite partner = gets $ case partner of
+	Client -> tlssClientWriteCipherSuite
+	Server -> tlssServerWriteCipherSuite

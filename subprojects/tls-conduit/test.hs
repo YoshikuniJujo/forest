@@ -30,11 +30,22 @@ import Parts
 
 import Data.IORef
 
+import System.IO.Unsafe
+
+locker :: Chan ()
+locker = unsafePerformIO $ do
+	c <- newChan
+	writeChan c ()
+	return c
+
+lock, unlock :: IO ()
+lock = readChan locker
+unlock = writeChan locker ()
+
 main :: IO ()
 main = do
 	cidRef <- newIORef 0
 	[PrivKeyRSA privateKey] <- readKeyFile "localhost.key"
---	print privateKey
 	[pcl, psv] <- getArgs
 	withSocketsDo $ do
 		sock <- listenOn . PortNumber . fromIntegral =<< (readIO pcl :: IO Int)
@@ -49,7 +60,7 @@ sockHandler cidRef pk sock pid = do
 	(cl, _, _) <- accept sock
 	hSetBuffering cl NoBuffering
 	sv <- connectTo "localhost" pid
-	_ <- forkIO $ commandProcessor cid cl sv pk		-- forkIO
+	_ <- forkIO $ commandProcessor cid cl sv pk
 	sockHandler cidRef pk sock pid
 
 commandProcessor :: Int -> Handle -> Handle -> PrivateKey -> IO ()
@@ -62,16 +73,23 @@ commandProcessor cid cl sv pk = do
 
 conversation :: TlsIO ()
 conversation = do
-	liftIO $ putStrLn "-------- Client Say Hello ---------"
+	cid <- clientId
+	liftIO $ do
+		lock
+		putStrLn $ "-------- Client(" ++ show cid ++ ") Say Hello ---------"
 	mcr <- clientHello
 	case mcr of
 		Just (Random cr) -> do
 			setClientRandom cr
 			liftIO $ do
 				putStrLn "### CLIENT RANDOM ###"
-				putStrLn $ showKey cr
+				putStr $ showKey cr
+				putStrLn ""
+				unlock
 		_ -> return ()
-	liftIO $ putStrLn "-------- Server Say Hello --------"
+	liftIO $ do
+		lock
+		putStrLn $ "-------- Server(" ++ show cid ++ ") Say Hello --------"
 	msrcs <- serverHello Nothing Nothing
 	case msrcs of
 		(Just (Random sr), Just cs) -> do
@@ -79,43 +97,83 @@ conversation = do
 			cacheCipherSuite cs
 			liftIO $ do
 				putStrLn "### SERVER RANDOM ###"
-				putStrLn $ showKey sr
+				putStr $ showKey sr
 				putStrLn "### CIPHER SUITE ###"
-				print cs
+				putStrLn $ "\t" ++ show cs
 		_ -> return ()
-	liftIO $ putStrLn "-------- Server Hello Done --------"
-	liftIO $ putStrLn "-------- Client Key Exchange ----------"
+	liftIO $ do
+		putStrLn "-------- Server Hello Done --------"
+		putStrLn ""
+		unlock
+	liftIO lock
+	liftIO . putStrLn $
+		"-------- Client(" ++ show cid ++ ") Key Exchange ----------"
 	mepms <- clientKeyExchange
 	case mepms of
 		Just (EncryptedPreMasterSecret epms) -> do
-			liftIO $ do
-				putStrLn "### ENCRYPTED PRE MASTER SECRET ###"
-				putStrLn $ showKey epms
 			pms <- decryptRSA epms
 			liftIO $ do
+				putStrLn "### ENCRYPTED PRE MASTER SECRET ###"
+				putStr $ showKey epms
+			liftIO $ do
 				putStrLn "### PRE MASTER SECRET ###"
-				putStrLn $ showKey pms
+				putStr $ showKey pms
 			generateMasterSecret pms
 			masterSecret >>= \(Just ms) -> liftIO $ do
 				putStrLn "### MASTER SECRET ###"
-				putStrLn $ showKey ms
+				putStr $ showKey ms
+			{-
 			expandedMasterSecret >>= \(Just ems) -> liftIO $ do
 				putStrLn "### EXPANDED MASTER SECRET ###"
-				putStrLn $ showKey ems
+				putStr $ showKey ems
+			-}
 			debugPrintKeys
+			liftIO $ putStrLn ""
 		_ -> return ()
+	liftIO unlock
 	fh0 <- finishedHash
+	liftIO $ do
+		lock
+		putStrLn $ "---------- Client(" ++ show cid ++
+			") Change Cipher Spec --------"
 	changeCipherSpec Client Server
-	cid <- clientId
-	liftIO . putStrLn . ("CLIENT ID: " ++) $ show cid
---	when (cid == 0) $ readRawFragment Server >>= liftIO . print
+	liftIO $ do
+		putStrLn ""
+		unlock
 	when (cid == 0) $ do
-		liftIO $ putStrLn "----------- CLIENT FINISHED --------"
-		Right c <- fragmentToContent <$> readFragment Client
-		liftIO $ print c
+		liftIO $ do
+			lock
+			putStrLn $ "----------- Client(" ++
+				show cid ++ ") Finished --------"
+		fc <- readFragment Client
+		let Right (ContentHandshake _ hss) = fragmentToContent fc
+		writeFragment Server fc
+		liftIO $ mapM_ print hss
+--		fc <- readRawFragment Client
+--		writeRawFragment Server fc
 		fh <- finishedHash
-		liftIO . putStrLn $ "FINISHED: " ++ show fh0
-		liftIO . putStrLn $ "FINISHED: " ++ show fh
+		liftIO $ do
+			putStrLn $ "FINISHED: " ++ show fh0
+			putStrLn $ "FINISHED: " ++ show fh
+			putStrLn ""
+--		fs <- readRawFragment Server
+--		writeRawFragment Client fs
+		fs <- readFragment Server
+		writeFragment Client fs
+		liftIO $ do
+			print $ fragmentToContent fs
+			putStrLn ""
+		liftIO unlock
+
+{-
+	when (cid == 1) $ do
+		liftIO lock
+		fc <- readFragment Server
+		liftIO $ do
+			putStrLn $ "CID 1: " ++ show fc
+		writeFragment Server fc
+		liftIO unlock
+-}
 
 	{-
 		f@(RawFragment ct v body) <- readRawFragment Client
@@ -153,7 +211,7 @@ clientHello = do
 	f <- readFragment Client
 	let	Right c = fragmentToContent f
 		f' = contentToFragment c
-	liftIO $ print c
+	liftIO . putStrLn . (++ " ...") . take 50 $ show c
 	writeFragment Server f'
 	return $ clientRandom c
 
@@ -161,9 +219,9 @@ serverHello :: Maybe Random -> Maybe CipherSuite ->
 	TlsIO (Maybe Random, Maybe CipherSuite)
 serverHello msr mcs = do
 	f <- readFragment Server
-	let	Right c = fragmentToContent f
+	let	Right c@(ContentHandshake _ hs) = fragmentToContent f
 		f' = contentToFragment c
-	liftIO $ print c
+	liftIO $ mapM_ (putStrLn . (++ " ...") . take 50 . show) hs
 	writeFragment Client f'
 	if doesServerHelloFinish c
 		then return (msr `mplus` serverRandom c, mcs `mplus` cipherSuite c)
@@ -176,7 +234,7 @@ clientKeyExchange = do
 			Right c -> c
 			Left err -> error err
 		f' = contentToFragment cont
-	liftIO $ print cont
+	liftIO . putStrLn . (++ " ...") . take 50 $ show cont
 	writeFragment Server f'
 	if doesClientKeyExchange cont
 		then return $ encryptedPreMasterSecret cont
@@ -184,7 +242,12 @@ clientKeyExchange = do
 
 clientToServer :: TlsIO ()
 clientToServer = do
-	liftIO $ putStrLn "-------- Client Change Cipher Spec --------"
+	cid <- clientId
+	liftIO $ do
+		lock
+		putStrLn $ "-------- Client(" ++ show cid ++
+			") Data Application Begin --------"
+		unlock
 	forever $ do
 		f <- readRawFragment Client
 		liftIO $ print f
@@ -192,7 +255,12 @@ clientToServer = do
 
 serverToClient :: TlsIO ()
 serverToClient = do
-	liftIO $ putStrLn "-------- Server Change Cipher Spec --------"
+	cid <- clientId
+	liftIO $ do
+		lock
+		putStrLn $ "-------- Server(" ++ show cid ++
+			") Data Application Begin --------"
+		unlock
 	forever $ do
 		f <- readRawFragment Server
 		liftIO $ print f

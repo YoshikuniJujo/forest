@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version,
 	readFragment, writeFragment,
@@ -9,7 +11,7 @@ module Fragment (
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
-	decryptRSA, clientWriteDecrypt, finishedHash,
+	decryptRSA, finishedHash,
 	
 	masterSecret, expandedMasterSecret,
 
@@ -25,27 +27,63 @@ import Prelude hiding (read)
 
 import Control.Applicative
 import Control.Monad
--- import Data.ByteString (ByteString)
--- import qualified Data.ByteString as BS
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
 import TlsIO
 
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
-	RawFragment ct v cbody <- readRawFragment p
-	bm <- clientWriteDecrypt cbody
-	(body, mac) <- takeBodyMac bm
-	liftIO . putStrLn $ "MAC : " ++ show mac
-	cmac <- calcMac p ct v body
-	liftIO . putStrLn . ("CMAC: " ++) $ show cmac
+	r@(RawFragment ct v ebody) <- readRawFragment p
+	liftIO $ putStrLn $ "readFragment: " ++ show r
+	body <- decryptBody p ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
-	when (mac /= cmac) $ throwError "readFragment: Bad MAC value"
 	return $ Fragment ct v body
 
+decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
+decryptBody p ct v ebody = do
+	bm <- decrypt p ebody
+	liftIO $ putStrLn $ "decryptBody: bm = " ++ show bm
+	liftIO $ putStrLn $ "decryptBody: length bm = " ++ show (BS.length bm)
+	(body, mac) <- takeBodyMac p bm
+	cmac <- calcMac p ct v body
+	liftIO $ putStrLn $ "decryptBody: (p, ct, v, body) = " ++ show (p, ct, v, body)
+	unless (BS.null mac) . liftIO $ do
+		putStrLn $ "MAC : " ++ show mac
+		putStrLn $ "CMAC: " ++ show cmac
+	when (mac /= cmac) $ throwError "decryptBody: Bad MAC value"
+	return body
+
+encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
+encryptBody p ct v body = do
+	mac <- calcMac p ct v body
+	liftIO $ putStrLn $ "encryptBody: (p, ct, v, body) = " ++ show (p, ct, v, body)
+	liftIO $ putStrLn $ "encryptBody: MAC = " ++ show mac
+	let	bm = body `BS.append` mac
+		padd = mkPadd 16 $ BS.length bm
+	liftIO $ putStrLn $ "encryptBody: plain = " ++ show (bm `BS.append` padd)
+	ebody <- encrypt p (bm `BS.append` padd)
+	liftIO $ putStrLn $ "encryptBody: ebody = " ++ show ebody
+	return ebody
+
+mkPadd :: Int -> Int -> ByteString
+mkPadd bs len = let
+	plen = bs - ((len + 1) `mod` bs) in
+	BS.replicate (plen + 1) $ fromIntegral plen
+
 writeFragment :: Partner -> Fragment -> TlsIO ()
-writeFragment p (Fragment ct v bs) = writeRawFragment p (RawFragment ct v bs)
+writeFragment p (Fragment ct v bs) = do
+	cs <- getCipherSuite (opponent p)
+	case cs of
+		TLS_RSA_WITH_AES_128_CBC_SHA -> do
+			eb <- encryptBody (opponent p) ct v bs
+			liftIO $ putStrLn $ "writeFragment: " ++ show (RawFragment ct v eb)
+			writeRawFragment p (RawFragment ct v eb)
+		TLS_NULL_WITH_NULL_NULL -> do
+			writeRawFragment p (RawFragment ct v bs)
+		_ -> throwError "writeFragment: not implemented"
 
 readRawFragment :: Partner -> TlsIO RawFragment
 readRawFragment p =
