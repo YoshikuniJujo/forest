@@ -121,7 +121,7 @@ initTlsState cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssServerSequenceNumber = 0
  }
 
-data Partner = Server | Client deriving Show
+data Partner = Server | Client deriving (Show, Eq)
 
 opponent :: Partner -> Partner
 opponent Server = Client
@@ -325,13 +325,14 @@ updateHash bs = do
 		tlssSha1Ctx = SHA1.update sha1 bs
 	 }
 
-finishedHash :: TlsIO ByteString
-finishedHash = do
+finishedHash :: Partner -> TlsIO ByteString
+finishedHash partner = do
 	mms <- gets tlssMasterSecret
 	md5 <- MD5.finalize <$> gets tlssMd5Ctx
 	sha1 <- SHA1.finalize <$> gets tlssSha1Ctx
 	case mms of
-		Just ms -> return . MS.generateFinished ms $ md5 `BS.append` sha1
+		Just ms -> return . MS.generateFinished (partner == Client) ms $
+			md5 `BS.append` sha1
 		_ -> throwError "No master secrets"
 
 getSequenceNumber :: Partner -> TlsIO Word64

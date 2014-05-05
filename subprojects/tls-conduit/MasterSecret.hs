@@ -41,8 +41,9 @@ generateMasterSecretTls prf premasterSecret (ClientRandom c) (ServerRandom s) =
     prf premasterSecret seed 48
   where seed = B.concat [ "master secret", c, s ]
 
-generateFinished :: Bytes -> Bytes -> Bytes
-generateFinished ms hash = prfMd5Sha1 ms ("client finished" `B.append` hash) 12
+generateFinished :: Bool -> Bytes -> Bytes -> Bytes
+generateFinished True ms hash = prfMd5Sha1 ms ("client finished" `B.append` hash) 12
+generateFinished False ms hash = prfMd5Sha1 ms ("server finished" `B.append` hash) 12
 
 masterSecret :: B.ByteString -> ClientRandom -> ServerRandom -> B.ByteString
 masterSecret = generateMasterSecret TLS10

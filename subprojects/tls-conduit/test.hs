@@ -131,7 +131,7 @@ conversation = do
 			liftIO $ putStrLn ""
 		_ -> return ()
 	liftIO unlock
-	fh0 <- finishedHash
+	fh0 <- finishedHash Client
 	liftIO $ do
 		lock
 		putStrLn $ "---------- Client(" ++ show cid ++
@@ -151,7 +151,7 @@ conversation = do
 		liftIO $ mapM_ print hss
 --		fc <- readRawFragment Client
 --		writeRawFragment Server fc
-		fh <- finishedHash
+		fh <- finishedHash Server
 		liftIO $ do
 			putStrLn $ "FINISHED: " ++ show fh0
 			putStrLn $ "FINISHED: " ++ show fh
@@ -160,8 +160,17 @@ conversation = do
 --		writeRawFragment Client fs
 		fs <- readFragment Server
 		writeFragment Client fs
+		let Right c = fragmentToContent fs
 		liftIO $ do
-			print $ fragmentToContent fs
+			print c
+			putStrLn ""
+		case c of
+			ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite Server
+			_ -> throwError "Not Change Cipher Spec"
+		fs2 <- readFragment Server
+		writeFragment Client fs2
+		liftIO $ do
+			print $ fragmentToContent fs2
 			putStrLn ""
 		liftIO unlock
 
