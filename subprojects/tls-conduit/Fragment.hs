@@ -27,7 +27,6 @@ import Prelude hiding (read)
 
 import Control.Applicative
 import Control.Monad
-import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
 import TlsIO
@@ -35,37 +34,34 @@ import TlsIO
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
 	r@(RawFragment ct v ebody) <- readRawFragment p
-	liftIO $ putStrLn $ "readFragment: " ++ show r
 	body <- decryptBody p ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
+--		ContentTypeRaw 23 ->  liftIO $ print r
 		_ -> return ()
 	return $ Fragment ct v body
 
 decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
 decryptBody p ct v ebody = do
 	bm <- decrypt p ebody
-	liftIO $ putStrLn $ "decryptBody: bm = " ++ show bm
-	liftIO $ putStrLn $ "decryptBody: length bm = " ++ show (BS.length bm)
 	(body, mac) <- takeBodyMac p bm
 	cmac <- calcMac p ct v body
-	liftIO $ putStrLn $ "decryptBody: (p, ct, v, body) = " ++ show (p, ct, v, body)
-	unless (BS.null mac) . liftIO $ do
-		putStrLn $ "MAC : " ++ show mac
-		putStrLn $ "CMAC: " ++ show cmac
-	when (mac /= cmac) $ throwError "decryptBody: Bad MAC value"
+	when (mac /= cmac) . throwError $
+		"decryptBody: Bad MAC value\n\t" ++
+		"ebody         : " ++ show ebody ++ "\n\t" ++
+		"bm            : " ++ show ebody ++ "\n\t" ++
+		"body          : " ++ show body ++ "\n\t" ++
+		"given MAC     : " ++ show mac ++ "\n\t" ++
+		"caluculate MAC: " ++ show cmac
 	return body
 
 encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
 encryptBody p ct v body = do
 	mac <- calcMac p ct v body
-	liftIO $ putStrLn $ "encryptBody: (p, ct, v, body) = " ++ show (p, ct, v, body)
-	liftIO $ putStrLn $ "encryptBody: MAC = " ++ show mac
+	updateSequenceNumber p
 	let	bm = body `BS.append` mac
 		padd = mkPadd 16 $ BS.length bm
-	liftIO $ putStrLn $ "encryptBody: plain = " ++ show (bm `BS.append` padd)
 	ebody <- encrypt p (bm `BS.append` padd)
-	liftIO $ putStrLn $ "encryptBody: ebody = " ++ show ebody
 	return ebody
 
 mkPadd :: Int -> Int -> ByteString
@@ -79,10 +75,8 @@ writeFragment p (Fragment ct v bs) = do
 	case cs of
 		TLS_RSA_WITH_AES_128_CBC_SHA -> do
 			eb <- encryptBody (opponent p) ct v bs
-			liftIO $ putStrLn $ "writeFragment: " ++ show (RawFragment ct v eb)
 			writeRawFragment p (RawFragment ct v eb)
-		TLS_NULL_WITH_NULL_NULL -> do
-			writeRawFragment p (RawFragment ct v bs)
+		TLS_NULL_WITH_NULL_NULL -> writeRawFragment p (RawFragment ct v bs)
 		_ -> throwError "writeFragment: not implemented"
 
 readRawFragment :: Partner -> TlsIO RawFragment

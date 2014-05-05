@@ -87,6 +87,13 @@ data TlsState = TlsState {
 	tlssServerSequenceNumber :: Word64
  } deriving Show
 
+setIv :: Partner -> ByteString -> TlsIO ()
+setIv partner iv = do
+	tlss <- get
+	put $ case partner of
+		Client -> tlss { tlssClientWriteIv = Just iv }
+		Server -> tlss { tlssServerWriteIv = Just iv }
+
 instance Show MD5.Ctx where
 	show = show . MD5.finalize
 
@@ -259,16 +266,8 @@ showH w = replicate (2 - length s) '0' ++ s
 
 decrypt :: Partner -> ByteString -> TlsIO ByteString
 decrypt partner e = do
-	cs <- gets $ case partner of
-		Client -> tlssClientWriteCipherSuite
-		Server -> tlssServerWriteCipherSuite
-	mkey <- gets $ case partner of
-		Client -> tlssClientWriteKey
-		Server -> tlssServerWriteKey
-	miv <- gets $ case partner of
-		Client -> tlssClientWriteIv
-		Server -> tlssServerWriteIv
-	case (cs, mkey, miv) of
+	set <- getCipherSet partner
+	case set of
 		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) ->
 			return $ decryptCBC (initAES key) iv e
 		(TLS_NULL_WITH_NULL_NULL, _, _) -> return e
@@ -276,6 +275,17 @@ decrypt partner e = do
 
 encrypt :: Partner -> ByteString -> TlsIO ByteString
 encrypt partner d = do
+	set <- getCipherSet partner
+	case set of
+		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) -> do
+			let e = encryptCBC (initAES key) iv d
+			setIv partner $ BS.drop (BS.length e - 16) e
+			return e
+		(TLS_NULL_WITH_NULL_NULL, _, _) -> return d
+		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
+
+getCipherSet :: Partner -> TlsIO (CipherSuite, Maybe ByteString, Maybe ByteString)
+getCipherSet partner = do
 	cs <- gets $ case partner of
 		Client -> tlssClientWriteCipherSuite
 		Server -> tlssServerWriteCipherSuite
@@ -285,11 +295,7 @@ encrypt partner d = do
 	miv <- gets $ case partner of
 		Client -> tlssClientWriteIv
 		Server -> tlssServerWriteIv
-	case (cs, mkey, miv) of
-		(TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv) ->
-			return $ encryptCBC (initAES key) iv d
-		(TLS_NULL_WITH_NULL_NULL, _, _) -> return d
-		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
+	return (cs, mkey, miv)
 
 takeBodyMac :: Partner -> ByteString -> TlsIO (ByteString, ByteString)
 takeBodyMac partner bmp = do
@@ -336,8 +342,7 @@ finishedHash partner = do
 		_ -> throwError "No master secrets"
 
 getSequenceNumber :: Partner -> TlsIO Word64
-getSequenceNumber partner = do
-	gets $ case partner of
+getSequenceNumber partner = gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
 
@@ -368,6 +373,7 @@ calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 		contentTypeToByteString ct,
 		versionToByteString v,
 		lenBodyToByteString 2 body ]
+--	liftIO . putStrLn $ "hashInput = " ++ show hashInput
 	Just macKey <- case partner of
 		Client -> gets tlssClientWriteMacKey
 		Server -> gets tlssServerWriteMacKey

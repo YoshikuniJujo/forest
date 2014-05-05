@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Control.Applicative
+-- import Control.Applicative
 import Control.Monad
 import Control.Concurrent
 import System.Environment
@@ -66,10 +66,12 @@ sockHandler cidRef pk sock pid = do
 commandProcessor :: Int -> Handle -> Handle -> PrivateKey -> IO ()
 commandProcessor cid cl sv pk = do
 	evalTlsIO conversation cid (ClientHandle cl) (ServerHandle sv) pk
+	{-
 	_ <- forkIO $ evalTlsIO clientToServer cid
 		(ClientHandle cl) (ServerHandle sv) pk
 	evalTlsIO serverToClient cid
 		(ClientHandle cl) (ServerHandle sv) pk
+		-}
 
 conversation :: TlsIO ()
 conversation = do
@@ -149,15 +151,11 @@ conversation = do
 		let Right (ContentHandshake _ hss) = fragmentToContent fc
 		writeFragment Server fc
 		liftIO $ mapM_ print hss
---		fc <- readRawFragment Client
---		writeRawFragment Server fc
 		fh <- finishedHash Server
 		liftIO $ do
 			putStrLn $ "FINISHED: " ++ show fh0
 			putStrLn $ "FINISHED: " ++ show fh
 			putStrLn ""
---		fs <- readRawFragment Server
---		writeRawFragment Client fs
 		fs <- readFragment Server
 		writeFragment Client fs
 		let Right c = fragmentToContent fs
@@ -173,47 +171,41 @@ conversation = do
 			print $ fragmentToContent fs2
 			putStrLn ""
 		liftIO unlock
-
-{-
 	when (cid == 1) $ do
-		liftIO lock
-		fc <- readFragment Server
 		liftIO $ do
-			putStrLn $ "CID 1: " ++ show fc
+			lock
+			putStrLn $ "---------- Client("
+				++ show cid ++ ") ----------" 
+		finishedHash Client >>= liftIO . print
+		fc <- readFragment Client
+		liftIO $ print $ fragmentToContent fc
 		writeFragment Server fc
-		liftIO unlock
--}
+		fs <- readFragment Server
+		writeFragment Client fs
+		let Right c = fragmentToContent fs
+		liftIO $ do
+			print c
+			putStrLn ""
+		case c of
+			ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite Server
+			_ -> throwError "Not Change Cipher Spec"
+		finishedHash Server >>= liftIO . print
+		fs2 <- readFragment Server
+		writeFragment Client fs2
+		liftIO $ do
+			print $ fragmentToContent fs2
+			putStrLn ""
+		fc2 <- readFragment Client
+		writeFragment Server fc2
+		liftIO $ print fc2
+		fc3 <- readFragment Client
+		writeFragment Server fc3
+		liftIO $ print fc3
+		fs3 <- readFragment Server
+		writeFragment Client fs3
+		liftIO $ print fs3
+		liftIO $ unlock
 
-	{-
-		f@(RawFragment ct v body) <- readRawFragment Client
-		liftIO $ do
-			putStrLn "---------- CLIENT FINISHED ----------"
-			print f
-		decrypted <- clientWriteDecrypt body
-		liftIO $ print decrypted
-		let body = BS.take 16 decrypted
-		liftIO $ print body
-		let hash_input = "\0\0\0\0\0\0\0\0\x16\x03\x01\x00\x10" `BS.append` body
-		liftIO $ print hash_input
-		Just mac_key <- clientWriteMacKey
-		liftIO $ putStrLn $ "HASH: " ++ show (hmac SHA1.hash 64 mac_key hash_input)
-		fh <- finishedHash
-		liftIO $ putStrLn $ "FINISHED: " ++ show fh0
-		liftIO $ putStrLn $ "FINISHED: " ++ show fh
-		let (bodyMac, padd) = separatePadd decrypted
-		liftIO $ do
-			print $ BS.splitAt (BS.length bodyMac - 20) bodyMac
-			print padd
-			-}
---	f@(RawFragment ct v body) <- readRawFragment Server -- Client
---	f@(RawFragment ct v body) <- readRawFragment Client
---	liftIO $ print f
-	{-
-	liftIO $ do
-		print ct
-		print v
-	liftIO . print =<< clientWriteDecrypt body
-	-}
 
 clientHello :: TlsIO (Maybe Random)
 clientHello = do
@@ -258,9 +250,9 @@ clientToServer = do
 			") Data Application Begin --------"
 		unlock
 	forever $ do
-		f <- readRawFragment Client
+		f <- readFragment Client
 		liftIO $ print f
-		writeRawFragment Server f
+		writeFragment Server f
 
 serverToClient :: TlsIO ()
 serverToClient = do
@@ -271,9 +263,9 @@ serverToClient = do
 			") Data Application Begin --------"
 		unlock
 	forever $ do
-		f <- readRawFragment Server
+		f <- readFragment Server
 		liftIO $ print f
-		writeRawFragment Client f
+		writeFragment Client f
 
 showKey :: ByteString -> String
 showKey = unlines . map (('\t' :) . unwords) . separateN 16 . map showH . unpack
