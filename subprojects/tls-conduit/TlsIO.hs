@@ -323,9 +323,11 @@ updateHash bs = do
 	md5 <- gets tlssMd5Ctx
 	sha1 <- gets tlssSha1Ctx
 	tlss <- get
+{-
 	liftIO $ do
 		putStrLn $ "MD5 : " ++ show (MD5.update md5 bs)
 		putStrLn $ "SHA1: " ++ show (SHA1.update sha1 bs)
+-}
 	put tlss {
 		tlssMd5Ctx = MD5.update md5 bs,
 		tlssSha1Ctx = SHA1.update sha1 bs

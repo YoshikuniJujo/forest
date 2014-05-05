@@ -20,7 +20,7 @@ module Fragment (
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,
 
-	throwError,
+	throwError, opponent,
 ) where
 
 import Prelude hiding (read)
@@ -33,7 +33,7 @@ import TlsIO
 
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
-	r@(RawFragment ct v ebody) <- readRawFragment p
+	RawFragment ct v ebody <- readRawFragment p
 	body <- decryptBody p ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
@@ -58,11 +58,10 @@ decryptBody p ct v ebody = do
 encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
 encryptBody p ct v body = do
 	mac <- calcMac p ct v body
-	updateSequenceNumber p
+	_ <- updateSequenceNumber p
 	let	bm = body `BS.append` mac
 		padd = mkPadd 16 $ BS.length bm
-	ebody <- encrypt p (bm `BS.append` padd)
-	return ebody
+	encrypt p (bm `BS.append` padd)
 
 mkPadd :: Int -> Int -> ByteString
 mkPadd bs len = let

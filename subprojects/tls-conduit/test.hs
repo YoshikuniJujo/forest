@@ -2,7 +2,7 @@
 
 module Main (main) where
 
--- import Control.Applicative
+import Control.Applicative
 import Control.Monad
 import Control.Concurrent
 import System.Environment
@@ -64,8 +64,8 @@ sockHandler cidRef pk sock pid = do
 	sockHandler cidRef pk sock pid
 
 commandProcessor :: Int -> Handle -> Handle -> PrivateKey -> IO ()
-commandProcessor cid cl sv pk = do
-	evalTlsIO conversation cid (ClientHandle cl) (ServerHandle sv) pk
+commandProcessor cid cl sv =
+	evalTlsIO conversation cid (ClientHandle cl) (ServerHandle sv)
 	{-
 	_ <- forkIO $ evalTlsIO clientToServer cid
 		(ClientHandle cl) (ServerHandle sv) pk
@@ -133,88 +133,55 @@ conversation = do
 			liftIO $ putStrLn ""
 		_ -> return ()
 	liftIO unlock
-	fh0 <- finishedHash Client
 	liftIO $ do
 		lock
 		putStrLn $ "---------- Client(" ++ show cid ++
 			") Change Cipher Spec --------"
-	changeCipherSpec Client Server
+	changeCipherSpec Client
 	liftIO $ do
 		putStrLn ""
 		unlock
-	when (cid == 0) $ do
-		liftIO $ do
-			lock
-			putStrLn $ "----------- Client(" ++
-				show cid ++ ") Finished --------"
-		fc <- readFragment Client
-		let Right (ContentHandshake _ hss) = fragmentToContent fc
-		writeFragment Server fc
-		liftIO $ mapM_ print hss
-		fh <- finishedHash Server
-		liftIO $ do
-			putStrLn $ "FINISHED: " ++ show fh0
-			putStrLn $ "FINISHED: " ++ show fh
-			putStrLn ""
-		fs <- readFragment Server
-		writeFragment Client fs
-		let Right c = fragmentToContent fs
-		liftIO $ do
-			print c
-			putStrLn ""
-		case c of
-			ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite Server
-			_ -> throwError "Not Change Cipher Spec"
-		fs2 <- readFragment Server
-		writeFragment Client fs2
-		liftIO $ do
-			print $ fragmentToContent fs2
-			putStrLn ""
-		liftIO unlock
+	finishedHash Client >>= liftIO . print
+	_ <- peekContent Client
+	changeCipherSpec Server
+	finishedHash Server >>= liftIO . print
+	_ <- peekContent Server
 	when (cid == 1) $ do
-		liftIO $ do
-			lock
-			putStrLn $ "---------- Client("
-				++ show cid ++ ") ----------" 
-		finishedHash Client >>= liftIO . print
-		fc <- readFragment Client
-		liftIO $ print $ fragmentToContent fc
-		writeFragment Server fc
-		fs <- readFragment Server
-		writeFragment Client fs
-		let Right c = fragmentToContent fs
-		liftIO $ do
-			print c
-			putStrLn ""
-		case c of
-			ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite Server
-			_ -> throwError "Not Change Cipher Spec"
-		finishedHash Server >>= liftIO . print
-		fs2 <- readFragment Server
-		writeFragment Client fs2
-		liftIO $ do
-			print $ fragmentToContent fs2
-			putStrLn ""
-		fc2 <- readFragment Client
-		writeFragment Server fc2
-		liftIO $ print fc2
-		fc3 <- readFragment Client
-		writeFragment Server fc3
-		liftIO $ print fc3
-		fs3 <- readFragment Server
-		writeFragment Client fs3
-		liftIO $ print fs3
-		liftIO $ unlock
+		begin $ "---------- Client(" ++ show cid ++ ") ------------"
+		_ <- peekContent Client
+		_ <- peekContent Client
+		_ <- peekContent Server
+		end
 
+begin :: String -> TlsIO ()
+begin msg = liftIO $ lock >> putStrLn msg
 
-clientHello :: TlsIO (Maybe Random)
-clientHello = do
-	f <- readFragment Client
+end :: TlsIO ()
+end = liftIO unlock
+
+changeCipherSpec :: Partner -> TlsIO ()
+changeCipherSpec partner = do
+	c <- peekContent partner
+	case c of
+		ContentChangeCipherSpec _ ChangeCipherSpec ->
+			flushCipherSuite partner
+		_ -> throwError "Not Change Cipher Spec"
+
+peekContent :: Partner -> TlsIO Content
+peekContent partner = do
+	f <- readFragment partner
 	let	Right c = fragmentToContent f
 		f' = contentToFragment c
-	liftIO . putStrLn . (++ " ...") . take 50 $ show c
-	writeFragment Server f'
-	return $ clientRandom c
+	writeFragment (opponent partner) f'
+	liftIO $ do
+		case c of
+			ContentHandshake _ hss -> mapM_ print hss
+			_ -> print c
+		putStrLn ""
+	return c
+
+clientHello :: TlsIO (Maybe Random)
+clientHello = clientRandom <$> peekContent Client
 
 serverHello :: Maybe Random -> Maybe CipherSuite ->
 	TlsIO (Maybe Random, Maybe CipherSuite)
@@ -241,6 +208,7 @@ clientKeyExchange = do
 		then return $ encryptedPreMasterSecret cont
 		else clientKeyExchange
 
+{-
 clientToServer :: TlsIO ()
 clientToServer = do
 	cid <- clientId
@@ -266,6 +234,7 @@ serverToClient = do
 		f <- readFragment Server
 		liftIO $ print f
 		writeFragment Client f
+		-}
 
 showKey :: ByteString -> String
 showKey = unlines . map (('\t' :) . unwords) . separateN 16 . map showH . unpack
@@ -274,17 +243,6 @@ showH :: Word8 -> String
 showH w = replicate (2 - length s) '0' ++ s
 	where
 	s = showHex w ""
-
-changeCipherSpec :: Partner -> Partner -> TlsIO ()
-changeCipherSpec from to = do
-	f <- readFragment from
-	let	Right c = fragmentToContent f
-		f' = contentToFragment c
-	liftIO $ print c
-	writeFragment to f'
-	case c of
-		ContentChangeCipherSpec _ ChangeCipherSpec -> flushCipherSuite from
-		_ -> throwError "Not Change Cipher Spec"
 
 separateN :: Int -> [a] -> [[a]]
 separateN _ [] = []
