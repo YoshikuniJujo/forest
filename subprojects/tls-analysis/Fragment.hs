@@ -7,7 +7,7 @@ module Fragment (
 
 	clientId, clientWriteMacKey,
 
-	setClientRandom, setServerRandom,
+	setClientRandom, setServerRandom, setVersion,
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 

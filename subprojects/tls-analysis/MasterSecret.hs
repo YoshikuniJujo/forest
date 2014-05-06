@@ -10,9 +10,11 @@
 -- with only explicit parameters, no TLS state is involved here.
 --
 module MasterSecret (
+	versionToVersion,
 	ClientRandom(..), ServerRandom(..),
-	masterSecret, keyBlock,
-	generateFinished
+	generateMasterSecret, masterSecret, keyBlock,
+	generateKeyBlock,
+	generateFinished, Version(..),
 ) where
 
 import MAC
@@ -22,6 +24,13 @@ import qualified Data.ByteString.Char8 as BC
 
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
+
+import qualified Parts as P
+
+versionToVersion :: P.ProtocolVersion -> Maybe Version
+versionToVersion (P.ProtocolVersion 3 1) = Just TLS10
+versionToVersion (P.ProtocolVersion 3 3) = Just TLS12
+versionToVersion _ = Nothing
 
 type Bytes = ByteString
 
@@ -41,9 +50,15 @@ generateMasterSecretTls prf premasterSecret (ClientRandom c) (ServerRandom s) =
     prf premasterSecret seed 48
   where seed = B.concat [ "master secret", c, s ]
 
-generateFinished :: Bool -> Bytes -> Bytes -> Bytes
-generateFinished True ms hash = prfMd5Sha1 ms ("client finished" `B.append` hash) 12
-generateFinished False ms hash = prfMd5Sha1 ms ("server finished" `B.append` hash) 12
+generateFinished :: Version -> Bool -> Bytes -> Bytes -> Bytes
+generateFinished TLS10 isC ms hash =
+	prfMd5Sha1 ms (getFinishedLabel isC `B.append` hash) 12
+generateFinished TLS12 isC ms hash =
+	prfSha256 ms (getFinishedLabel isC `B.append` hash) 12
+
+getFinishedLabel :: Bool -> B.ByteString
+getFinishedLabel True = "client finished"
+getFinishedLabel False = "server finished"
 
 masterSecret :: B.ByteString -> ClientRandom -> ServerRandom -> B.ByteString
 masterSecret = generateMasterSecret TLS10

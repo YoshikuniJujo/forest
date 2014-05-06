@@ -5,6 +5,7 @@ module Handshake (
 	handshakeDoesServerHelloFinish, handshakeDoesFinish,
 	handshakeDoesClientKeyExchange,
 	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
+	handshakeClientVersion, handshakeServerVersion,
 	handshakeEncryptedPreMasterSecret,
 ) where
 
@@ -39,6 +40,14 @@ handshakeClientRandom _ = Nothing
 handshakeServerRandom :: Handshake -> Maybe Random
 handshakeServerRandom (HandshakeServerHello sh) = serverHelloServerRandom sh
 handshakeServerRandom _ = Nothing
+
+handshakeClientVersion :: Handshake -> Maybe ProtocolVersion
+handshakeClientVersion (HandshakeClientHello ch) = clientHelloClientVersion ch
+handshakeClientVersion _ = Nothing
+
+handshakeServerVersion :: Handshake -> Maybe ProtocolVersion
+handshakeServerVersion (HandshakeServerHello ch) = serverHelloServerVersion ch
+handshakeServerVersion _ = Nothing
 
 handshakeCipherSuite :: Handshake -> Maybe CipherSuite
 handshakeCipherSuite (HandshakeServerHello sh) = serverHelloCipherSuite sh

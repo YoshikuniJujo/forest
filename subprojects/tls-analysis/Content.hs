@@ -4,6 +4,7 @@ module Content (
 	doesServerHelloFinish, doesFinish,
 	doesClientKeyExchange,
 	clientRandom, serverRandom, cipherSuite,
+	clientVersion, serverVersion,
 	encryptedPreMasterSecret,
 ) where
 
@@ -82,6 +83,16 @@ serverRandom (ContentHandshake _ hss) = case mapMaybe handshakeServerRandom hss 
 	[r] -> Just r
 	_ -> Nothing
 serverRandom _ = Nothing
+
+clientVersion :: Content -> Maybe ProtocolVersion
+clientVersion (ContentHandshake _ hss) = case mapMaybe handshakeClientVersion hss of
+	[v] -> Just v
+	_ -> Nothing
+
+serverVersion :: Content -> Maybe ProtocolVersion
+serverVersion (ContentHandshake _ hss) = case mapMaybe handshakeServerVersion hss of
+	[v] -> Just v
+	_ -> Nothing
 
 cipherSuite :: Content -> Maybe CipherSuite
 cipherSuite (ContentHandshake _ hss) = case mapMaybe handshakeCipherSuite hss of

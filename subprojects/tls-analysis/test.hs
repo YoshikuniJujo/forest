@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, PackageImports #-}
 
 module Main (main) where
 
@@ -18,6 +18,8 @@ import Content
 import PreMasterSecret
 import Parts
 import Tools
+
+import "crypto-random" Crypto.Random
 
 locker :: Chan ()
 locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
@@ -42,7 +44,8 @@ main = do
 		modifyIORef cidRef succ
 		client <- ClientHandle . fst3 <$> accept scl
 		server <- ServerHandle <$> connectTo "localhost" psv
-		forkIO . (\act -> evalTlsIO act cid client server pk) $ do
+		ep <- createEntropyPool
+		forkIO . (\act -> evalTlsIO act ep cid client server pk) $ do
 			begin Client cid "Say Hello"
 			mcr <- clientRandom <$> peekContent Client
 			flip (maybe $ return ()) mcr $ \cr -> do

@@ -2,7 +2,7 @@
 
 module ClientHello (
 	ClientHello(..), parseClientHello, clientHelloToByteString,
-	clientHelloClientRandom,
+	clientHelloClientRandom, clientHelloClientVersion,
 ) where
 
 import Prelude hiding (concat)
@@ -22,6 +22,10 @@ data ClientHello
 clientHelloClientRandom :: ClientHello -> Maybe Random
 clientHelloClientRandom (ClientHello _ r _ _ _ _) = Just r
 clientHelloClientRandom _ = Nothing
+
+clientHelloClientVersion :: ClientHello -> Maybe ProtocolVersion
+clientHelloClientVersion (ClientHello v _ _ _ _ _) = Just v
+clientHelloClientVersion _ = Nothing
 
 parseClientHello :: ByteStringM ClientHello
 parseClientHello = do

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Parts (
-	ProtocolVersion, parseProtocolVersion, protocolVersionToByteString,
+	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString,
 	Random(..), parseRandom, randomToByteString,
 	SessionId, parseSessionId, sessionIdToByteString,
 	CipherSuite(..), parseCipherSuite, cipherSuiteToByteString,
