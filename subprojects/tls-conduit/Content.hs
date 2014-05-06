@@ -1,6 +1,6 @@
 module Content (
 	Content(..), fragmentToContent, contentToFragment,
-	ChangeCipherSpec(..),
+	ChangeCipherSpec(..), doesChangeCipherSpec,
 	doesServerHelloFinish, doesFinish,
 	doesClientKeyExchange,
 	clientRandom, serverRandom, cipherSuite,
@@ -38,6 +38,10 @@ data Content
 	| ContentHandshake Version [Handshake]
 	| ContentRaw ContentType Version ByteString
 	deriving Show
+
+doesChangeCipherSpec :: Content -> Bool
+doesChangeCipherSpec (ContentChangeCipherSpec _ ChangeCipherSpec) = True
+doesChangeCipherSpec _ = False
 
 data ChangeCipherSpec
 	= ChangeCipherSpec

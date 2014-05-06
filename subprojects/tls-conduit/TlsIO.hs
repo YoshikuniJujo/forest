@@ -14,7 +14,7 @@ module TlsIO (
 
 	decryptRSA, decrypt, encrypt, takeBodyMac,
 
-	masterSecret, expandedMasterSecret,
+	masterSecret,
 
 	debugPrintKeys,
 
@@ -25,13 +25,12 @@ module TlsIO (
 	ContentType(..), readContentType, writeContentType,
 	Version, readVersion, writeVersion,
 
-	getCipherSuite, CipherSuite(..)
+	getCipherSuite, CipherSuite(..), showRandom,
 ) where
 
 import Prelude hiding (read)
 
 import Control.Applicative
-import Numeric
 
 import System.IO
 import "monads-tf" Control.Monad.Error
@@ -46,12 +45,6 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
-{-
-import Parts (
-	CipherSuite(..),
-	ContentType, contentTypeToByteString,
-	Version, versionToByteString,)
-	-}
 import Parts
 import Tools
 
@@ -179,11 +172,11 @@ decryptRSA e = do
 		Right d -> return d
 		Left err -> throwError $ show err
 
-setClientRandom, setServerRandom :: ByteString -> TlsIO ()
-setClientRandom cr = do
+setClientRandom, setServerRandom :: Random -> TlsIO ()
+setClientRandom (Random cr) = do
 	tlss <- get
 	put $ tlss { tlssClientRandom = Just cr }
-setServerRandom sr = do
+setServerRandom (Random sr) = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
 
@@ -230,9 +223,6 @@ generateMasterSecret pms = do
 masterSecret :: TlsIO (Maybe ByteString)
 masterSecret = gets tlssMasterSecret
 
-expandedMasterSecret :: TlsIO (Maybe ByteString)
-expandedMasterSecret = gets tlssExpandedMasterSecret
-
 divide :: [Int] -> BS.ByteString -> [BS.ByteString]
 divide [] _ = []
 divide (n : ns) bs
@@ -249,20 +239,12 @@ debugPrintKeys = do
 	Just swi <- gets tlssServerWriteIv
 	liftIO $ do
 		putStrLn "### GENERATED KEYS ###"
-		putStrLn $ "\tClntWr MAC Key: " ++ showKey cwmk
-		putStrLn $ "\tSrvrWr MAC Key: " ++ showKey swmk
-		putStrLn $ "\tClntWr Key    : " ++ showKey cwk
-		putStrLn $ "\tSrvrWr Key    : " ++ showKey swk
-		putStrLn $ "\tClntWr IV     : " ++ showKey cwi
-		putStrLn $ "\tSrvrWr IV     : " ++ showKey swi
-
-showKey :: ByteString -> String
-showKey = unwords . map showH . BS.unpack
-
-showH :: Word8 -> String
-showH w = replicate (2 - length s) '0' ++ s
-	where
-	s = showHex w ""
+		putStrLn $ "\tClntWr MAC Key: " ++ showKeySingle cwmk
+		putStrLn $ "\tSrvrWr MAC Key: " ++ showKeySingle swmk
+		putStrLn $ "\tClntWr Key    : " ++ showKeySingle cwk
+		putStrLn $ "\tSrvrWr Key    : " ++ showKeySingle swk
+		putStrLn $ "\tClntWr IV     : " ++ showKeySingle cwi
+		putStrLn $ "\tSrvrWr IV     : " ++ showKeySingle swi
 
 decrypt :: Partner -> ByteString -> TlsIO ByteString
 decrypt partner e = do
@@ -399,3 +381,6 @@ getCipherSuite :: Partner -> TlsIO CipherSuite
 getCipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
+
+showRandom :: Random -> String
+showRandom (Random r) = showKey r

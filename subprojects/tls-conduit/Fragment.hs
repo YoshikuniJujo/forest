@@ -13,14 +13,14 @@ module Fragment (
 
 	decryptRSA, finishedHash,
 	
-	masterSecret, expandedMasterSecret,
+	masterSecret,
 
 	debugPrintKeys,
 
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,
 
-	throwError, opponent,
+	throwError, opponent, showRandom,
 ) where
 
 import Prelude hiding (read)

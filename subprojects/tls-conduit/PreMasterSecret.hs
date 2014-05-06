@@ -12,7 +12,7 @@ import ByteStringMonad
 import ToByteString
 
 data EncryptedPreMasterSecret
-	= EncryptedPreMasterSecret ByteString
+	= EncryptedPreMasterSecret { getEncryptedPreMasterSecret :: ByteString }
 
 instance Show EncryptedPreMasterSecret where
 	show (EncryptedPreMasterSecret epms) = "(EncryptedPreMasterSecret " ++
