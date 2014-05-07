@@ -8,6 +8,8 @@ module Handshake (
 	handshakeClientVersion, handshakeServerVersion,
 	handshakeEncryptedPreMasterSecret,
 	handshakeOnlyKnownCipherSuite,
+
+	HandshakeType(HandshakeTypeFinished),
 ) where
 
 import Prelude hiding (head, take, concat)

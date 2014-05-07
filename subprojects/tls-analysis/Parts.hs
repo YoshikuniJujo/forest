@@ -9,7 +9,7 @@ module Parts (
 	CompressionMethod, parseCompressionMethod, compressionMethodToByteString,
 		parseCompressionMethodList, compressionMethodListToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
-	Version, byteStringToVersion, versionToByteString,
+	Version(..), byteStringToVersion, versionToByteString,
 ) where
 
 import Prelude hiding (head, take, concat)
