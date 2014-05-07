@@ -21,6 +21,7 @@ module Fragment (
 	TlsIO, evalTlsIO, liftIO,
 
 	throwError, opponent, showRandom,
+	handshakeMessages,
 ) where
 
 import Prelude hiding (read)

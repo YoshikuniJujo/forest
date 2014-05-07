@@ -10,6 +10,7 @@ module Handshake (
 	handshakeOnlyKnownCipherSuite,
 
 	HandshakeType(HandshakeTypeFinished),
+	handshakeCertificate, CertificateChain,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -35,6 +36,10 @@ data Handshake
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
+
+handshakeCertificate :: Handshake -> Maybe CertificateChain
+handshakeCertificate (HandshakeCertificate cc) = Just cc
+handshakeCertificate _ = Nothing
 
 handshakeClientRandom :: Handshake -> Maybe Random
 handshakeClientRandom (HandshakeClientHello ch) = clientHelloClientRandom ch

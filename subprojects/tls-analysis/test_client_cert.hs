@@ -23,6 +23,12 @@ import Tools
 import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
 
+import Data.X509.CertificateStore
+import Data.X509.Validation
+
+import Crypto.PubKey.RSA.PKCS15
+import Crypto.PubKey.HashDescr
+
 locker :: Chan ()
 locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
 
@@ -39,6 +45,8 @@ main :: IO ()
 main = do
 	cidRef <- newIORef 0
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
+	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
+	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	[pcl, psv] <- mapM ((PortNumber . fromInt <$>) . readIO) =<< getArgs
 	scl <- listenOn pcl
 	forever $ do
@@ -83,9 +91,31 @@ main = do
 				-}
 
 				begin Client cid "Key Exchange"
-				Just (EncryptedPreMasterSecret epms) <-
-					encryptedPreMasterSecret <$>
-						peekContent Client (Just 70)
+				hms <- handshakeMessages
+				liftIO . putStrLn $ "Messages: " ++ show hms
+				c@(ContentHandshake _ hss) <- peekContent Client (Just 200)
+				let	hms' = BS.concat $ hms :
+						map handshakeToByteString (take 1 hss)
+				let	hms'' = BS.concat $ hms :
+						map handshakeToByteString (take 2 hss)
+--					signed = sign Nothing hashDescrSHA256 pkys hms
+--					signed' = sign Nothing hashDescrSHA256 pkys hms'
+					signed'' = sign Nothing hashDescrSHA256 pkys hms''
+					Just (EncryptedPreMasterSecret epms) =
+						encryptedPreMasterSecret c
+					Just cc@(CertificateChain cs) = certificateChain c
+--				liftIO $ putStrLn $ "signed: " ++ show signed
+--				liftIO $ putStrLn $ "signed': " ++ show signed'
+				liftIO $ putStrLn $ "signed'': " ++ show signed''
+				liftIO $ validateDefault certStore (ValidationCache query add)
+					("Yoshikuni", "Yoshio") cc >>= print
+				let 	PubKeyRSA pub = certPubKey .
+						getCertificate $ head cs
+					sigAlg = certSignatureAlg .
+						getCertificate $ head cs
+
+				liftIO $ print pub
+				liftIO $ print sigAlg
 				pms <- decryptRSA epms
 				generateMasterSecret pms
 				{-
@@ -196,3 +226,9 @@ answer = BS.concat [
 	"PONC\r\n",
 	"0\r\n\r\n"
  ]
+
+query :: ValidationCacheQueryCallback
+query _ _ _ = return ValidationCacheUnknown
+
+add :: ValidationCacheAddCallback
+add _ _ _ = return ()

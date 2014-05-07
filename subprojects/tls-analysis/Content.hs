@@ -7,6 +7,7 @@ module Content (
 	clientVersion, serverVersion,
 	encryptedPreMasterSecret,
 	onlyKnownCipherSuite,
+	certificateChain,
 ) where
 
 import Prelude hiding (concat, head)
@@ -74,6 +75,11 @@ doesClientKeyExchange :: Content -> Bool
 doesClientKeyExchange (ContentHandshake _ hss) =
 	any handshakeDoesClientKeyExchange hss
 doesClientKeyExchange _ = False
+
+certificateChain :: Content -> Maybe CertificateChain
+certificateChain (ContentHandshake _ hss) = case mapMaybe handshakeCertificate hss of
+	[cc] -> Just cc
+	_ -> Nothing
 
 clientRandom, serverRandom :: Content -> Maybe Random
 clientRandom (ContentHandshake _ hss) = case mapMaybe handshakeClientRandom hss of

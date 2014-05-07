@@ -26,6 +26,8 @@ module TlsIO (
 	Version, readVersion, writeVersion,
 
 	getCipherSuite, CipherSuite(..), showRandom,
+
+	handshakeMessages
 ) where
 
 import Prelude hiding (read)
@@ -84,7 +86,8 @@ data TlsState = TlsState {
 	tlssClientSequenceNumber :: Word64,
 	tlssServerSequenceNumber :: Word64,
 	tlssDecryptIv :: Maybe ByteString,
-	tlssRandomGen :: SystemRNG
+	tlssRandomGen :: SystemRNG,
+	tlssHandshakeMessages :: ByteString
  } deriving Show
 
 instance Show SystemRNG where
@@ -142,7 +145,8 @@ initTlsState ep cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssClientSequenceNumber = 0,
 	tlssServerSequenceNumber = 0,
 	tlssDecryptIv = Nothing,
-	tlssRandomGen = cprgCreate ep
+	tlssRandomGen = cprgCreate ep,
+	tlssHandshakeMessages = ""
  }
 
 data Partner = Server | Client deriving (Show, Eq)
@@ -350,6 +354,7 @@ updateHash bs = do
 	md5 <- gets tlssMd5Ctx
 	sha1 <- gets tlssSha1Ctx
 	sha256 <- gets tlssSha256Ctx
+	messages <- gets tlssHandshakeMessages
 	tlss <- get
 {-
 	liftIO $ do
@@ -359,7 +364,8 @@ updateHash bs = do
 	put tlss {
 		tlssMd5Ctx = MD5.update md5 bs,
 		tlssSha1Ctx = SHA1.update sha1 bs,
-		tlssSha256Ctx = SHA256.update sha256 bs
+		tlssSha256Ctx = SHA256.update sha256 bs,
+		tlssHandshakeMessages = messages `BS.append` bs
 	 }
 
 finishedHash :: Partner -> TlsIO ByteString
@@ -380,6 +386,9 @@ finishedHash partner = do
 		(MS.TLS12, Just ms) -> return $
 			MS.generateFinished version (partner == Client) ms sha256
 		_ -> throwError "No master secrets"
+
+handshakeMessages :: TlsIO ByteString
+handshakeMessages = gets tlssHandshakeMessages
 
 getSequenceNumber :: Partner -> TlsIO Word64
 getSequenceNumber partner = gets $ case partner of
