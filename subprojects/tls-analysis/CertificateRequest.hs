@@ -13,6 +13,7 @@ import qualified Data.ByteString as BS
 import Data.ASN1.Encoding
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
+import Data.X509
 
 import ByteStringMonad
 import ToByteString
@@ -20,7 +21,7 @@ import Parts
 
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
-		[(HashAlgorithm, SignatureAlgorithm)] [[ASN1]]
+		[(HashAlgorithm, SignatureAlgorithm)] [DistinguishedName]
 	| CertificateRequestRaw ByteString
 	deriving Show
 
@@ -30,9 +31,12 @@ parseCertificateRequest = do
 	hasas <- section 2 $ list1 parseHashSignatureAlgorithm
 	dns <- section 2 . list $ do
 		bs <- takeLen 2
-		case decodeASN1' DER bs of
-			Right asn1 -> return asn1
+		asn1 <- case decodeASN1' DER bs of
+			Right a -> return a
 			Left err -> throwError $ show err
+		case fromASN1 asn1 of
+			Right (dn, _) -> return dn
+			Left err -> throwError err
 	return $ CertificateRequest ccts hasas dns
 
 certificateRequestToByteString :: CertificateRequest -> ByteString
@@ -42,7 +46,7 @@ certificateRequestToByteString (CertificateRequest ccts hsas bss) = BS.concat [
 	lenBodyToByteString 2 . BS.concat $
 		map hashSignatureAlgorithmToByteString hsas,
 	lenBodyToByteString 2 . BS.concat $
-		map (lenBodyToByteString 2) $ map (encodeASN1' DER) bss ]
+		map (lenBodyToByteString 2) $ map (encodeASN1' DER . flip toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
 
 data ClientCertificateType
