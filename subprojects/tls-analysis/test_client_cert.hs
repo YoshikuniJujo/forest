@@ -69,7 +69,7 @@ main = do
 
 				begin Server cid "Hello"
 				c2 <- peekContent Server (Just 70)
-				_ <- peekContent Server Nothing
+				_ <- peekContent Server (Just 70)
 				_ <- peekContent Server Nothing
 				let	Just sv = serverVersion c2
 					Just cs = cipherSuite c2
@@ -96,26 +96,26 @@ main = do
 				c@(ContentHandshake _ hss) <- peekContent Client (Just 70)
 				let	hms'' = BS.concat $ hms :
 						map handshakeToByteString (take 2 hss)
---					signed = sign Nothing hashDescrSHA256 pkys hms
---					signed' = sign Nothing hashDescrSHA256 pkys hms'
-					signed'' = sign Nothing hashDescrSHA256 pkys hms''
+					Right signed'' = sign Nothing hashDescrSHA256 pkys hms''
 					Just ds = digitalSign c
 					Just (EncryptedPreMasterSecret epms) =
 						encryptedPreMasterSecret c
 					Just cc@(CertificateChain certs) = certificateChain c
 --				liftIO $ putStrLn $ "signed: " ++ show signed
 --				liftIO $ putStrLn $ "signed': " ++ show signed'
-				liftIO . putStrLn $ "signed'': " ++ show signed''
-				liftIO . putStrLn $ "ds      : " ++ show ds
+				liftIO . putStrLn $ "signed'': " ++
+					take 60 (show signed'') ++ " ..."
+				liftIO . putStrLn $ "ds      : " ++
+					take 60 (show ds) ++ " ..."
 				liftIO $ validateDefault certStore (ValidationCache query add)
 					("Yoshikuni", "Yoshio") cc >>= print
 				let 	PubKeyRSA pub = certPubKey .
 						getCertificate $ head certs
-					sigAlg = certSignatureAlg .
-						getCertificate $ head certs
+--					sigAlg = certSignatureAlg .
+--						getCertificate $ head certs
 
-				liftIO $ print pub
-				liftIO $ print sigAlg
+--				liftIO $ print pub
+--				liftIO $ print sigAlg
 				unless (verify hashDescrSHA256 pub hms'' ds) $
 					throwError "client authentificatio failed"
 				pms <- decryptRSA epms
@@ -159,10 +159,13 @@ main = do
 
 				begin Server cid "Finished"
 				sf <- finishedHash Server
-				liftIO $ print sf
-				writeFragment Client . contentToFragment $
-					ContentHandshake (Version 3 3)
-						[HandshakeRaw HandshakeTypeFinished sf]
+				let sfc = ContentHandshake (Version 3 3)
+					[HandshakeRaw HandshakeTypeFinished sf]
+				liftIO $ do
+					print sf
+					print $ (\(ContentHandshake _ [h]) -> h)
+						sfc
+				writeFragment Client $ contentToFragment sfc
 --				_ <- peekContent Server Nothing
 				end
 
@@ -171,7 +174,7 @@ main = do
 					_ <- peekContent Client Nothing
 					end
 					begin Server cid "Contents"
-					let ans = ContentRaw (ContentTypeRaw 23)
+					let ans = ContentApplicationData
 						(Version 3 3) answer
 					liftIO $ print ans
 					writeFragment Client $ contentToFragment ans

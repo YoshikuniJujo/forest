@@ -121,17 +121,20 @@ compressionMethodToByteString (CompressionMethodRaw cm) = pack [cm]
 data ContentType
 	= ContentTypeChangeCipherSpec
 	| ContentTypeHandshake
+	| ContentTypeApplicationData
 	| ContentTypeRaw Word8
 	deriving Show
 
 byteStringToContentType :: ByteString -> ContentType
 byteStringToContentType "\20" = ContentTypeChangeCipherSpec
 byteStringToContentType "\22" = ContentTypeHandshake
+byteStringToContentType "\23" = ContentTypeApplicationData
 byteStringToContentType bs = let [ct] = unpack bs in ContentTypeRaw ct
 
 contentTypeToByteString :: ContentType -> ByteString
 contentTypeToByteString ContentTypeChangeCipherSpec = pack [20]
 contentTypeToByteString ContentTypeHandshake = pack [22]
+contentTypeToByteString ContentTypeApplicationData = pack [23]
 contentTypeToByteString (ContentTypeRaw ct) = pack [ct]
 
 data Version

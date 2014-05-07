@@ -28,18 +28,22 @@ fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) bod
 parseContent :: ContentType -> Version -> ByteStringM Content
 parseContent ContentTypeChangeCipherSpec v = ContentChangeCipherSpec v <$> parseChangeCipherSpec
 parseContent ContentTypeHandshake v = ContentHandshake v <$> list1 parseHandshake
+parseContent ContentTypeApplicationData v = ContentApplicationData v <$> whole
 parseContent ct v = ContentRaw ct v <$> whole
 
 contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =
 	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
 contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v .
-		concat $ map handshakeToByteString hss
+	concat $ map handshakeToByteString hss
+contentToFragment (ContentApplicationData v body) =
+	Fragment ContentTypeApplicationData v body
 contentToFragment (ContentRaw ct v body) = Fragment ct v body
 
 data Content
 	= ContentChangeCipherSpec Version ChangeCipherSpec
 	| ContentHandshake Version [Handshake]
+	| ContentApplicationData Version ByteString
 	| ContentRaw ContentType Version ByteString
 	deriving Show
 

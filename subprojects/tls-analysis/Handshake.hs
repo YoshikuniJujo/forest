@@ -38,6 +38,7 @@ data Handshake
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
+	| HandshakeFinished ByteString
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
 
@@ -106,6 +107,8 @@ parseHandshake = do
 			HandshakeCertificateVerify <$> parseDigitallySigned
 		HandshakeTypeClientKeyExchange ->
 			HandshakeClientKeyExchange <$> parseEncryptedPreMasterSecret
+		HandshakeTypeFinished ->
+			HandshakeFinished <$> whole
 		_ -> HandshakeRaw mt <$> whole
 
 handshakeToByteString :: Handshake -> ByteString
@@ -125,6 +128,8 @@ handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
 handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientKeyExchange $
 		encryptedPreMasterSecretToByteString epms
+handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =
 	handshakeTypeToByteString mt `append` lenBodyToByteString 3 bs
 

@@ -7,7 +7,6 @@ module CertificateRequest (
 
 import Prelude hiding (head)
 
-import Control.Applicative
 import qualified Data.ByteString as BS
 
 import Data.ASN1.Encoding
@@ -46,7 +45,7 @@ certificateRequestToByteString (CertificateRequest ccts hsas bss) = BS.concat [
 	lenBodyToByteString 2 . BS.concat $
 		map hashSignatureAlgorithmToByteString hsas,
 	lenBodyToByteString 2 . BS.concat $
-		map (lenBodyToByteString 2) $ map (encodeASN1' DER . flip toASN1 []) bss ]
+		map (lenBodyToByteString 2 . encodeASN1' DER . flip toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
 
 data ClientCertificateType
