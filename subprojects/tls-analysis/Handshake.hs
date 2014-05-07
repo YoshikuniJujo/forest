@@ -24,6 +24,7 @@ import ClientHello
 import ServerHello
 import Certificate
 import DigitallySigned
+import CertificateRequest
 import PreMasterSecret
 import ByteStringMonad
 import ToByteString
@@ -33,6 +34,7 @@ data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
+	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
@@ -94,6 +96,8 @@ parseHandshake = do
 			HandshakeServerHello <$> parseServerHello
 		HandshakeTypeCertificate ->
 			HandshakeCertificate <$> parseCertificateChain
+		HandshakeTypeCertificateRequest ->
+			HandshakeCertificateRequest <$> parseCertificateRequest
 		HandshakeTypeServerHelloDone -> do
 			e <- empty
 			unless e $ throwError "ServerHelloDone must empty"
@@ -111,6 +115,9 @@ handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ serverHelloToByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ certificateChainToByteString crts
+handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
+	HandshakeRaw HandshakeTypeCertificateRequest $
+		certificateRequestToByteString cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
 handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
@@ -125,6 +132,7 @@ data HandshakeType
 	= HandshakeTypeClientHello
 	| HandshakeTypeServerHello
 	| HandshakeTypeCertificate
+	| HandshakeTypeCertificateRequest
 	| HandshakeTypeServerHelloDone
 	| HandshakeTypeCertificateVerify
 	| HandshakeTypeClientKeyExchange
@@ -139,6 +147,7 @@ parseHandshakeType = do
 		1 -> HandshakeTypeClientHello
 		2 -> HandshakeTypeServerHello
 		11 -> HandshakeTypeCertificate
+		13 -> HandshakeTypeCertificateRequest
 		14 -> HandshakeTypeServerHelloDone
 		15 -> HandshakeTypeCertificateVerify
 		16 -> HandshakeTypeClientKeyExchange
@@ -149,6 +158,7 @@ handshakeTypeToByteString :: HandshakeType -> ByteString
 handshakeTypeToByteString HandshakeTypeClientHello = pack [1]
 handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
 handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
+handshakeTypeToByteString HandshakeTypeCertificateRequest = pack [13]
 handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
 handshakeTypeToByteString HandshakeTypeCertificateVerify = pack [15]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]

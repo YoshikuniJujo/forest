@@ -10,12 +10,18 @@ module Parts (
 		parseCompressionMethodList, compressionMethodListToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Version(..), byteStringToVersion, versionToByteString,
+	HashAlgorithm(..), parseHashAlgorithm, hashAlgorithmToByteString,
+	SignatureAlgorithm(..), parseSignatureAlgorithm,
+	signatureAlgorithmToByteString,
+	hashSignatureAlgorithmToByteString,
+	parseHashSignatureAlgorithm,
 ) where
 
 import Prelude hiding (head, take, concat)
 import Numeric
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
+import qualified Data.ByteString as BS
 
 import ByteStringMonad
 import ToByteString
@@ -137,3 +143,59 @@ byteStringToVersion v = let [vmjr, vmnr] = unpack v in Version vmjr vmnr
 
 versionToByteString :: Version -> ByteString
 versionToByteString (Version vmjr vmnr) = pack [vmjr, vmnr]
+
+data HashAlgorithm
+	= HashAlgorithmSha1
+	| HashAlgorithmSha224
+	| HashAlgorithmSha256
+	| HashAlgorithmSha384
+	| HashAlgorithmSha512
+	| HashAlgorithmRaw Word8
+	deriving Show
+
+parseHashAlgorithm :: ByteStringM HashAlgorithm
+parseHashAlgorithm = do
+	ha <- head
+	return $ case ha of
+		2 -> HashAlgorithmSha1
+		3 -> HashAlgorithmSha224
+		4 -> HashAlgorithmSha256
+		5 -> HashAlgorithmSha384
+		6 -> HashAlgorithmSha512
+		_ -> HashAlgorithmRaw ha
+
+hashAlgorithmToByteString :: HashAlgorithm -> ByteString
+hashAlgorithmToByteString HashAlgorithmSha1 = "\x02"
+hashAlgorithmToByteString HashAlgorithmSha224 = "\x03"
+hashAlgorithmToByteString HashAlgorithmSha256 = "\x04"
+hashAlgorithmToByteString HashAlgorithmSha384 = "\x05"
+hashAlgorithmToByteString HashAlgorithmSha512 = "\x06"
+hashAlgorithmToByteString (HashAlgorithmRaw w) = pack [w]
+
+data SignatureAlgorithm
+	= SignatureAlgorithmRsa
+	| SignatureAlgorithmDsa
+	| SignatureAlgorithmRaw Word8
+	deriving Show
+
+parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
+parseSignatureAlgorithm = do
+	sa <- head
+	return $ case sa of
+		1 -> SignatureAlgorithmRsa
+		2 -> SignatureAlgorithmDsa
+		_ -> SignatureAlgorithmRaw sa
+
+signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
+signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
+signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
+signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]
+
+hashSignatureAlgorithmToByteString :: (HashAlgorithm, SignatureAlgorithm) -> ByteString
+hashSignatureAlgorithmToByteString (ha, sa) = BS.concat [
+	hashAlgorithmToByteString ha,
+	signatureAlgorithmToByteString sa ]
+
+parseHashSignatureAlgorithm :: ByteStringM (HashAlgorithm, SignatureAlgorithm)
+parseHashSignatureAlgorithm =
+	(,) <$> parseHashAlgorithm <*> parseSignatureAlgorithm

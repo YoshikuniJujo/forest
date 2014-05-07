@@ -11,6 +11,7 @@ import Control.Applicative
 import qualified Data.ByteString as BS
 import ByteStringMonad
 import ToByteString
+import Parts
 
 data DigitallySigned
 	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) ByteString
@@ -32,35 +33,3 @@ digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
 	signatureAlgorithmToByteString sa,
 	lenBodyToByteString 2 bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs
-
-data HashAlgorithm
-	= HashAlgorithmSha256
-	| HashAlgorithmRaw Word8
-	deriving Show
-
-parseHashAlgorithm :: ByteStringM HashAlgorithm
-parseHashAlgorithm = do
-	ha <- head
-	return $ case ha of
-		4 -> HashAlgorithmSha256
-		_ -> HashAlgorithmRaw ha
-
-hashAlgorithmToByteString :: HashAlgorithm -> ByteString
-hashAlgorithmToByteString HashAlgorithmSha256 = "\x04"
-hashAlgorithmToByteString (HashAlgorithmRaw w) = pack [w]
-
-data SignatureAlgorithm
-	= SignatureAlgorithmRsa
-	| SignatureAlgorithmRaw Word8
-	deriving Show
-
-parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
-parseSignatureAlgorithm = do
-	sa <- head
-	return $ case sa of
-		1 -> SignatureAlgorithmRsa
-		_ -> SignatureAlgorithmRaw sa
-
-signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
-signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
-signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]
