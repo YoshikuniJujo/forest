@@ -8,7 +8,6 @@ module DigitallySigned (
 import Prelude hiding (head)
 
 import Control.Applicative
-import Data.ByteString (ByteString, pack)
 import qualified Data.ByteString as BS
 import ByteStringMonad
 import ToByteString

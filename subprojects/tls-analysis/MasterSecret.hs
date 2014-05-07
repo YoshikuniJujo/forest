@@ -55,6 +55,7 @@ generateFinished TLS10 isC ms hash =
 	prfMd5Sha1 ms (getFinishedLabel isC `B.append` hash) 12
 generateFinished TLS12 isC ms hash =
 	prfSha256 ms (getFinishedLabel isC `B.append` hash) 12
+generateFinished _ _ _ _ = error "Not implemented"
 
 getFinishedLabel :: Bool -> B.ByteString
 getFinishedLabel True = "client finished"

@@ -54,7 +54,7 @@ main = do
 		modifyIORef cidRef succ
 		client <- ClientHandle . fst3 <$> accept scl
 		server <- ServerHandle <$> connectTo "localhost" psv
-		forkIO $ do
+		_ <- forkIO $ do
 			ep <- createEntropyPool
 			(\act -> evalTlsIO act ep cid client server pk) $ do
 				begin Client cid "Hello"
@@ -69,8 +69,8 @@ main = do
 
 				begin Server cid "Hello"
 				c2 <- peekContent Server (Just 70)
-				c3 <- peekContent Server Nothing
-				c4 <- peekContent Server Nothing
+				_ <- peekContent Server Nothing
+				_ <- peekContent Server Nothing
 				let	Just sv = serverVersion c2
 					Just cs = cipherSuite c2
 					Just sr = serverRandom c2
@@ -94,8 +94,6 @@ main = do
 				hms <- handshakeMessages
 --				liftIO . putStrLn $ "Messages: " ++ show hms
 				c@(ContentHandshake _ hss) <- peekContent Client (Just 70)
-				let	hms' = BS.concat $ hms :
-						map handshakeToByteString (take 1 hss)
 				let	hms'' = BS.concat $ hms :
 						map handshakeToByteString (take 2 hss)
 --					signed = sign Nothing hashDescrSHA256 pkys hms
@@ -104,21 +102,22 @@ main = do
 					Just ds = digitalSign c
 					Just (EncryptedPreMasterSecret epms) =
 						encryptedPreMasterSecret c
-					Just cc@(CertificateChain cs) = certificateChain c
+					Just cc@(CertificateChain certs) = certificateChain c
 --				liftIO $ putStrLn $ "signed: " ++ show signed
 --				liftIO $ putStrLn $ "signed': " ++ show signed'
-				liftIO $ putStrLn $ "signed'': " ++ show signed''
-				liftIO $ putStrLn $ "ds      : " ++ show ds
+				liftIO . putStrLn $ "signed'': " ++ show signed''
+				liftIO . putStrLn $ "ds      : " ++ show ds
 				liftIO $ validateDefault certStore (ValidationCache query add)
 					("Yoshikuni", "Yoshio") cc >>= print
 				let 	PubKeyRSA pub = certPubKey .
-						getCertificate $ head cs
+						getCertificate $ head certs
 					sigAlg = certSignatureAlg .
-						getCertificate $ head cs
+						getCertificate $ head certs
 
 				liftIO $ print pub
 				liftIO $ print sigAlg
-				liftIO . print $ verify hashDescrSHA256 pub hms'' ds
+				unless (verify hashDescrSHA256 pub hms'' ds) $
+					throwError "client authentificatio failed"
 				pms <- decryptRSA epms
 				generateMasterSecret pms
 				{-
@@ -145,7 +144,7 @@ main = do
 				end
 
 				begin Server cid "Change Cipher Suite"
-				writeFragment Client $ contentToFragment $
+				writeFragment Client . contentToFragment $
 					ContentChangeCipherSpec (Version 3 3)
 						ChangeCipherSpec
 				flushCipherSuite Server
@@ -161,8 +160,8 @@ main = do
 				begin Server cid "Finished"
 				sf <- finishedHash Server
 				liftIO $ print sf
-				writeFragment Client $ contentToFragment $
-					ContentHandshake (Version 3 3) $
+				writeFragment Client . contentToFragment $
+					ContentHandshake (Version 3 3)
 						[HandshakeRaw HandshakeTypeFinished sf]
 --				_ <- peekContent Server Nothing
 				end
@@ -175,8 +174,7 @@ main = do
 					let ans = ContentRaw (ContentTypeRaw 23)
 						(Version 3 3) answer
 					liftIO $ print ans
-					writeFragment Client $ contentToFragment $
-						ans
+					writeFragment Client $ contentToFragment ans
 					end
 
 {-
@@ -213,12 +211,7 @@ peekContent partner n = do
 			maybe id (((++ " ...") .) . take) n $ show c
 	return c
 
-peekRawFragment :: Partner -> TlsIO () -- RawFragment
-peekRawFragment partner = do
-	f <- readRawFragment partner
-	writeRawFragment (opponent partner) f
-	liftIO $ print f
-
+answer :: BS.ByteString
 answer = BS.concat [
 	"HTTP/1.1 200 OK\r\n",
 	"Transfer-Encoding: chunked\r\n",

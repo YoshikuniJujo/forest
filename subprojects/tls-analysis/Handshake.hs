@@ -113,7 +113,7 @@ handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ certificateChainToByteString crts
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
-handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString $
+handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificateVerify $ digitallySignedToByteString ds
 handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientKeyExchange $

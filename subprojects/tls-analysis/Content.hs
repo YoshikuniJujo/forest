@@ -103,11 +103,13 @@ clientVersion :: Content -> Maybe ProtocolVersion
 clientVersion (ContentHandshake _ hss) = case mapMaybe handshakeClientVersion hss of
 	[v] -> Just v
 	_ -> Nothing
+clientVersion _ = Nothing
 
 serverVersion :: Content -> Maybe ProtocolVersion
 serverVersion (ContentHandshake _ hss) = case mapMaybe handshakeServerVersion hss of
 	[v] -> Just v
 	_ -> Nothing
+serverVersion _ = Nothing
 
 cipherSuite :: Content -> Maybe CipherSuite
 cipherSuite (ContentHandshake _ hss) = case mapMaybe handshakeCipherSuite hss of

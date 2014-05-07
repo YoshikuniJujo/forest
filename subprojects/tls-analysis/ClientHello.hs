@@ -23,6 +23,7 @@ data ClientHello
 clientHelloOnlyKnownCipherSuite :: ClientHello -> ClientHello
 clientHelloOnlyKnownCipherSuite (ClientHello pv r sid css cms mel) =
 	ClientHello pv r sid (TLS_RSA_WITH_AES_128_CBC_SHA : css) cms mel
+clientHelloOnlyKnownCipherSuite ch = ch
 
 clientHelloClientRandom :: ClientHello -> Maybe Random
 clientHelloClientRandom (ClientHello _ r _ _ _ _) = Just r

@@ -46,7 +46,7 @@ main = do
 			begin Client cid "Say Hello"
 --			ch <- peekContentFilter Client (Just 70) onlyKnownCipherSuite
 --			ch <- peekContentFilter Client Nothing onlyKnownCipherSuite
-			ch <- peekContentFilter Client (Just 70) id
+			ch <- peekContent Client (Just 70)
 			let	Just cv = clientVersion ch
 				Just cr = clientRandom ch
 			setClientRandom cr
@@ -78,25 +78,24 @@ main = do
 
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			forkIO $ do
-				(\act -> evalTlsIO act ep cid client server pk) $ do
-					forever $ do
-						f <- readRawFragment Client
-						writeRawFragment Server f
-						begin Client cid "Others"
-						liftIO $ print f
-						end
-			forkIO $ do
-				(\act -> evalTlsIO act ep cid client server pk) $ do
-					forever $ do
-						f <- readRawFragment Server
-						writeRawFragment Client f
-						begin Server cid "Others"
-						liftIO $ print f
-						end
+			forkIO . (\act -> evalTlsIO act ep cid client server pk) .
+				forever $ do
+					f <- readRawFragment Client
+					writeRawFragment Server f
+					begin Client cid "Others"
+					liftIO $ print f
+					end
+			forkIO . (\act -> evalTlsIO act ep cid client server pk) .
+				forever $ do
+					f <- readRawFragment Server
+					writeRawFragment Client f
+					begin Server cid "Others"
+					liftIO $ print f
+					end
 			return ()
 		return ()
 
+{-
 peekContentFilter :: Partner -> Maybe Int -> (Content -> Content) -> TlsIO Content
 peekContentFilter partner n f = do
 	ec <- (f <$>) . fragmentToContent <$> readFragment partner
@@ -107,6 +106,7 @@ peekContentFilter partner n f = do
 				maybe id (((++ " ...") .) . take) n $ show c
 			return c
 		Left err -> throwError err
+		-}
 
 peekContent :: Partner -> Maybe Int -> TlsIO Content
 peekContent partner n = do
