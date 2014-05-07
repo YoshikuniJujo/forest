@@ -7,6 +7,7 @@ module Handshake (
 	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
 	handshakeClientVersion, handshakeServerVersion,
 	handshakeEncryptedPreMasterSecret,
+	handshakeOnlyKnownCipherSuite,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -133,3 +134,8 @@ handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]
 handshakeTypeToByteString HandshakeTypeFinished = pack [20]
 handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]
+
+handshakeOnlyKnownCipherSuite :: Handshake -> Handshake
+handshakeOnlyKnownCipherSuite (HandshakeClientHello ch) =
+	HandshakeClientHello $ clientHelloOnlyKnownCipherSuite ch
+handshakeOnlyKnownCipherSuite hs = hs

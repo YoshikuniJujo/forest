@@ -6,6 +6,7 @@ module Content (
 	clientRandom, serverRandom, cipherSuite,
 	clientVersion, serverVersion,
 	encryptedPreMasterSecret,
+	onlyKnownCipherSuite,
 ) where
 
 import Prelude hiding (concat, head)
@@ -106,3 +107,8 @@ encryptedPreMasterSecret (ContentHandshake _ hss) =
 		[epms] -> Just epms
 		_ -> Nothing
 encryptedPreMasterSecret _ = Nothing
+
+onlyKnownCipherSuite :: Content -> Content
+onlyKnownCipherSuite (ContentHandshake v hss) =
+	ContentHandshake v $ map handshakeOnlyKnownCipherSuite hss
+onlyKnownCipherSuite c = c

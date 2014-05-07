@@ -57,6 +57,9 @@ sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
 data CipherSuite
 	= TLS_NULL_WITH_NULL_NULL
 	| TLS_RSA_WITH_AES_128_CBC_SHA
+	| TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+	| TLS_ECDHE_PSK_WITH_NULL_SHA
+	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 	| CipherSuiteRaw Word8 Word8
 	deriving Show
 
@@ -73,11 +76,17 @@ parseCipherSuite = do
 	return $ case (w1, w2) of
 		(0x00, 0x00) -> TLS_NULL_WITH_NULL_NULL
 		(0x00, 0x2f) -> TLS_RSA_WITH_AES_128_CBC_SHA
+		(0x00, 0x33) -> TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+		(0x00, 0x39) -> TLS_ECDHE_PSK_WITH_NULL_SHA
+		(0x00, 0x45) -> TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 		_ -> CipherSuiteRaw w1 w2
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
 cipherSuiteToByteString TLS_NULL_WITH_NULL_NULL = "\x00\x00"
 cipherSuiteToByteString TLS_RSA_WITH_AES_128_CBC_SHA = "\x00\x2f"
+cipherSuiteToByteString TLS_DHE_RSA_WITH_AES_128_CBC_SHA = "\x00\x33"
+cipherSuiteToByteString TLS_ECDHE_PSK_WITH_NULL_SHA = "\x00\x39"
+cipherSuiteToByteString TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = "\x00\x45"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 
 data CompressionMethod

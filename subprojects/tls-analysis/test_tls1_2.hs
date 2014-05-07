@@ -68,7 +68,7 @@ main = do
 				liftIO $ do
 					putStrLn . ("\t" ++) $ show sv
 					putStrLn . ("\t" ++) $ show cs
-					putStr $ showRandom cr
+					putStr $ showRandom sr
 				end
 				return ()
 
