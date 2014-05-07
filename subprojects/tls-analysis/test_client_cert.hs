@@ -92,8 +92,8 @@ main = do
 
 				begin Client cid "Key Exchange"
 				hms <- handshakeMessages
-				liftIO . putStrLn $ "Messages: " ++ show hms
-				c@(ContentHandshake _ hss) <- peekContent Client (Just 200)
+--				liftIO . putStrLn $ "Messages: " ++ show hms
+				c@(ContentHandshake _ hss) <- peekContent Client (Just 70)
 				let	hms' = BS.concat $ hms :
 						map handshakeToByteString (take 1 hss)
 				let	hms'' = BS.concat $ hms :
@@ -101,12 +101,14 @@ main = do
 --					signed = sign Nothing hashDescrSHA256 pkys hms
 --					signed' = sign Nothing hashDescrSHA256 pkys hms'
 					signed'' = sign Nothing hashDescrSHA256 pkys hms''
+					Just ds = digitalSign c
 					Just (EncryptedPreMasterSecret epms) =
 						encryptedPreMasterSecret c
 					Just cc@(CertificateChain cs) = certificateChain c
 --				liftIO $ putStrLn $ "signed: " ++ show signed
 --				liftIO $ putStrLn $ "signed': " ++ show signed'
 				liftIO $ putStrLn $ "signed'': " ++ show signed''
+				liftIO $ putStrLn $ "ds      : " ++ show ds
 				liftIO $ validateDefault certStore (ValidationCache query add)
 					("Yoshikuni", "Yoshio") cc >>= print
 				let 	PubKeyRSA pub = certPubKey .
@@ -116,6 +118,7 @@ main = do
 
 				liftIO $ print pub
 				liftIO $ print sigAlg
+				liftIO . print $ verify hashDescrSHA256 pub hms'' ds
 				pms <- decryptRSA epms
 				generateMasterSecret pms
 				{-

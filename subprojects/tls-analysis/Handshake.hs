@@ -10,7 +10,7 @@ module Handshake (
 	handshakeOnlyKnownCipherSuite,
 
 	HandshakeType(HandshakeTypeFinished),
-	handshakeCertificate, CertificateChain,
+	handshakeCertificate, CertificateChain, handshakeSign,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -23,6 +23,7 @@ import Data.Word
 import ClientHello
 import ServerHello
 import Certificate
+import DigitallySigned
 import PreMasterSecret
 import ByteStringMonad
 import ToByteString
@@ -33,9 +34,14 @@ data Handshake
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
 	| HandshakeServerHelloDone
+	| HandshakeCertificateVerify DigitallySigned
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
+
+handshakeSign :: Handshake -> Maybe ByteString
+handshakeSign (HandshakeCertificateVerify ds) = digitallySignedSign ds
+handshakeSign _ = Nothing
 
 handshakeCertificate :: Handshake -> Maybe CertificateChain
 handshakeCertificate (HandshakeCertificate cc) = Just cc
@@ -92,6 +98,8 @@ parseHandshake = do
 			e <- empty
 			unless e $ throwError "ServerHelloDone must empty"
 			return HandshakeServerHelloDone
+		HandshakeTypeCertificateVerify ->
+			HandshakeCertificateVerify <$> parseDigitallySigned
 		HandshakeTypeClientKeyExchange ->
 			HandshakeClientKeyExchange <$> parseEncryptedPreMasterSecret
 		_ -> HandshakeRaw mt <$> whole
@@ -105,6 +113,8 @@ handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ certificateChainToByteString crts
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
+handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeCertificateVerify $ digitallySignedToByteString ds
 handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientKeyExchange $
 		encryptedPreMasterSecretToByteString epms
@@ -116,6 +126,7 @@ data HandshakeType
 	| HandshakeTypeServerHello
 	| HandshakeTypeCertificate
 	| HandshakeTypeServerHelloDone
+	| HandshakeTypeCertificateVerify
 	| HandshakeTypeClientKeyExchange
 	| HandshakeTypeFinished
 	| HandshakeTypeRaw Word8
@@ -129,6 +140,7 @@ parseHandshakeType = do
 		2 -> HandshakeTypeServerHello
 		11 -> HandshakeTypeCertificate
 		14 -> HandshakeTypeServerHelloDone
+		15 -> HandshakeTypeCertificateVerify
 		16 -> HandshakeTypeClientKeyExchange
 		20 -> HandshakeTypeFinished
 		_ -> HandshakeTypeRaw ht
@@ -138,6 +150,7 @@ handshakeTypeToByteString HandshakeTypeClientHello = pack [1]
 handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
 handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
 handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
+handshakeTypeToByteString HandshakeTypeCertificateVerify = pack [15]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]
 handshakeTypeToByteString HandshakeTypeFinished = pack [20]
 handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]

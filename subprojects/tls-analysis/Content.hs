@@ -8,6 +8,7 @@ module Content (
 	encryptedPreMasterSecret,
 	onlyKnownCipherSuite,
 	certificateChain,
+	digitalSign,
 ) where
 
 import Prelude hiding (concat, head)
@@ -76,10 +77,17 @@ doesClientKeyExchange (ContentHandshake _ hss) =
 	any handshakeDoesClientKeyExchange hss
 doesClientKeyExchange _ = False
 
+digitalSign :: Content -> Maybe ByteString
+digitalSign (ContentHandshake _ hss) = case mapMaybe handshakeSign hss of
+	[ds] -> Just ds
+	_ -> Nothing
+digitalSign _ = Nothing
+
 certificateChain :: Content -> Maybe CertificateChain
 certificateChain (ContentHandshake _ hss) = case mapMaybe handshakeCertificate hss of
 	[cc] -> Just cc
 	_ -> Nothing
+certificateChain _ = Nothing
 
 clientRandom, serverRandom :: Content -> Maybe Random
 clientRandom (ContentHandshake _ hss) = case mapMaybe handshakeClientRandom hss of
