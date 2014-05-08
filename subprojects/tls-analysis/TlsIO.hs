@@ -21,6 +21,7 @@ module TlsIO (
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 
 	updateHash, finishedHash, calcMac, updateSequenceNumber,
+	updateSequenceNumberSmart,
 
 	ContentType(..), readContentType, writeContentType,
 	Version, readVersion, writeVersion,
@@ -405,6 +406,17 @@ updateSequenceNumber partner = do
 		Client -> tlss { tlssClientSequenceNumber = succ sn }
 		Server -> tlss { tlssServerSequenceNumber = succ sn }
 	return sn
+
+updateSequenceNumberSmart :: Partner -> TlsIO ()
+updateSequenceNumberSmart partner = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
+	case cs of
+		TLS_RSA_WITH_AES_128_CBC_SHA ->
+			updateSequenceNumber partner >> return ()
+		TLS_NULL_WITH_NULL_NULL -> return ()
+		_ -> throwError "not implemented"
 
 calcMac :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
 calcMac partner ct v body = do

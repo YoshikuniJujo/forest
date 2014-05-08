@@ -16,6 +16,8 @@ import Network
 import Fragment
 import Content
 import Handshake
+import ServerHello
+import CertificateRequest
 import PreMasterSecret
 import Parts
 import Tools
@@ -45,22 +47,23 @@ main :: IO ()
 main = do
 	cidRef <- newIORef 0
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
+	certChain <- CertificateChain <$> readSignedObject "localhost.crt"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
-	[pcl, psv] <- mapM ((PortNumber . fromInt <$>) . readIO) =<< getArgs
+	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) =<< getArgs
 	scl <- listenOn pcl
 	forever $ do
 		cid <- readIORef cidRef
 		modifyIORef cidRef succ
 		client <- ClientHandle . fst3 <$> accept scl
-		server <- ServerHandle <$> connectTo "localhost" psv
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIO act ep cid client server pk) $ do
+			(\act -> evalTlsIO act ep cid client (ServerHandle undefined) pk) $ do
 				begin Client cid "Hello"
 				c1 <- peekContent Client (Just 70)
 				let	Just cv = clientVersion c1
 					Just cr = clientRandom c1
+--				liftIO $ print c1
 				setClientRandom cr
 				liftIO $ do
 					putStrLn . ("\t" ++) $ show cv
@@ -68,12 +71,23 @@ main = do
 				end
 
 				begin Server cid "Hello"
-				c2 <- peekContent Server (Just 70)
-				_ <- peekContent Server (Just 70)
-				_ <- peekContent Server Nothing
-				let	Just sv = serverVersion c2
-					Just cs = cipherSuite c2
-					Just sr = serverRandom c2
+--				ContentHandshake _ [sh, _] <- readContent Server (Just 70)
+				sh' <- ContentHandshake (Version 3 3) . (: []) <$>
+						liftIO filterServerHello
+				writeContent Client sh'
+				writeContent Client $
+					ContentHandshake (Version 3 3) . (: []) $
+						HandshakeCertificate certChain
+				let	certs1 = listCertificates certStore
+					dns = map (certIssuerDN . signedObject . getSigned) certs1
+					cReq' = filterCertReq dns
+				writeContent Client $
+					ContentHandshake (Version 3 3) [cReq']
+				writeContent Client $ ContentHandshake (Version 3 3)
+					[HandshakeServerHelloDone]
+				let	Just sv = serverVersion sh'
+					Just cs = cipherSuite sh'
+					Just sr = serverRandom sh'
 				setVersion sv
 				cacheCipherSuite cs
 				setServerRandom sr
@@ -211,14 +225,31 @@ main = do
 
 peekContent :: Partner -> Maybe Int -> TlsIO Content
 peekContent partner n = do
-	Right c <- fragmentToContent <$> readFragment partner
-	writeFragment (opponent partner) $ contentToFragment c
+	c <- readContent partner n
+--	writeContent (opponent partner) c
+--	fragmentUpdateHash $ contentToFragment c
+	let f = contentToFragment c
+--	writeFragment (opponent partner) f
+	updateSequenceNumberSmart partner
+	fragmentUpdateHash f
+	return c
+
+readContent :: Partner -> Maybe Int -> TlsIO Content
+readContent partner n = do
+	Right c <- fragmentToContent <$> readFragmentNoHash partner
+--	Right c <- fragmentToContent <$> readFragment partner
 	case c of
 		ContentHandshake _ hss -> forM_ hss $
 			liftIO . putStrLn . maybe id (((++ " ...") .) . take) n . show
 		_ -> liftIO . putStrLn .
 			maybe id (((++ " ...") .) . take) n $ show c
 	return c
+
+writeContent :: Partner -> Content -> TlsIO ()
+writeContent partner c = do
+	let f = contentToFragment c
+	writeFragment partner f
+	fragmentUpdateHash f
 
 answer :: BS.ByteString
 answer = BS.concat [
@@ -237,3 +268,21 @@ query _ _ _ = return ValidationCacheUnknown
 
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
+
+filterServerHello :: IO Handshake
+filterServerHello = do
+	sr <- mkServerRandom
+	return . HandshakeServerHello $ ServerHello
+		(ProtocolVersion 3 3) (Random sr) (SessionId "")
+		TLS_RSA_WITH_AES_128_CBC_SHA CompressionMethodNull Nothing
+
+filterCertReq :: [DistinguishedName] -> Handshake
+filterCertReq dns = HandshakeCertificateRequest $ CertificateRequest
+	[ClientCertificateTypeRsaSign]
+	[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
+	dns
+
+mkServerRandom :: IO BS.ByteString
+mkServerRandom = do
+	ep <- createEntropyPool
+	return . fst $ cprgGenerate 32 (cprgCreate ep :: SystemRNG)

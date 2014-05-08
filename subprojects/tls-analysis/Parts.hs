@@ -3,10 +3,10 @@
 module Parts (
 	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString,
 	Random(..), parseRandom, randomToByteString,
-	SessionId, parseSessionId, sessionIdToByteString,
+	SessionId(..), parseSessionId, sessionIdToByteString,
 	CipherSuite(..), parseCipherSuite, cipherSuiteToByteString,
 		parseCipherSuiteList, cipherSuiteListToByteString,
-	CompressionMethod, parseCompressionMethod, compressionMethodToByteString,
+	CompressionMethod(..), parseCompressionMethod, compressionMethodToByteString,
 		parseCompressionMethodList, compressionMethodListToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Version(..), byteStringToVersion, versionToByteString,

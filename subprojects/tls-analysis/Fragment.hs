@@ -2,7 +2,7 @@
 
 module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version,
-	readFragment, writeFragment,
+	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
 	clientId, clientWriteMacKey,
@@ -22,6 +22,7 @@ module Fragment (
 
 	throwError, opponent, showRandom,
 	handshakeMessages,
+	updateSequenceNumberSmart,
 ) where
 
 import Prelude hiding (read)
@@ -41,6 +42,16 @@ readFragment p = do
 --		ContentTypeRaw 23 ->  liftIO $ print r
 		_ -> return ()
 	return $ Fragment ct v body
+
+readFragmentNoHash :: Partner -> TlsIO Fragment
+readFragmentNoHash p = do
+	RawFragment ct v ebody <- readRawFragment p
+	body <- decryptBody p ct v ebody
+	return $ Fragment ct v body
+
+fragmentUpdateHash :: Fragment -> TlsIO ()
+fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
+fragmentUpdateHash _ = return ()
 
 decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
 decryptBody p ct v ebody = do

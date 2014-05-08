@@ -1,8 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module CertificateRequest (
-	CertificateRequest,
+	CertificateRequest(..),
 	parseCertificateRequest, certificateRequestToByteString,
+	ClientCertificateType(..),
 ) where
 
 import Prelude hiding (head)
