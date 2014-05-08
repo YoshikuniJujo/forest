@@ -28,7 +28,7 @@ module TlsIO (
 
 	getCipherSuite, CipherSuite(..), showRandom,
 
-	handshakeMessages
+	handshakeMessages, randomByteString,
 ) where
 
 import Prelude hiding (read)
@@ -414,7 +414,7 @@ updateSequenceNumberSmart partner = do
 		Server -> tlssServerWriteCipherSuite
 	case cs of
 		TLS_RSA_WITH_AES_128_CBC_SHA ->
-			updateSequenceNumber partner >> return ()
+			void $ updateSequenceNumber partner
 		TLS_NULL_WITH_NULL_NULL -> return ()
 		_ -> throwError "not implemented"
 

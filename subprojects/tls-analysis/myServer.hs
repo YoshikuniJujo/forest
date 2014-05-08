@@ -46,10 +46,10 @@ end = liftIO $ putStrLn "" >> writeChan locker ()
 main :: IO ()
 main = do
 	cidRef <- newIORef 0
-	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	certChain <- CertificateChain <$> readSignedObject "localhost.crt"
-	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
+	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
+	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) =<< getArgs
 	scl <- listenOn pcl
 	forever $ do
@@ -71,18 +71,14 @@ main = do
 				end
 
 				begin Server cid "Hello"
---				ContentHandshake _ [sh, _] <- readContent Server (Just 70)
-				sh' <- ContentHandshake (Version 3 3) . (: []) <$>
-						liftIO filterServerHello
+				sh' <- handshakeToContent <$> mkServerHello
 				writeContent Client sh'
-				writeContent Client $
-					ContentHandshake (Version 3 3) . (: []) $
-						HandshakeCertificate certChain
+				writeContent Client . handshakeToContent $
+					HandshakeCertificate certChain
 				let	certs1 = listCertificates certStore
 					dns = map (certIssuerDN . signedObject . getSigned) certs1
-					cReq' = filterCertReq dns
-				writeContent Client $
-					ContentHandshake (Version 3 3) [cReq']
+					cReq' = mkCertReq dns
+				writeContent Client $ handshakeToContent cReq'
 				writeContent Client $ ContentHandshake (Version 3 3)
 					[HandshakeServerHelloDone]
 				let	Just sv = serverVersion sh'
@@ -269,20 +265,20 @@ query _ _ _ = return ValidationCacheUnknown
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
 
-filterServerHello :: IO Handshake
-filterServerHello = do
-	sr <- mkServerRandom
+handshakeToContent :: Handshake -> Content
+handshakeToContent = ContentHandshake (Version 3 3) . (: [])
+
+mkServerHello :: TlsIO Handshake
+mkServerHello = do
+	sr <- randomByteString 32
 	return . HandshakeServerHello $ ServerHello
-		(ProtocolVersion 3 3) (Random sr) (SessionId "")
+		(ProtocolVersion 3 3)
+		(Random sr)
+		(SessionId "")
 		TLS_RSA_WITH_AES_128_CBC_SHA CompressionMethodNull Nothing
 
-filterCertReq :: [DistinguishedName] -> Handshake
-filterCertReq dns = HandshakeCertificateRequest $ CertificateRequest
+mkCertReq :: [DistinguishedName] -> Handshake
+mkCertReq dns = HandshakeCertificateRequest $ CertificateRequest
 	[ClientCertificateTypeRsaSign]
 	[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
 	dns
-
-mkServerRandom :: IO BS.ByteString
-mkServerRandom = do
-	ep <- createEntropyPool
-	return . fst $ cprgGenerate 32 (cprgCreate ep :: SystemRNG)

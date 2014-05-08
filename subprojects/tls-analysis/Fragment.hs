@@ -23,6 +23,7 @@ module Fragment (
 	throwError, opponent, showRandom,
 	handshakeMessages,
 	updateSequenceNumberSmart,
+	randomByteString,
 ) where
 
 import Prelude hiding (read)
