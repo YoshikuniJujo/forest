@@ -2,6 +2,10 @@
 *.o
 *.html
 *.swp
+tmp/
+*.pem
+*.key
+*.crt
 /subprojects/schedevr/src/mkschd/marge-schedule
 /subprojects/schedevr/src/mkschd/marge-schedule-evr
 /subprojects/schedevr/src/prog_graph/mkGraph
