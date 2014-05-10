@@ -17,6 +17,10 @@ import Network
 import EventToElement
 import Data.XML.Types
 
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Text as T
+import qualified Data.ByteString.Base64 as B64
+
 main :: IO ()
 main = do
 	runTCPServer (serverSettings 5222 "*") $ \ad -> do
@@ -29,11 +33,18 @@ main = do
 			=$= filter normal
 --			=$= runIO print
 			=$= eventToElement
-			=$= runIO (hPutStr h . showElement)
-			=$= runIO (putStrLn . ("\n" ++) . showElement)
+			=$= runIO (hPutStr h . doubleMessage)
+			=$= runIO (putStrLn . ("\n" ++) . showContent)
 			$$ sinkNull
-		sourceHandle h =$= runIO (appWrite ad)
-			=$= parseBytes def
+		sourceHandle h
+			=$= runIO (appWrite ad)
+			=$= runIO (BSC.hPut stdout)
+--			=$= parseBytes def
+--			=$= runIO (appWrite ad . BSC.pack . addBegin)
+--			=$= filter normal
+--			=$= eventToElement
+--			=$= runIO (appWrite ad . BSC.pack . showElement)
+--			=$= runIO (putStrLn . ("\n" ++) . showElement)
 --			=$= runIO print
 			$$ sinkNull
 
@@ -70,6 +81,17 @@ normal :: Event -> Bool
 normal EventBeginDocument = False
 normal (EventBeginElement (Name "stream" _ _) _) = False
 normal _ = True
+
+doubleMessage :: Element -> String
+doubleMessage e@(Element (Name "message" _ _) _ _) =
+	showElement e ++ showElement e
+doubleMessage e = showElement e
+
+showContent :: Element -> String
+showContent e@(Element (Name "response" _ _) _
+	(NodeContent (ContentText txt) : _)) = "here: " ++ BSC.unpack
+		((\(Right r) -> r) $ B64.decode $ BSC.pack $ T.unpack txt)
+showContent e = showElement e
 
 {-
 sinkNull :: Monad m => Sink a m ()
