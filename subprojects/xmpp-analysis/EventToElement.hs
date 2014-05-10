@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 
 module EventToElement (
+	eventToElementAll,
 	eventToElement,
 	showElement,
+	convert,
 ) where
 
 import Data.Conduit
@@ -15,13 +17,28 @@ import qualified Data.Text as T
 
 import Control.Monad.IO.Class
 
-eventToElement :: (Monad m, MonadIO m) => Conduit Event m Element
+eventToElementAll :: (Monad m, MonadIO m) => Conduit Event m Element
+eventToElementAll = do
+	mev <- await
+	case mev of
+		Just EventBeginDocument -> eventToElementAll
+		Just (EventBeginElement (Name "stream" _ _) _) -> eventToElementAll
+		Just (EventBeginElement nm ats) -> do
+			mel <- toElement nm ats
+			case mel of
+				Just el -> do
+					yield el
+					eventToElementAll
+				_ -> return ()
+		Just ev -> error $ "eventToElementAll: bad: " ++ show ev
+		_ -> return ()
+
+eventToElement :: Monad m => Conduit Event m Element
 eventToElement = do
 	mev <- await
 	case mev of
 		Just (EventBeginElement nm ats) -> do
 			mel <- toElement nm ats
---			liftIO $ putStrLn $ "DEBUG: " ++ show mel
 			case mel of
 				Just el -> do
 					yield el
@@ -30,19 +47,17 @@ eventToElement = do
 		Just ev -> error $ "bad: " ++ show ev
 		_ -> return ()
 
-toElement :: (Monad m, MonadIO m) => Name -> [(Name, [Content])] ->
+toElement :: Monad m => Name -> [(Name, [Content])] ->
 	Consumer Event m (Maybe Element)
 toElement nm ats = do
 	mev <- await
---	liftIO $ putStrLn $ "DEBUG: " ++ show mev
 	case mev of
 		Just ev -> do
 			ret <- Element nm ats <$> toNodeList nm ev
---			liftIO $ putStrLn $ "DEBUG: ret = " ++ showElement ret
 			return $ Just ret
 		_ -> return Nothing
 
-toNodeList :: (Monad m, MonadIO m) => Name -> Event -> Consumer Event m [Node]
+toNodeList :: Monad m => Name -> Event -> Consumer Event m [Node]
 toNodeList nm (EventEndElement n)
 	| nm == n = return []
 	| otherwise = error "not match tag names"

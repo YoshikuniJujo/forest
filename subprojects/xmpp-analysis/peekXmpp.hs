@@ -7,6 +7,7 @@ import Control.Concurrent (forkIO)
 import Control.Monad.IO.Class
 import Data.Conduit
 import Data.Conduit.List
+import qualified Data.Conduit.List as Cd
 import Data.Conduit.Binary hiding (drop, isolate)
 import Data.Conduit.Network
 import Data.Streaming.Network
@@ -15,8 +16,10 @@ import Text.XML.Stream.Parse
 import Network
 
 import EventToElement
+import XmppTypes
 import Data.XML.Types
 
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Text as T
 import qualified Data.ByteString.Base64 as B64
@@ -30,15 +33,27 @@ main = do
 --			=$= runIO (hPut stdout)
 			=$= parseBytes def
 			=$= runIO (hPutStr h . addBegin)
-			=$= filter normal
+--			=$= filter normal
 --			=$= runIO print
-			=$= eventToElement
-			=$= runIO (hPutStr h . doubleMessage)
-			=$= runIO (putStrLn . ("\n" ++) . showContent)
+			=$= eventToElementAll
+--			=$= Cd.map id
+			=$= Cd.map elementToStanza
+			=$= runIO (hPutStr h . doubleMessage . stanzaToElement)
+--			=$= runIO (hPutStr h . doubleMessage)
+			=$= runIO (putStrLn . ("\n" ++) . show) -- ("\n" ++) . showContent)
 			$$ sinkNull
 		sourceHandle h
-			=$= runIO (appWrite ad)
-			=$= runIO (BSC.hPut stdout)
+--			=$= runIO (appWrite ad)
+--			=$= runIO (hPut stdout . ("DEBUG: " `BS.append`))
+			=$= parseBytes def
+			=$= runIO (appWrite ad . BSC.pack . addBeginServer)
+			=$= eventToElementAll
+			=$= Cd.map elementToStanza
+			=$= runIO (appWrite ad . BSC.pack . showElement . stanzaToElement)
+--			=$= runIO (appWrite ad . BSC.pack . showElement)
+			=$= runIO (putStrLn . ("\n" ++) . show) -- ("\n" ++) . showElement)
+
+--			=$= runIO (BSC.hPut stdout)
 --			=$= parseBytes def
 --			=$= runIO (appWrite ad . BSC.pack . addBegin)
 --			=$= filter normal
@@ -48,11 +63,14 @@ main = do
 --			=$= runIO print
 			$$ sinkNull
 
-beginDoc, stream :: String
+beginDoc, stream, streamServer :: String
 beginDoc = "<?xml version=\"1.0\"?>"
 stream = "<stream:stream to=\"localhost\" xml:lang=\"en\" version=\"1.0\" " ++
 	"xmlns=\"jabber:client\" " ++
 	"xmlns:stream=\"http://etherx.jabber.org/streams\">"
+streamServer = "<stream:stream xmlns='jabber:client' " ++
+	"xmlns:stream='http://etherx.jabber.org/stream' " ++ 
+	"id='hoge' from='localhost' version='1.0' xml:lang='en'>"
 
 skip :: Monad m => Int -> Conduit a m a
 skip n = drop n >> complete
@@ -76,6 +94,11 @@ addBegin :: Event -> String
 addBegin EventBeginDocument = beginDoc
 addBegin (EventBeginElement (Name "stream" _ _) _) = stream
 addBegin _ = ""
+
+addBeginServer :: Event -> String
+addBeginServer EventBeginDocument = beginDoc
+addBeginServer (EventBeginElement (Name "stream" _ _) _) = streamServer
+addBeginServer _ = ""
 
 normal :: Event -> Bool
 normal EventBeginDocument = False
