@@ -10,8 +10,8 @@ import Data.XML.Types
 import Data.Text (Text)
 
 data Stanza
-	= Auth Mechanism
-	| StanzaMechanisms [Mechanism]
+	= StanzaMechanisms [Mechanism]
+	| StanzaMechanism (Name, [Content])
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
@@ -20,6 +20,7 @@ data Tag
 	= Features
 	| Mechanisms
 	| Mechanism
+	| Auth
 	deriving (Show, Eq)
 
 data Mechanism
@@ -35,6 +36,8 @@ elementToStanza (Element nm [] [NodeElement nd@(Element nm' [] nds)])
 		Just Mechanisms <- nameToTag nm' =
 		StanzaMechanisms $ map
 			(elementToMechanism . fromJust . nodeElementElement) nds
+elementToStanza (Element nm [at] [])
+	| Just Auth <- nameToTag nm = StanzaMechanism at
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -45,6 +48,7 @@ stanzaToElement (StanzaMechanisms nds) = Element
 	where
 	e = Element (fromJust $ lookup Mechanisms tagName) [] $ map NodeElement $
 		map mechanismToElement nds
+stanzaToElement (StanzaMechanism at) = Element (fromJust $ lookup Auth tagName) [at] []
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -71,6 +75,9 @@ tagName = [
 	(Mechanisms, Name "mechanisms"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
 	(Mechanism, Name "mechanism"
+		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
+	(Mechanism, Name "mechanism" Nothing Nothing),
+	(Auth, Name "auth"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing)
  ]
 
