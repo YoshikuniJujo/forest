@@ -30,6 +30,8 @@ eventToElementAll = do
 					yield el
 					eventToElementAll
 				_ -> return ()
+		Just (EventEndElement (Name "stream" _ _)) ->
+			liftIO $ putStrLn "end stream"
 		Just ev -> error $ "eventToElementAll: bad: " ++ show ev
 		_ -> return ()
 

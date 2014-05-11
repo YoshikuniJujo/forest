@@ -11,7 +11,7 @@ import Data.Text (Text)
 
 data Stanza
 	= StanzaMechanisms [Mechanism]
-	| StanzaMechanism (Name, [Content])
+	| StanzaMechanism Mechanism
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
@@ -36,8 +36,12 @@ elementToStanza (Element nm [] [NodeElement nd@(Element nm' [] nds)])
 		Just Mechanisms <- nameToTag nm' =
 		StanzaMechanisms $ map
 			(elementToMechanism . fromJust . nodeElementElement) nds
-elementToStanza (Element nm [at] [])
-	| Just Auth <- nameToTag nm = StanzaMechanism at
+elementToStanza (Element nm
+	[(Name "mechanism" Nothing Nothing, [ContentText at])] [])
+	| Just Auth <- nameToTag nm = StanzaMechanism $ case at of
+		"SCRAM-SHA-1" -> ScramSha1
+		"DIGEST-MD5" -> DigestMd5
+		_ -> UnknownMechanism at
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -48,7 +52,15 @@ stanzaToElement (StanzaMechanisms nds) = Element
 	where
 	e = Element (fromJust $ lookup Mechanisms tagName) [] $ map NodeElement $
 		map mechanismToElement nds
-stanzaToElement (StanzaMechanism at) = Element (fromJust $ lookup Auth tagName) [at] []
+stanzaToElement (StanzaMechanism at)
+	| Just c <- mct = Element (fromJust $ lookup Auth tagName)
+		[(Name "mechanism" Nothing Nothing, [c])] []
+	where
+	mct = case at of
+		ScramSha1 -> Just $ ContentText "SCRAM-SHA-1"
+		DigestMd5 -> Just $ ContentText "DIGEST-MD5"
+		UnknownMechanism mn -> Just $ ContentText mn
+		_ -> Nothing
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
