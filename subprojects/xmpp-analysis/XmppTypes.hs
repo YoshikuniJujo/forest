@@ -10,7 +10,7 @@ import Data.XML.Types
 import Data.Text (Text)
 
 data Stanza
-	= StanzaMechanisms [Mechanism]
+	= StanzaMechanismList [Mechanism]
 	| StanzaMechanism Mechanism
 	| StanzaTag Tag Element
 	| StanzaRaw Element
@@ -34,7 +34,7 @@ elementToStanza :: Element -> Stanza
 elementToStanza (Element nm [] [NodeElement nd@(Element nm' [] nds)])
 	| Just Features <- nameToTag nm,
 		Just Mechanisms <- nameToTag nm' =
-		StanzaMechanisms $ map
+		StanzaMechanismList $ map
 			(elementToMechanism . fromJust . nodeElementElement) nds
 elementToStanza (Element nm
 	[(Name "mechanism" Nothing Nothing, [ContentText at])] [])
@@ -47,7 +47,7 @@ elementToStanza e@(Element n _ _)
 	| otherwise = StanzaRaw e
 
 stanzaToElement :: Stanza -> Element
-stanzaToElement (StanzaMechanisms nds) = Element
+stanzaToElement (StanzaMechanismList nds) = Element
 	(fromJust $ lookup Features tagName) [] [NodeElement e]
 	where
 	e = Element (fromJust $ lookup Mechanisms tagName) [] $ map NodeElement $
