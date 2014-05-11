@@ -7,6 +7,7 @@ module XmppTypes (
 
 import Control.Arrow
 import Data.Maybe
+import Data.List
 import Data.XML.Types
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -24,17 +25,41 @@ data Stanza
 	deriving Show
 
 data Challenge
-	= Challenge [(ByteString, ByteString)]
+	= Challenge {
+		realm :: ByteString,
+		nonce :: ByteString,
+		qop :: ByteString,
+		charset :: ByteString,
+		algorithm :: ByteString
+	 }
 	| ChallengeRspauth ByteString
 	| ChallengeRaw [(ByteString, ByteString)]
 	deriving Show
 
 toChallenge :: [(ByteString, ByteString)] -> Challenge
+toChallenge kvs
+	| sort (map fst kvs) ==
+		sort ["realm", "nonce", "qop", "charset", "algorithm"] =
+		Challenge {
+			realm = unquoteBS $ lu "realm" kvs,
+			nonce = unquoteBS $ lu "nonce" kvs,
+			qop = unquoteBS $ lu "qop" kvs,
+			charset = lu "charset" kvs,
+			algorithm = lu "algorithm" kvs
+		 }
+	where
+	lu = (fromJust .) . lookup
 toChallenge [("rspauth", rsp)] = ChallengeRspauth rsp
 toChallenge kvs = ChallengeRaw kvs
 
 fromChallenge :: Challenge -> [(ByteString, ByteString)]
-fromChallenge (Challenge kvs) = kvs
+fromChallenge c@(Challenge {}) = [
+	("realm", quoteBS $ realm c),
+	("nonce", quoteBS $ nonce c),
+	("qop", quoteBS $ qop c),
+	("charset", charset c),
+	("algorithm", algorithm c)
+ ]
 fromChallenge (ChallengeRspauth rsp) = [("rspauth", rsp)]
 fromChallenge (ChallengeRaw kvs) = kvs
 
@@ -145,3 +170,6 @@ unsnoc :: ByteString -> Maybe (ByteString, Char)
 unsnoc bs
 	| BSC.null bs = Nothing
 	| otherwise = Just (BSC.init bs, BSC.last bs)
+
+quoteBS :: ByteString -> ByteString
+quoteBS bs = "\"" `BS.append` bs `BS.append` "\""
