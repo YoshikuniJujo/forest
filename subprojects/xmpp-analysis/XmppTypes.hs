@@ -5,22 +5,45 @@ module XmppTypes (
 	stanzaToElement
 ) where
 
+import Control.Arrow
 import Data.Maybe
 import Data.XML.Types
 import Data.Text (Text)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Base64 as B64
 
 data Stanza
 	= StanzaMechanismList [Mechanism]
 	| StanzaMechanism Mechanism
+	| StanzaChallenge Challenge
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
+
+data Challenge
+	= Challenge [(ByteString, ByteString)]
+	| ChallengeRspauth ByteString
+	| ChallengeRaw [(ByteString, ByteString)]
+	deriving Show
+
+toChallenge :: [(ByteString, ByteString)] -> Challenge
+toChallenge [("rspauth", rsp)] = ChallengeRspauth rsp
+toChallenge kvs = ChallengeRaw kvs
+
+fromChallenge :: Challenge -> [(ByteString, ByteString)]
+fromChallenge (Challenge kvs) = kvs
+fromChallenge (ChallengeRspauth rsp) = [("rspauth", rsp)]
+fromChallenge (ChallengeRaw kvs) = kvs
 
 data Tag
 	= Features
 	| Mechanisms
 	| Mechanism
 	| Auth
+	| TagChallenge
 	deriving (Show, Eq)
 
 data Mechanism
@@ -42,6 +65,10 @@ elementToStanza (Element nm
 		"SCRAM-SHA-1" -> ScramSha1
 		"DIGEST-MD5" -> DigestMd5
 		_ -> UnknownMechanism at
+elementToStanza (Element nm [] [NodeContent (ContentText cnt)])
+	| Just TagChallenge <- nameToTag nm = StanzaChallenge . toChallenge .
+		map ((\[k, v] -> (k, v)) . BSC.split '=') .  BSC.split ',' .
+		(\(Right c) -> c) . B64.decode $ encodeUtf8 cnt
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -61,6 +88,11 @@ stanzaToElement (StanzaMechanism at)
 		DigestMd5 -> Just $ ContentText "DIGEST-MD5"
 		UnknownMechanism mn -> Just $ ContentText mn
 		_ -> Nothing
+stanzaToElement (StanzaChallenge cnt) = Element
+	(fromJust $ lookup TagChallenge tagName) [] . (: []) . NodeContent .
+		ContentText . decodeUtf8 . B64.encode .  BSC.intercalate "," .
+		map (BSC.intercalate "=" . (\(k, v) -> [k, v])) $
+			fromChallenge cnt
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -90,6 +122,8 @@ tagName = [
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
 	(Mechanism, Name "mechanism" Nothing Nothing),
 	(Auth, Name "auth"
+		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
+	(TagChallenge, Name "challenge"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing)
  ]
 
@@ -99,3 +133,15 @@ nameToTag = flip lookup $ map (\(x, y) -> (y, x)) tagName
 nodeElementElement :: Node -> Maybe Element
 nodeElementElement (NodeElement e) = Just e
 nodeElementElement _ = Nothing
+
+unquoteBS :: ByteString -> ByteString
+unquoteBS bs = case BSC.uncons bs of
+	Just ('"', t) -> case unsnoc t of
+		Just (i, '"') -> i
+		_ -> error "unquoteBS: not quoted"
+	_ -> error "unquoteBS: not quoted"
+
+unsnoc :: ByteString -> Maybe (ByteString, Char)
+unsnoc bs
+	| BSC.null bs = Nothing
+	| otherwise = Just (BSC.init bs, BSC.last bs)
