@@ -36,7 +36,10 @@ data Feature
 	= FeatureVer Ver
 	| FeatureBind Bind
 	| FeatureSession Session
-	| FeatureC [(Name, [Content])]
+	| FeatureC {
+		featureCHash :: Text,
+		featureCVer :: Text,
+		featureCNode :: Text }
 	| FeatureTag Tag Element
 	| FeatureRaw Element
 	deriving Show
@@ -72,7 +75,10 @@ toFeature (Element nm [] [(NodeElement e)])
 			| Just TagSessionOptional <- nameToTag nm -> SessionOptional
 		_ -> SessionRaw e
 toFeature (Element nm ats [])
-	| Just TagC <- nameToTag nm = FeatureC ats
+	| Just TagC <- nameToTag nm = FeatureC {
+		featureCHash = lookupAttr "hash" ats,
+		featureCVer = lookupAttr "ver" ats,
+		featureCNode = lookupAttr "node" ats }
 toFeature e@(Element nm _ _)
 	| Just tg <- nameToTag nm = FeatureTag tg e
 toFeature e = FeatureRaw e
@@ -91,9 +97,18 @@ fromFeature (FeatureSession or) = Element (fromJust $ lookup TagSession tagName)
 		SessionOptional -> Element
 			(fromJust $ lookup TagSessionOptional tagName) [] []
 		SessionRaw e -> e
-fromFeature (FeatureC ats) = Element (fromJust $ lookup TagC tagName) ats []
+fromFeature f@(FeatureC {}) =
+	flip (Element (fromJust $ lookup TagC tagName)) [] $ [
+		(Name "hash" Nothing Nothing, [ContentText $ featureCHash f]),
+		(Name "ver" Nothing Nothing, [ContentText $ featureCVer f]),
+		(Name "node" Nothing Nothing, [ContentText $ featureCNode f]) ]
 fromFeature (FeatureTag _ e) = e
 fromFeature (FeatureRaw e) = e
+
+lookupAttr :: Text -> [(Name, [Content])] -> Text
+lookupAttr bs ats = case filter ((== Name bs Nothing Nothing) . fst) ats of
+	[(_, [ContentText txt])] -> txt
+	_ -> error "lookupAttr: bad"
 
 data Challenge
 	= Challenge {
