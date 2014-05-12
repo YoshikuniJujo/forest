@@ -5,6 +5,8 @@ module XmppTypes (
 	stanzaToElement
 ) where
 
+import Debug.Trace
+
 import Control.Arrow
 import Data.Maybe
 import Data.List
@@ -20,6 +22,7 @@ data Stanza
 	= StanzaMechanismList [Mechanism]
 	| StanzaMechanism Mechanism
 	| StanzaChallenge Challenge
+	| StanzaResponse Response
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
@@ -63,12 +66,82 @@ fromChallenge c@(Challenge {}) = [
 fromChallenge (ChallengeRspauth rsp) = [("rspauth", rsp)]
 fromChallenge (ChallengeRaw kvs) = kvs
 
+data Response
+	= Response {
+		rUsername :: ByteString,
+		rRealm :: ByteString,
+		rCnonce :: ByteString,
+		rNonce :: ByteString,
+		rNc :: ByteString,
+		rQop :: ByteString,
+		rDigestUri :: ByteString,
+		rResponse :: ByteString,
+		rCharset :: ByteString }
+	| ResponseNull
+	| ResponseRaw [Node]
+	deriving Show
+
+toResponse :: [Node] -> Response
+toResponse [NodeContent (ContentText txt)]
+	| kvs <- readSaslData txt, sort (map fst kvs) == sort [
+			"username", "realm", "nonce", "cnonce", "nc", "qop",
+			"digest-uri", "response", "charset" ] =
+		kvsToResponse kvs
+toResponse [] = ResponseNull
+toResponse nds = ResponseRaw nds
+
+kvsToResponse :: [(ByteString, ByteString)] -> Response
+kvsToResponse kvs = Response {
+		rUsername = unquoteBS $ lu "username" kvs,
+		rRealm = unquoteBS $ lu "realm" kvs,
+		rNonce = unquoteBS $ lu "nonce" kvs,
+		rCnonce = unquoteBS $ lu "cnonce" kvs,
+{-
+		rUsername = lu "username" kvs,
+		rRealm = lu "realm" kvs,
+		rCnonce = lu "cnonce" kvs,
+		rNonce = lu "nonce" kvs,
+		-}
+		rNc = lu "nc" kvs,
+		rQop = lu "qop" kvs,
+		rDigestUri = unquoteBS $ lu "digest-uri" kvs,
+		rResponse = lu "response" kvs,
+		rCharset = lu "charset" kvs
+	 }
+	where
+	lu = (fromJust .) . lookup
+
+fromResponse :: Response -> [Node]
+fromResponse rsp@(Response {}) =
+	[NodeContent . ContentText . showSaslData $ responseToKvs rsp]
+fromResponse ResponseNull = []
+fromResponse (ResponseRaw nds) = nds
+
+responseToKvs :: Response -> [(ByteString, ByteString)]
+responseToKvs rsp = [
+{-
+	("username", rUsername rsp),
+	("realm", rRealm rsp),
+	("nonce", rNonce rsp),
+	-}
+	("username", quoteBS $ rUsername rsp),
+	("realm", quoteBS $ rRealm rsp),
+	("nonce", quoteBS $ rNonce rsp),
+	("cnonce", quoteBS $ rCnonce rsp),
+	("nc", rNc rsp),
+	("qop", rQop rsp),
+	("digest-uri", quoteBS $ rDigestUri rsp),
+	("response", rResponse rsp),
+	("charset", rCharset rsp)
+ ]
+
 data Tag
 	= Features
 	| Mechanisms
 	| Mechanism
 	| Auth
 	| TagChallenge
+	| TagResponse
 	deriving (Show, Eq)
 
 data Mechanism
@@ -91,12 +164,17 @@ elementToStanza (Element nm
 		"DIGEST-MD5" -> DigestMd5
 		_ -> UnknownMechanism at
 elementToStanza (Element nm [] [NodeContent (ContentText cnt)])
-	| Just TagChallenge <- nameToTag nm = StanzaChallenge . toChallenge .
-		map ((\[k, v] -> (k, v)) . BSC.split '=') .  BSC.split ',' .
-		(\(Right c) -> c) . B64.decode $ encodeUtf8 cnt
+	| Just TagChallenge <- nameToTag nm = StanzaChallenge . toChallenge $
+		readSaslData cnt
+elementToStanza (Element nm _ nds)
+	| Just TagResponse <- nameToTag nm = StanzaResponse $ toResponse nds
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
+
+readSaslData :: Text -> [(ByteString, ByteString)]
+readSaslData = map ((\[k, v] -> (k, v)) . BSC.split '=') . BSC.split ',' .
+	(\(Right c) -> c) . B64.decode . encodeUtf8
 
 stanzaToElement :: Stanza -> Element
 stanzaToElement (StanzaMechanismList nds) = Element
@@ -115,11 +193,16 @@ stanzaToElement (StanzaMechanism at)
 		_ -> Nothing
 stanzaToElement (StanzaChallenge cnt) = Element
 	(fromJust $ lookup TagChallenge tagName) [] . (: []) . NodeContent .
-		ContentText . decodeUtf8 . B64.encode .  BSC.intercalate "," .
-		map (BSC.intercalate "=" . (\(k, v) -> [k, v])) $
+		ContentText .  showSaslData $
 			fromChallenge cnt
+stanzaToElement (StanzaResponse rp) = Element
+	(fromJust $ lookup TagResponse tagName) [] $ fromResponse rp
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
+
+showSaslData :: [(ByteString, ByteString)] -> Text
+showSaslData = decodeUtf8 . B64.encode . BSC.intercalate "," .
+	map (BSC.intercalate "=" . (\(k, v) -> [k, v]))
 
 elementToMechanism :: Element -> Mechanism
 elementToMechanism e@(Element nm [] [NodeContent (ContentText mn)])
@@ -149,6 +232,8 @@ tagName = [
 	(Auth, Name "auth"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
 	(TagChallenge, Name "challenge"
+		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
+	(TagResponse, Name "response"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing)
  ]
 
