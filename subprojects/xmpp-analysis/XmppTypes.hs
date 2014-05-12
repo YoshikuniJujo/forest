@@ -28,6 +28,7 @@ data Stanza
 	| StanzaResponse Response
 	| StanzaSuccess
 	| StanzaFeatureList [Feature]
+	| StanzaIq [(Name, [Content])] [Node]
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
@@ -230,6 +231,7 @@ data Tag
 	| TagSession
 	| TagSessionOptional
 	| TagC
+	| TagIq
 	deriving (Show, Eq)
 
 data Mechanism
@@ -261,6 +263,8 @@ elementToStanza (Element nm [] [])
 elementToStanza (Element nm [] nds)
 	| Just TagFeatures <- nameToTag nm =
 		StanzaFeatureList $ map (toFeature . \(NodeElement e) -> e) nds
+elementToStanza (Element nm ats nds)
+	| Just TagIq <- nameToTag nm = StanzaIq ats nds
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -295,6 +299,8 @@ stanzaToElement StanzaSuccess = Element
 stanzaToElement (StanzaFeatureList fts) = Element
 	(fromJust $ lookup TagFeatures tagName) [] $
 		map (NodeElement . fromFeature) fts
+stanzaToElement (StanzaIq ats nds) = Element
+	(fromJust $ lookup TagIq tagName) ats nds
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -348,7 +354,8 @@ tagName = [
 	(TagSessionOptional, Name "optional"
 		(Just "urn:ietf:params:xml:ns:xmpp-session") Nothing),
 	(TagC, Name "c"
-		(Just "http://jabber.org/protocol/caps") Nothing)
+		(Just "http://jabber.org/protocol/caps") Nothing),
+	(TagIq, Name "iq" (Just "jabber:client") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag

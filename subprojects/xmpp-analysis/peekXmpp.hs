@@ -41,6 +41,7 @@ main = do
 			=$= runIO (hPutStr h . doubleMessage . stanzaToElement)
 --			=$= runIO (hPutStr h . doubleMessage)
 			=$= runIO (putStrLn . ("\n" ++) . show) -- ("\n" ++) . showContent)
+			=$= runIO (putStrLn . showElement . stanzaToElement) -- ("\n" ++) . showContent)
 			$$ sinkNull
 		sourceHandle h
 --			=$= runIO (appWrite ad)
