@@ -7,6 +7,7 @@ module XmppTypes (
 
 import Debug.Trace
 
+import Control.Applicative
 import Control.Arrow
 import Data.Maybe
 import Data.List
@@ -18,14 +19,61 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
+import DigestMd5
+
 data Stanza
 	= StanzaMechanismList [Mechanism]
 	| StanzaMechanism Mechanism
 	| StanzaChallenge Challenge
 	| StanzaResponse Response
+	| StanzaSuccess
+	| StanzaFeatureList [Feature]
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
+
+data Feature
+	= FeatureVer Ver
+	| FeatureBind Bind
+	| FeatureTag Tag Element
+	| FeatureRaw Element
+	deriving Show
+
+data Ver
+	= Optional
+	| VerRaw Element
+	deriving Show
+
+data Bind
+	= Required
+	| BindRaw Element
+	deriving Show
+
+toFeature :: Element -> Feature
+toFeature (Element nm [] [NodeElement e])
+	| Just TagVer <- nameToTag nm = FeatureVer $ case e of
+		Element nm [] [] | Just TagOptional <- nameToTag nm -> Optional
+		_ -> VerRaw e
+toFeature (Element nm _ [NodeElement e])
+	| Just TagBind <- nameToTag nm = FeatureBind $ case e of
+		Element nm [] []
+			| Just TagRequired <- nameToTag nm -> Required
+		_ -> BindRaw e
+toFeature e@(Element nm _ _)
+	| Just tg <- nameToTag nm = FeatureTag tg e
+toFeature e = FeatureRaw e
+
+fromFeature :: Feature -> Element
+fromFeature (FeatureVer or) = Element
+	(fromJust $ lookup TagVer tagName) [] . (: []) . NodeElement $ case or of
+		Optional -> Element (fromJust $ lookup TagOptional tagName) [] []
+		VerRaw e -> e
+fromFeature (FeatureBind or) = Element
+	(fromJust $ lookup TagBind tagName) [] . (: []) . NodeElement $ case or of
+		Required -> Element (fromJust $ lookup TagRequired tagName) [] []
+		BindRaw e -> e
+fromFeature (FeatureTag _ e) = e
+fromFeature (FeatureRaw e) = e
 
 data Challenge
 	= Challenge {
@@ -70,16 +118,22 @@ data Response
 	= Response {
 		rUsername :: ByteString,
 		rRealm :: ByteString,
+		rPassword :: ByteString,
 		rCnonce :: ByteString,
 		rNonce :: ByteString,
 		rNc :: ByteString,
 		rQop :: ByteString,
 		rDigestUri :: ByteString,
-		rResponse :: ByteString,
+--		rResponse :: ByteString,
 		rCharset :: ByteString }
 	| ResponseNull
 	| ResponseRaw [Node]
 	deriving Show
+
+calcMd5 :: Bool -> Response -> ByteString
+calcMd5 isClient = digestMd5 isClient
+	<$> rUsername <*> rRealm <*> rPassword  <*> rQop <*> rDigestUri
+	<*> rNonce <*> rNc <*> rCnonce
 
 toResponse :: [Node] -> Response
 toResponse [NodeContent (ContentText txt)]
@@ -94,18 +148,13 @@ kvsToResponse :: [(ByteString, ByteString)] -> Response
 kvsToResponse kvs = Response {
 		rUsername = unquoteBS $ lu "username" kvs,
 		rRealm = unquoteBS $ lu "realm" kvs,
+		rPassword = "password",
 		rNonce = unquoteBS $ lu "nonce" kvs,
 		rCnonce = unquoteBS $ lu "cnonce" kvs,
-{-
-		rUsername = lu "username" kvs,
-		rRealm = lu "realm" kvs,
-		rCnonce = lu "cnonce" kvs,
-		rNonce = lu "nonce" kvs,
-		-}
 		rNc = lu "nc" kvs,
 		rQop = lu "qop" kvs,
 		rDigestUri = unquoteBS $ lu "digest-uri" kvs,
-		rResponse = lu "response" kvs,
+--		rResponse = lu "response" kvs,
 		rCharset = lu "charset" kvs
 	 }
 	where
@@ -119,11 +168,6 @@ fromResponse (ResponseRaw nds) = nds
 
 responseToKvs :: Response -> [(ByteString, ByteString)]
 responseToKvs rsp = [
-{-
-	("username", rUsername rsp),
-	("realm", rRealm rsp),
-	("nonce", rNonce rsp),
-	-}
 	("username", quoteBS $ rUsername rsp),
 	("realm", quoteBS $ rRealm rsp),
 	("nonce", quoteBS $ rNonce rsp),
@@ -131,17 +175,23 @@ responseToKvs rsp = [
 	("nc", rNc rsp),
 	("qop", rQop rsp),
 	("digest-uri", quoteBS $ rDigestUri rsp),
-	("response", rResponse rsp),
+	("response", calcMd5 True rsp),
+--	("response", rResponse rsp),
 	("charset", rCharset rsp)
  ]
 
 data Tag
-	= Features
+	= TagFeatures
 	| Mechanisms
 	| Mechanism
 	| Auth
 	| TagChallenge
 	| TagResponse
+	| TagSuccess
+	| TagVer
+	| TagBind
+	| TagOptional
+	| TagRequired
 	deriving (Show, Eq)
 
 data Mechanism
@@ -153,7 +203,7 @@ data Mechanism
 
 elementToStanza :: Element -> Stanza
 elementToStanza (Element nm [] [NodeElement nd@(Element nm' [] nds)])
-	| Just Features <- nameToTag nm,
+	| Just TagFeatures <- nameToTag nm,
 		Just Mechanisms <- nameToTag nm' =
 		StanzaMechanismList $ map
 			(elementToMechanism . fromJust . nodeElementElement) nds
@@ -166,8 +216,13 @@ elementToStanza (Element nm
 elementToStanza (Element nm [] [NodeContent (ContentText cnt)])
 	| Just TagChallenge <- nameToTag nm = StanzaChallenge . toChallenge $
 		readSaslData cnt
-elementToStanza (Element nm _ nds)
+elementToStanza (Element nm [] nds)
 	| Just TagResponse <- nameToTag nm = StanzaResponse $ toResponse nds
+elementToStanza (Element nm [] [])
+	| Just TagSuccess <- nameToTag nm = StanzaSuccess
+elementToStanza (Element nm [] nds)
+	| Just TagFeatures <- nameToTag nm =
+		StanzaFeatureList $ map (toFeature . \(NodeElement e) -> e) nds
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -178,7 +233,7 @@ readSaslData = map ((\[k, v] -> (k, v)) . BSC.split '=') . BSC.split ',' .
 
 stanzaToElement :: Stanza -> Element
 stanzaToElement (StanzaMechanismList nds) = Element
-	(fromJust $ lookup Features tagName) [] [NodeElement e]
+	(fromJust $ lookup TagFeatures tagName) [] [NodeElement e]
 	where
 	e = Element (fromJust $ lookup Mechanisms tagName) [] $ map NodeElement $
 		map mechanismToElement nds
@@ -197,6 +252,11 @@ stanzaToElement (StanzaChallenge cnt) = Element
 			fromChallenge cnt
 stanzaToElement (StanzaResponse rp) = Element
 	(fromJust $ lookup TagResponse tagName) [] $ fromResponse rp
+stanzaToElement StanzaSuccess = Element
+	(fromJust $ lookup TagSuccess tagName) [] []
+stanzaToElement (StanzaFeatureList fts) = Element
+	(fromJust $ lookup TagFeatures tagName) [] $
+		map (NodeElement . fromFeature) fts
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -222,7 +282,7 @@ mechanismToElement m = let Just nm = lookup Mechanism tagName in
 
 tagName :: [(Tag, Name)]
 tagName = [
-	(Features, Name "features"
+	(TagFeatures, Name "features"
 		(Just "http://etherx.jabber.org/streams") (Just "stream")),
 	(Mechanisms, Name "mechanisms"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
@@ -234,7 +294,17 @@ tagName = [
 	(TagChallenge, Name "challenge"
 		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
 	(TagResponse, Name "response"
-		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing)
+		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
+	(TagSuccess, Name "success"
+		(Just "urn:ietf:params:xml:ns:xmpp-sasl") Nothing),
+	(TagVer, Name "ver"
+		(Just "urn:xmpp:features:rosterver") Nothing),
+	(TagBind, Name "bind"
+		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing),
+	(TagOptional, Name "optional"
+		(Just "urn:xmpp:features:rosterver") Nothing),
+	(TagRequired, Name "required"
+		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag
