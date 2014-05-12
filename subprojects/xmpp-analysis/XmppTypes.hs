@@ -36,20 +36,30 @@ data Stanza
 		iqBody :: IqBody }
 	| StanzaPresence {
 		presenceId :: Text,
-		presenceBody :: [PresenceBody]
-	 }
+		presenceBody :: [PresenceBody] }
+	| StanzaMessage { -- [(Name, [Content])] [Node] -- {
+		messageType :: Text, -- MessageType,
+		messageId :: Text,
+		messageFrom :: Maybe Text,
+		messageTo :: Maybe Text,
+		messageBody :: [Node] }
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
 
 data PresenceBody
-	= PresenceBodyRaw Element
+	= PresenceBodyCaps Caps
+	| PresenceBodyRaw Element
 	deriving Show
 
 toPresenceBody :: Element -> PresenceBody
+toPresenceBody (Element nm ats [])
+	| Just TagC <- nameToTag nm = PresenceBodyCaps $ toCaps ats
 toPresenceBody e = PresenceBodyRaw e
 
 fromPresenceBody :: PresenceBody -> Element
+fromPresenceBody (PresenceBodyCaps c) = Element
+	(fromJust $ lookup TagC tagName) (fromCaps c) []
 fromPresenceBody (PresenceBodyRaw e) = e
 
 data IqType
@@ -80,6 +90,7 @@ data IqBody
 	| IqBodyRosterQuery {
 		rosterVer :: Maybe Int,
 		rosterBody :: [Node] }
+	| IqBodyDiscoQuery
 	| IqBodyTag Tag Element
 	| IqBodyRaw Element
 	| IqBodyNull
@@ -95,6 +106,8 @@ toIqBody (Element nm ats nds)
 	| Just TagRosterQuery <- nameToTag nm = IqBodyRosterQuery {
 		rosterVer = read . Text.unpack <$> lookupAttrM "ver" ats,
 		rosterBody = nds }
+toIqBody (Element nm [] [])
+	| Just TagDiscoQuery <- nameToTag nm = IqBodyDiscoQuery
 toIqBody e@(Element nm _ _)
 	| Just t <- nameToTag nm = IqBodyTag t e
 toIqBody e = IqBodyRaw e
@@ -107,6 +120,8 @@ fromIqBody (IqBodyRosterQuery vr bd) =
 	flip (Element . fromJust $ lookup TagRosterQuery tagName) bd $
 		maybe [] (\v -> [(Name "ver" Nothing Nothing,
 			[ContentText . Text.pack $ show v])]) vr
+fromIqBody IqBodyDiscoQuery = Element
+	(fromJust $ lookup TagDiscoQuery tagName) [] []
 fromIqBody (IqBodyTag _ e) = e
 fromIqBody (IqBodyRaw e) = e
 fromIqBody IqBodyNull = error "fromIqBody: No iq body"
@@ -143,13 +158,29 @@ data Feature
 	= FeatureVer Ver
 	| FeatureBind Bind
 	| FeatureSession Session
-	| FeatureC {
-		featureCHash :: Text,
-		featureCVer :: Text,
-		featureCNode :: Text }
+	| FeatureC Caps
 	| FeatureTag Tag Element
 	| FeatureRaw Element
 	deriving Show
+
+data Caps = Caps {
+	capsHash :: Text,
+	capsVer :: Text,
+	capsNode :: Text } deriving Show
+
+toCaps :: [(Name, [Content])] -> Caps
+toCaps ats = Caps {
+	capsHash = lookupAttr "hash" ats,
+	capsVer = lookupAttr "ver" ats,
+	capsNode = lookupAttr "node" ats
+ }
+
+fromCaps :: Caps -> [(Name, [Content])]
+fromCaps ats = [
+	(Name "hash" Nothing Nothing, [ContentText $ capsHash ats]),
+	(Name "ver" Nothing Nothing, [ContentText $ capsVer ats]),
+	(Name "node" Nothing Nothing, [ContentText $ capsNode ats])
+ ]
 
 data Ver
 	= Optional
@@ -177,10 +208,7 @@ toFeature (Element nm [] [(NodeElement e)])
 			| Just TagSessionOptional <- nameToTag nm -> SessionOptional
 		_ -> SessionRaw e
 toFeature (Element nm ats [])
-	| Just TagC <- nameToTag nm = FeatureC {
-		featureCHash = lookupAttr "hash" ats,
-		featureCVer = lookupAttr "ver" ats,
-		featureCNode = lookupAttr "node" ats }
+	| Just TagC <- nameToTag nm = FeatureC $ toCaps ats
 toFeature e@(Element nm _ _)
 	| Just tg <- nameToTag nm = FeatureTag tg e
 toFeature e = FeatureRaw e
@@ -199,11 +227,8 @@ fromFeature (FeatureSession or) = Element (fromJust $ lookup TagSession tagName)
 		SessionOptional -> Element
 			(fromJust $ lookup TagSessionOptional tagName) [] []
 		SessionRaw e -> e
-fromFeature f@(FeatureC {}) =
-	flip (Element (fromJust $ lookup TagC tagName)) [] $ [
-		(Name "hash" Nothing Nothing, [ContentText $ featureCHash f]),
-		(Name "ver" Nothing Nothing, [ContentText $ featureCVer f]),
-		(Name "node" Nothing Nothing, [ContentText $ featureCNode f]) ]
+fromFeature (FeatureC c) =
+	flip (Element (fromJust $ lookup TagC tagName)) [] $ fromCaps c
 fromFeature (FeatureTag _ e) = e
 fromFeature (FeatureRaw e) = e
 
@@ -342,6 +367,8 @@ data Tag
 	| TagJid
 	| TagRosterQuery
 	| TagPresence
+	| TagDiscoQuery
+	| TagMessage
 	deriving (Show, Eq)
 
 data Mechanism
@@ -392,6 +419,13 @@ elementToStanza (Element nm ats nds)
 		presenceId = lookupAttr "id" ats,
 		presenceBody = map (toPresenceBody . \(NodeElement e) -> e) nds
 	 }
+elementToStanza (Element nm ats nds)
+	| Just TagMessage <- nameToTag nm = StanzaMessage {
+		messageType = lookupAttr "type" ats,
+		messageId = lookupAttr "id" ats,
+		messageFrom = lookupAttrM "from" ats,
+		messageTo = lookupAttrM "to" ats,
+		messageBody = nds }
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -443,6 +477,14 @@ stanzaToElement s@(StanzaPresence {}) =
 	Element (fromJust $ lookup TagPresence tagName)
 		[(Name "id" Nothing Nothing, [ContentText $ presenceId s])]
 		(map (NodeElement . fromPresenceBody) $ presenceBody s)
+stanzaToElement s@(StanzaMessage {}) =
+	flip (Element . fromJust $ lookup TagMessage tagName) (messageBody s) [
+		(Name "id" Nothing Nothing, [ContentText $ messageId s]),
+		(Name "type" Nothing Nothing, [ContentText $ messageType s]),
+		(Name "from" Nothing Nothing,
+			maybe [] ((: []) . ContentText) $ messageFrom s),
+		(Name "to" Nothing Nothing,
+			maybe [] ((: []) . ContentText) $ messageTo s) ]
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -503,7 +545,10 @@ tagName = [
 	(TagJid, Name "jid"
 		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing),
 	(TagRosterQuery, Name "query" (Just "jabber:iq:roster") Nothing),
-	(TagPresence, Name "presence" (Just "jabber:client") Nothing)
+	(TagPresence, Name "presence" (Just "jabber:client") Nothing),
+	(TagDiscoQuery, Name "query"
+		(Just "http://jabber.org/protocol/disco#info") Nothing),
+	(TagMessage, Name "message" (Just "jabber:client") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag
