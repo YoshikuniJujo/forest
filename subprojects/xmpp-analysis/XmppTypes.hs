@@ -13,6 +13,7 @@ import Data.Maybe
 import Data.List
 import Data.XML.Types
 import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -31,10 +32,25 @@ data Stanza
 	| StanzaIq {
 		iqId :: Text,
 		iqType :: IqType,
+		iqTo :: Maybe Text,
 		iqBody :: IqBody }
+	| StanzaPresence {
+		presenceId :: Text,
+		presenceBody :: [PresenceBody]
+	 }
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
+
+data PresenceBody
+	= PresenceBodyRaw Element
+	deriving Show
+
+toPresenceBody :: Element -> PresenceBody
+toPresenceBody e = PresenceBodyRaw e
+
+fromPresenceBody :: PresenceBody -> Element
+fromPresenceBody (PresenceBodyRaw e) = e
 
 data IqType
 	= IqGet
@@ -60,14 +76,25 @@ fromIqType (IqRaw t) = t
 
 data IqBody
 	= IqBodyBind [Bind]
+	| IqBodySession
+	| IqBodyRosterQuery {
+		rosterVer :: Maybe Int,
+		rosterBody :: [Node] }
 	| IqBodyTag Tag Element
 	| IqBodyRaw Element
+	| IqBodyNull
 	deriving Show
 
 toIqBody :: Element -> IqBody
 toIqBody (Element nm [] nds)
 	| Just TagBind <- nameToTag nm = IqBodyBind $
 		map (toBind . \(NodeElement e) -> e) nds
+toIqBody (Element nm [] [])
+	| Just TagSession <- nameToTag nm = IqBodySession
+toIqBody (Element nm ats nds)
+	| Just TagRosterQuery <- nameToTag nm = IqBodyRosterQuery {
+		rosterVer = read . Text.unpack <$> lookupAttrM "ver" ats,
+		rosterBody = nds }
 toIqBody e@(Element nm _ _)
 	| Just t <- nameToTag nm = IqBodyTag t e
 toIqBody e = IqBodyRaw e
@@ -75,22 +102,41 @@ toIqBody e = IqBodyRaw e
 fromIqBody :: IqBody -> Element
 fromIqBody (IqBodyBind nds) = Element (fromJust $ lookup TagBind tagName) [] $
 	map (NodeElement . fromBind) nds
+fromIqBody IqBodySession = Element (fromJust $ lookup TagSession tagName) [] []
+fromIqBody (IqBodyRosterQuery vr bd) =
+	flip (Element . fromJust $ lookup TagRosterQuery tagName) bd $
+		maybe [] (\v -> [(Name "ver" Nothing Nothing,
+			[ContentText . Text.pack $ show v])]) vr
 fromIqBody (IqBodyTag _ e) = e
 fromIqBody (IqBodyRaw e) = e
+fromIqBody IqBodyNull = error "fromIqBody: No iq body"
 
-{-
 data Bind
-	= BindRaw Element
+	= Required
+	| BindResource Text
+	| BindJid Text
+	| BindTag Tag Element
+	| BindRaw Element
 	deriving Show
-	-}
 
 toBind :: Element -> Bind
 toBind (Element nm [] [])
 	| Just TagRequired <- nameToTag nm = Required
+toBind (Element nm [] [NodeContent (ContentText rn)])
+	| Just TagResource <- nameToTag nm = BindResource rn
+toBind (Element nm [] [NodeContent (ContentText jid)])
+	| Just TagJid <- nameToTag nm = BindJid jid
+toBind e@(Element nm _ _)
+	| Just t <- nameToTag nm = BindTag t e
 toBind e = BindRaw e
 
 fromBind :: Bind -> Element
 fromBind Required = Element (fromJust $ lookup TagRequired tagName) [] []
+fromBind (BindResource rn) = Element (fromJust $ lookup TagResource tagName) [] $
+	[NodeContent (ContentText rn)]
+fromBind (BindJid jid) = Element (fromJust $ lookup TagJid tagName) [] $
+	[NodeContent (ContentText jid)]
+fromBind (BindTag _ e) = e
 fromBind (BindRaw e) = e
 
 data Feature
@@ -108,11 +154,6 @@ data Feature
 data Ver
 	= Optional
 	| VerRaw Element
-	deriving Show
-
-data Bind
-	= Required
-	| BindRaw Element
 	deriving Show
 
 data Session
@@ -170,6 +211,11 @@ lookupAttr :: Text -> [(Name, [Content])] -> Text
 lookupAttr bs ats = case filter ((== Name bs Nothing Nothing) . fst) ats of
 	[(_, [ContentText txt])] -> txt
 	_ -> error "lookupAttr: bad"
+
+lookupAttrM :: Text -> [(Name, [Content])] -> Maybe Text
+lookupAttrM bs ats = case filter ((== Name bs Nothing Nothing) . fst) ats of
+	[(_, [ContentText txt])] -> Just txt
+	_ -> Nothing
 
 data Challenge
 	= Challenge {
@@ -292,6 +338,10 @@ data Tag
 	| TagSessionOptional
 	| TagC
 	| TagIq
+	| TagResource
+	| TagJid
+	| TagRosterQuery
+	| TagPresence
 	deriving (Show, Eq)
 
 data Mechanism
@@ -323,11 +373,24 @@ elementToStanza (Element nm [] [])
 elementToStanza (Element nm [] nds)
 	| Just TagFeatures <- nameToTag nm =
 		StanzaFeatureList $ map (toFeature . \(NodeElement e) -> e) nds
+elementToStanza (Element nm ats [])
+	| Just TagIq <- nameToTag nm = StanzaIq {
+		iqId = lookupAttr "id" ats,
+		iqType = toIqType $ lookupAttr "type" ats,
+		iqTo = lookupAttrM "to" ats,
+		iqBody = IqBodyNull
+	 }
 elementToStanza (Element nm ats [NodeElement e])
 	| Just TagIq <- nameToTag nm = StanzaIq {
 		iqId = lookupAttr "id" ats,
 		iqType = toIqType $ lookupAttr "type" ats,
+		iqTo = lookupAttrM "to" ats,
 		iqBody = toIqBody e
+	 }
+elementToStanza (Element nm ats nds)
+	| Just TagPresence <- nameToTag nm = StanzaPresence {
+		presenceId = lookupAttr "id" ats,
+		presenceBody = map (toPresenceBody . \(NodeElement e) -> e) nds
 	 }
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
@@ -363,14 +426,23 @@ stanzaToElement StanzaSuccess = Element
 stanzaToElement (StanzaFeatureList fts) = Element
 	(fromJust $ lookup TagFeatures tagName) [] $
 		map (NodeElement . fromFeature) fts
-stanzaToElement s@(StanzaIq {}) =
-	flip (Element . fromJust $ lookup TagIq tagName)
-		[NodeElement . fromIqBody $ iqBody s] [
-			(Name "id" Nothing Nothing,
-				[ContentText $ iqId s]),
+stanzaToElement s@(StanzaIq {})
+	| IqBodyNull <- iqBody s =
+		flip (Element . fromJust $ lookup TagIq tagName) [] [
+			(Name "id" Nothing Nothing, [ContentText $ iqId s]),
 			(Name "type" Nothing Nothing,
-				[ContentText . fromIqType $ iqType s])
-		 ]
+				[ContentText . fromIqType $ iqType s]) ]
+	| otherwise =
+		flip (Element . fromJust $ lookup TagIq tagName)
+			[NodeElement . fromIqBody $ iqBody s] [
+				(Name "id" Nothing Nothing,
+					[ContentText $ iqId s]),
+				(Name "type" Nothing Nothing,
+					[ContentText . fromIqType $ iqType s]) ]
+stanzaToElement s@(StanzaPresence {}) =
+	Element (fromJust $ lookup TagPresence tagName)
+		[(Name "id" Nothing Nothing, [ContentText $ presenceId s])]
+		(map (NodeElement . fromPresenceBody) $ presenceBody s)
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -426,7 +498,12 @@ tagName = [
 	(TagC, Name "c"
 		(Just "http://jabber.org/protocol/caps") Nothing),
 	(TagIq, Name "iq" (Just "jabber:client") Nothing),
-	(TagBind, Name "bind" (Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing)
+	(TagResource, Name "resource"
+		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing),
+	(TagJid, Name "jid"
+		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing),
+	(TagRosterQuery, Name "query" (Just "jabber:iq:roster") Nothing),
+	(TagPresence, Name "presence" (Just "jabber:client") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag
