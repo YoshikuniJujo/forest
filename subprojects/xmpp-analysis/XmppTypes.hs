@@ -35,6 +35,8 @@ data Stanza
 data Feature
 	= FeatureVer Ver
 	| FeatureBind Bind
+	| FeatureSession Session
+	| FeatureC [(Name, [Content])]
 	| FeatureTag Tag Element
 	| FeatureRaw Element
 	deriving Show
@@ -49,16 +51,28 @@ data Bind
 	| BindRaw Element
 	deriving Show
 
+data Session
+	= SessionOptional
+	| SessionRaw Element
+	deriving Show
+
 toFeature :: Element -> Feature
 toFeature (Element nm [] [NodeElement e])
 	| Just TagVer <- nameToTag nm = FeatureVer $ case e of
 		Element nm [] [] | Just TagOptional <- nameToTag nm -> Optional
 		_ -> VerRaw e
-toFeature (Element nm _ [NodeElement e])
+toFeature (Element nm [] [NodeElement e])
 	| Just TagBind <- nameToTag nm = FeatureBind $ case e of
 		Element nm [] []
 			| Just TagRequired <- nameToTag nm -> Required
 		_ -> BindRaw e
+toFeature (Element nm [] [(NodeElement e)])
+	| Just TagSession <- nameToTag nm = FeatureSession $ case e of
+		Element nm [] []
+			| Just TagSessionOptional <- nameToTag nm -> SessionOptional
+		_ -> SessionRaw e
+toFeature (Element nm ats [])
+	| Just TagC <- nameToTag nm = FeatureC ats
 toFeature e@(Element nm _ _)
 	| Just tg <- nameToTag nm = FeatureTag tg e
 toFeature e = FeatureRaw e
@@ -72,6 +86,12 @@ fromFeature (FeatureBind or) = Element
 	(fromJust $ lookup TagBind tagName) [] . (: []) . NodeElement $ case or of
 		Required -> Element (fromJust $ lookup TagRequired tagName) [] []
 		BindRaw e -> e
+fromFeature (FeatureSession or) = Element (fromJust $ lookup TagSession tagName)
+	[] . (: []) . NodeElement $ case or of
+		SessionOptional -> Element
+			(fromJust $ lookup TagSessionOptional tagName) [] []
+		SessionRaw e -> e
+fromFeature (FeatureC ats) = Element (fromJust $ lookup TagC tagName) ats []
 fromFeature (FeatureTag _ e) = e
 fromFeature (FeatureRaw e) = e
 
@@ -192,6 +212,9 @@ data Tag
 	| TagBind
 	| TagOptional
 	| TagRequired
+	| TagSession
+	| TagSessionOptional
+	| TagC
 	deriving (Show, Eq)
 
 data Mechanism
@@ -304,7 +327,13 @@ tagName = [
 	(TagOptional, Name "optional"
 		(Just "urn:xmpp:features:rosterver") Nothing),
 	(TagRequired, Name "required"
-		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing)
+		(Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing),
+	(TagSession, Name "session"
+		(Just "urn:ietf:params:xml:ns:xmpp-session") Nothing),
+	(TagSessionOptional, Name "optional"
+		(Just "urn:ietf:params:xml:ns:xmpp-session") Nothing),
+	(TagC, Name "c"
+		(Just "http://jabber.org/protocol/caps") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag
