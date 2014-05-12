@@ -28,10 +28,70 @@ data Stanza
 	| StanzaResponse Response
 	| StanzaSuccess
 	| StanzaFeatureList [Feature]
-	| StanzaIq [(Name, [Content])] [Node]
+	| StanzaIq {
+		iqId :: Text,
+		iqType :: IqType,
+		iqBody :: IqBody }
 	| StanzaTag Tag Element
 	| StanzaRaw Element
 	deriving Show
+
+data IqType
+	= IqGet
+	| IqSet
+	| IqResult
+	| IqError
+	| IqRaw Text
+	deriving Show
+
+toIqType :: Text -> IqType
+toIqType "get" = IqGet
+toIqType "set" = IqSet
+toIqType "result" = IqResult
+toIqType "error" = IqError
+toIqType tp = IqRaw tp
+
+fromIqType :: IqType -> Text
+fromIqType IqGet = "get"
+fromIqType IqSet = "set"
+fromIqType IqResult = "result"
+fromIqType IqError = "error"
+fromIqType (IqRaw t) = t
+
+data IqBody
+	= IqBodyBind [Bind]
+	| IqBodyTag Tag Element
+	| IqBodyRaw Element
+	deriving Show
+
+toIqBody :: Element -> IqBody
+toIqBody (Element nm [] nds)
+	| Just TagBind <- nameToTag nm = IqBodyBind $
+		map (toBind . \(NodeElement e) -> e) nds
+toIqBody e@(Element nm _ _)
+	| Just t <- nameToTag nm = IqBodyTag t e
+toIqBody e = IqBodyRaw e
+
+fromIqBody :: IqBody -> Element
+fromIqBody (IqBodyBind nds) = Element (fromJust $ lookup TagBind tagName) [] $
+	map (NodeElement . fromBind) nds
+fromIqBody (IqBodyTag _ e) = e
+fromIqBody (IqBodyRaw e) = e
+
+{-
+data Bind
+	= BindRaw Element
+	deriving Show
+	-}
+
+toBind :: Element -> Bind
+toBind (Element nm [] [])
+	| Just TagRequired <- nameToTag nm = Required
+toBind e = BindRaw e
+
+fromBind :: Bind -> Element
+fromBind Required = Element (fromJust $ lookup TagRequired tagName) [] []
+fromBind (BindRaw e) = e
 
 data Feature
 	= FeatureVer Ver
@@ -263,8 +323,12 @@ elementToStanza (Element nm [] [])
 elementToStanza (Element nm [] nds)
 	| Just TagFeatures <- nameToTag nm =
 		StanzaFeatureList $ map (toFeature . \(NodeElement e) -> e) nds
-elementToStanza (Element nm ats nds)
-	| Just TagIq <- nameToTag nm = StanzaIq ats nds
+elementToStanza (Element nm ats [NodeElement e])
+	| Just TagIq <- nameToTag nm = StanzaIq {
+		iqId = lookupAttr "id" ats,
+		iqType = toIqType $ lookupAttr "type" ats,
+		iqBody = toIqBody e
+	 }
 elementToStanza e@(Element n _ _)
 	| Just t <- nameToTag n = StanzaTag t e
 	| otherwise = StanzaRaw e
@@ -299,8 +363,14 @@ stanzaToElement StanzaSuccess = Element
 stanzaToElement (StanzaFeatureList fts) = Element
 	(fromJust $ lookup TagFeatures tagName) [] $
 		map (NodeElement . fromFeature) fts
-stanzaToElement (StanzaIq ats nds) = Element
-	(fromJust $ lookup TagIq tagName) ats nds
+stanzaToElement s@(StanzaIq {}) =
+	flip (Element . fromJust $ lookup TagIq tagName)
+		[NodeElement . fromIqBody $ iqBody s] [
+			(Name "id" Nothing Nothing,
+				[ContentText $ iqId s]),
+			(Name "type" Nothing Nothing,
+				[ContentText . fromIqType $ iqType s])
+		 ]
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
 
@@ -355,7 +425,8 @@ tagName = [
 		(Just "urn:ietf:params:xml:ns:xmpp-session") Nothing),
 	(TagC, Name "c"
 		(Just "http://jabber.org/protocol/caps") Nothing),
-	(TagIq, Name "iq" (Just "jabber:client") Nothing)
+	(TagIq, Name "iq" (Just "jabber:client") Nothing),
+	(TagBind, Name "bind" (Just "urn:ietf:params:xml:ns:xmpp-bind") Nothing)
  ]
 
 nameToTag :: Name -> Maybe Tag
