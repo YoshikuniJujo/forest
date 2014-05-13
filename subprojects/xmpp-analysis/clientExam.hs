@@ -3,6 +3,7 @@
 import Prelude hiding (drop, filter)
 
 import System.IO
+import System.Exit
 import Control.Concurrent (forkIO)
 import Control.Monad.IO.Class
 import Data.Conduit
@@ -28,11 +29,28 @@ main = do
 	hPutStr h $ beginDoc ++ stream
 	sourceHandle h
 		=$= parseBytes def
+		=$= checkEnd h
 		=$= eventToElementAll
 		=$= Cd.map elementToStanza
 		=$= runIO (responseToServer h)
 		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
 		$$ sinkNull
+	putStrLn "Finished"
+
+checkEnd :: Handle -> Conduit Event IO Event
+checkEnd h = do
+	me <- await
+	liftIO $ print me
+	case me of
+		Just (EventEndElement (Name "stream" _ _)) -> do
+			liftIO $ do
+				putStrLn "End stream"
+				hClose h
+				exitSuccess
+		Just e -> do
+			yield e
+			checkEnd h
+		_ -> return ()
 
 responseToServer :: Handle -> Stanza -> IO ()
 responseToServer sv (StanzaMechanismList ms)
@@ -88,7 +106,7 @@ responseToServer sv (StanzaIq { iqId = "_xmpp_session1" }) = do
 			 ]
 		 ]
 	 }
-	putStrLn "DEBUG"
+	hPutStr sv "</stream>"
 responseToServer _ _ = return ()
 
 beginDoc, stream, streamServer :: String
