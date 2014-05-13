@@ -11,6 +11,21 @@ module Handshake (
 
 	HandshakeType(HandshakeTypeFinished),
 	handshakeCertificate, CertificateChain, handshakeSign,
+
+	ServerHello(..),
+	CertificateRequest(..),
+	ClientCertificateType(..),
+	EncryptedPreMasterSecret(..),
+
+	ProtocolVersion(..),
+	Random(..),
+	CipherSuite(..),
+
+	SignatureAlgorithm(..),
+	HashAlgorithm(..),
+	CompressionMethod(..),
+	SessionId(..),
+	Version(..),
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -28,7 +43,7 @@ import CertificateRequest
 import PreMasterSecret
 import ByteStringMonad
 import ToByteString
-import Parts
+-- import Parts
 
 data Handshake
 	= HandshakeClientHello ClientHello
@@ -100,7 +115,7 @@ parseHandshake = do
 		HandshakeTypeCertificateRequest ->
 			HandshakeCertificateRequest <$> parseCertificateRequest
 		HandshakeTypeServerHelloDone -> do
-			e <- empty
+			e <- emptyBS
 			unless e $ throwError "ServerHelloDone must empty"
 			return HandshakeServerHelloDone
 		HandshakeTypeCertificateVerify ->
@@ -147,7 +162,7 @@ data HandshakeType
 
 parseHandshakeType :: ByteStringM HandshakeType
 parseHandshakeType = do
-	ht <- head
+	ht <- headBS
 	return $ case ht of
 		1 -> HandshakeTypeClientHello
 		2 -> HandshakeTypeServerHello

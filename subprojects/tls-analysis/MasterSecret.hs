@@ -14,7 +14,24 @@ module MasterSecret (
 	ClientRandom(..), ServerRandom(..),
 	generateMasterSecret, masterSecret, keyBlock,
 	generateKeyBlock,
-	generateFinished, Version(..),
+	generateFinished, MSVersion(..),
+
+	P.Random(..),
+	P.CipherSuite(..),
+	P.contentTypeToByteString,
+	P.ContentType(..),
+	P.byteStringToVersion,
+
+	P.ProtocolVersion(..),
+	P.versionToByteString,
+	P.byteStringToContentType,
+	P.Version(..),
+
+	hmac,
+
+	P.list1, P.whole, P.ByteStringM, P.evalByteStringM, P.headBS,
+
+	P.word64ToByteString, P.lenBodyToByteString,
 ) where
 
 import MAC
@@ -27,7 +44,7 @@ import qualified Crypto.Hash.MD5 as MD5
 
 import qualified Parts as P
 
-versionToVersion :: P.ProtocolVersion -> Maybe Version
+versionToVersion :: P.ProtocolVersion -> Maybe MSVersion
 versionToVersion (P.ProtocolVersion 3 1) = Just TLS10
 versionToVersion (P.ProtocolVersion 3 3) = Just TLS12
 versionToVersion _ = Nothing
@@ -50,7 +67,7 @@ generateMasterSecretTls prf premasterSecret (ClientRandom c) (ServerRandom s) =
     prf premasterSecret seed 48
   where seed = B.concat [ "master secret", c, s ]
 
-generateFinished :: Version -> Bool -> Bytes -> Bytes -> Bytes
+generateFinished :: MSVersion -> Bool -> Bytes -> Bytes -> Bytes
 generateFinished TLS10 isC ms hash =
 	prfMd5Sha1 ms (getFinishedLabel isC `B.append` hash) 12
 generateFinished TLS12 isC ms hash =
@@ -64,7 +81,7 @@ getFinishedLabel False = "server finished"
 masterSecret :: B.ByteString -> ClientRandom -> ServerRandom -> B.ByteString
 masterSecret = generateMasterSecret TLS10
 
-generateMasterSecret :: Version -> Bytes -> ClientRandom -> ServerRandom -> Bytes
+generateMasterSecret :: MSVersion -> Bytes -> ClientRandom -> ServerRandom -> Bytes
 generateMasterSecret SSL2  = generateMasterSecretSsl
 generateMasterSecret SSL3  = generateMasterSecretSsl
 generateMasterSecret TLS10 = generateMasterSecretTls prfMd5Sha1
@@ -83,13 +100,13 @@ generateKeyBlockSsl (ClientRandom c) (ServerRandom s) mastersecret kbsize =
         computeMD5  label = MD5.hash $ B.concat [ mastersecret, computeSHA1 label ]
         computeSHA1 label = SHA1.hash $ B.concat [ label, mastersecret, s, c ]
 
-data Version = SSL2 | SSL3 | TLS10 | TLS11 | TLS12
+data MSVersion = SSL2 | SSL3 | TLS10 | TLS11 | TLS12
 	deriving (Eq, Show)
 
 keyBlock :: ClientRandom -> ServerRandom -> B.ByteString -> Int -> B.ByteString
 keyBlock = generateKeyBlock TLS10
 
-generateKeyBlock :: Version -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
+generateKeyBlock :: MSVersion -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
 generateKeyBlock SSL2  = generateKeyBlockSsl
 generateKeyBlock SSL3  = generateKeyBlockSsl
 generateKeyBlock TLS10 = generateKeyBlockTls prfMd5Sha1

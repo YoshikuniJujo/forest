@@ -12,7 +12,8 @@ import Control.Applicative ((<$>))
 
 import Parts
 import Extension
-import ByteStringMonad
+import Data.ByteString (ByteString)
+-- import ByteStringMonad
 -- import ToByteString
 
 data ServerHello
@@ -40,7 +41,7 @@ parseServerHello = do
 	sid <- parseSessionId
 	cs <- parseCipherSuite
 	cm <- parseCompressionMethod
-	e <- empty
+	e <- emptyBS
 	me <- if e then return Nothing else Just <$> parseExtensionList
 	return $ ServerHello pv r sid cs cm me
 

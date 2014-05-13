@@ -56,7 +56,7 @@ data ClientCertificateType
 
 parseClientCertificateType :: ByteStringM ClientCertificateType
 parseClientCertificateType = do
-	cct <- head
+	cct <- headBS
 	return $ case cct of
 		1 -> ClientCertificateTypeRsaSign
 		_ -> ClientCertificateTypeRaw cct

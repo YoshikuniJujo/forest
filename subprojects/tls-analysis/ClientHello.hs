@@ -4,6 +4,9 @@ module ClientHello (
 	ClientHello(..), parseClientHello, clientHelloToByteString,
 	clientHelloClientRandom, clientHelloClientVersion,
 	clientHelloOnlyKnownCipherSuite,
+	Random(..), ProtocolVersion(..), CipherSuite(..),
+	SignatureAlgorithm(..), HashAlgorithm(..),
+	CompressionMethod(..), SessionId(..), Version(..),
 ) where
 
 import Prelude hiding (concat)
@@ -12,7 +15,8 @@ import Control.Applicative ((<$>))
 
 import Extension
 import Parts
-import ByteStringMonad
+-- import ByteStringMonad
+import Data.ByteString(ByteString)
 
 data ClientHello
 	= ClientHello ProtocolVersion Random SessionId [CipherSuite]
@@ -40,7 +44,7 @@ parseClientHello = do
 	sid <- parseSessionId
 	css <- parseCipherSuiteList
 	cms <- parseCompressionMethodList
-	e <- empty
+	e <- emptyBS
 	mel <- if e then return Nothing else Just <$> parseExtensionList
 	return $ ClientHello pv r sid css cms mel
 

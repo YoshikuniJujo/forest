@@ -4,7 +4,7 @@ module ByteStringMonad (
 	ByteString, Word8, Word16, BS.pack, BS.unpack, BS.append, BS.concat,
 
 	ByteStringM, evalByteStringM, throwError,
-	head, take, takeWords, takeInt, takeWord16, takeLen, empty,
+	headBS, take, takeWords, takeInt, takeWord16, takeLen, emptyBS,
 	list1, list, section, whole
 ) where
 
@@ -29,8 +29,8 @@ evalByteStringM m bs = case runState (runErrorT m) bs of
 	(Right _, rest) -> Left $ "rest: " ++ show rest
 	(err, _) -> err
 
-head :: ByteStringM Word8
-head = do
+headBS :: ByteStringM Word8
+headBS = do
 	msep <- lift $ gets BS.uncons
 	case msep of
 		Just (h, t) -> lift (put t) >> return h
@@ -59,18 +59,18 @@ takeLen n = do
 	len <- takeInt n
 	take len
 
-empty :: ByteStringM Bool
-empty = (== BS.empty) <$> get
+emptyBS :: ByteStringM Bool
+emptyBS = (== BS.empty) <$> get
 
 list1 :: ByteStringM a -> ByteStringM [a]
 list1 m = do
 	x <- m
-	e <- empty
+	e <- emptyBS
 	if e then return [x] else (x :) <$> list1 m
 
 list :: ByteStringM a -> ByteStringM [a]
 list m = do
-	e <- empty
+	e <- emptyBS
 	if e then return [] else (:) <$> m <*> list m
 
 section :: Int -> ByteStringM a -> ByteStringM a

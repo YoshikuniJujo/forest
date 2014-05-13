@@ -15,6 +15,10 @@ module Parts (
 	signatureAlgorithmToByteString,
 	hashSignatureAlgorithmToByteString,
 	parseHashSignatureAlgorithm,
+
+	list1, whole, ByteStringM, evalByteStringM, headBS,
+
+	word64ToByteString, lenBodyToByteString, emptyBS, concat
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -109,7 +113,7 @@ compressionMethodListToByteString =
 
 parseCompressionMethod :: ByteStringM CompressionMethod
 parseCompressionMethod = do
-	cm <- head
+	cm <- headBS
 	return $ case cm of
 		0 -> CompressionMethodNull
 		_ -> CompressionMethodRaw cm
@@ -158,7 +162,7 @@ data HashAlgorithm
 
 parseHashAlgorithm :: ByteStringM HashAlgorithm
 parseHashAlgorithm = do
-	ha <- head
+	ha <- headBS
 	return $ case ha of
 		2 -> HashAlgorithmSha1
 		3 -> HashAlgorithmSha224
@@ -183,7 +187,7 @@ data SignatureAlgorithm
 
 parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
 parseSignatureAlgorithm = do
-	sa <- head
+	sa <- headBS
 	return $ case sa of
 		1 -> SignatureAlgorithmRsa
 		2 -> SignatureAlgorithmDsa

@@ -2,6 +2,8 @@
 
 module Main (main) where
 
+import Control.Monad.IO.Class
+
 import Control.Applicative
 import Control.Monad
 import Control.Concurrent
@@ -13,13 +15,13 @@ import Data.X509
 
 import Network
 
-import Fragment
+-- import Fragment
 import Content
-import Handshake
-import ServerHello
-import CertificateRequest
-import PreMasterSecret
-import Parts
+-- import Handshake
+-- import ServerHello
+-- import CertificateRequest
+-- import PreMasterSecret
+-- import Parts
 import Tools
 
 import "crypto-random" Crypto.Random

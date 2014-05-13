@@ -9,6 +9,39 @@ module Content (
 	onlyKnownCipherSuite,
 	certificateChain,
 	digitalSign,
+
+	Partner(..),
+	TlsIO, evalTlsIO, setClientRandom, showRandom, setVersion,
+	cacheCipherSuite, setServerRandom, handshakeMessages, throwError,
+	ClientHandle(..),
+	ServerHandle(..),
+	decryptRSA, generateMasterSecret, debugPrintKeys, flushCipherSuite,
+	finishedHash,
+
+	writeFragment,
+	updateSequenceNumberSmart,
+	fragmentUpdateHash,
+	readFragmentNoHash,
+	randomByteString,
+
+	Handshake(..),
+	HandshakeType(..),
+	handshakeToByteString,
+
+	ServerHello(..),
+	CertificateRequest(..),
+	ClientCertificateType(..),
+
+	EncryptedPreMasterSecret(..),
+
+	SignatureAlgorithm(..),
+	HashAlgorithm(..),
+	CompressionMethod(..),
+	CipherSuite(..),
+	Random(..),
+	SessionId(..),
+	Version(..),
+	ProtocolVersion(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -17,10 +50,12 @@ import Control.Applicative
 import Data.Maybe
 
 import Fragment
-import ByteStringMonad
+-- import ByteStringMonad
 import Handshake
-import PreMasterSecret
-import Parts
+-- import PreMasterSecret
+-- import Parts
+import Data.ByteString(ByteString, pack, concat)
+import Data.Word
 
 fragmentToContent :: Fragment -> Either String Content
 fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) body
@@ -58,7 +93,7 @@ data ChangeCipherSpec
 
 parseChangeCipherSpec :: ByteStringM ChangeCipherSpec
 parseChangeCipherSpec = do
-	ccs <- head
+	ccs <- headBS
 	return $ case ccs of
 		1 -> ChangeCipherSpec
 		_ -> ChangeCipherSpecRaw ccs

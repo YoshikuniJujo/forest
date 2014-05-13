@@ -29,6 +29,8 @@ module TlsIO (
 	getCipherSuite, CipherSuite(..), showRandom,
 
 	handshakeMessages, randomByteString,
+
+	MS.list1, MS.whole, MS.ByteStringM, MS.evalByteStringM, MS.headBS,
 ) where
 
 import Prelude hiding (read)
@@ -48,29 +50,33 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
-import Parts
+import MasterSecret(
+	CipherSuite(..), Random(..), ContentType(..),
+	contentTypeToByteString, byteStringToVersion, ProtocolVersion(..),
+	versionToByteString, byteStringToContentType, Version(..))
+-- import Parts
 import Tools
 
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import MAC
-import ToByteString
+-- import MAC
+-- import ToByteString
 
 import "crypto-random" Crypto.Random
 
 type TlsIO = ErrorT String (StateT TlsState IO)
 
 data TlsState = TlsState {
-	tlssVersion :: Maybe MS.Version,
+	tlssVersion :: Maybe MS.MSVersion,
 	tlssClientId :: Int,
 	tlssServerHandle :: Handle,
 	tlssClientHandle :: Handle,
 	tlssPrivateKey :: PrivateKey,
-	tlssClientWriteCipherSuite :: CipherSuite,
-	tlssServerWriteCipherSuite :: CipherSuite,
-	tlssCachedCipherSuite :: Maybe CipherSuite,
+	tlssClientWriteCipherSuite :: MS.CipherSuite,
+	tlssServerWriteCipherSuite :: MS.CipherSuite,
+	tlssCachedCipherSuite :: Maybe MS.CipherSuite,
 	tlssClientRandom :: Maybe ByteString,
 	tlssServerRandom :: Maybe ByteString,
 	tlssMasterSecret :: Maybe ByteString,
@@ -430,19 +436,19 @@ calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> ByteString ->
 calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 	sn <- getSequenceNumber partner
 	let hashInput = BS.concat [
-		word64ToByteString sn ,
+		MS.word64ToByteString sn ,
 		contentTypeToByteString ct,
 		versionToByteString v,
-		lenBodyToByteString 2 body ]
+		MS.lenBodyToByteString 2 body ]
 --	liftIO . putStrLn $ "hashInput = " ++ show hashInput
 	Just macKey <- case partner of
 		Client -> gets tlssClientWriteMacKey
 		Server -> gets tlssServerWriteMacKey
 	mv <- gets tlssVersion
 	case mv of
-		Just MS.TLS10 -> return $ hmac SHA1.hash 64 macKey hashInput
+		Just MS.TLS10 -> return $ MS.hmac SHA1.hash 64 macKey hashInput
 --		Just MS.TLS12 -> return $ hmac SHA256.hash 64 macKey hashInput
-		Just MS.TLS12 -> return $ hmac SHA1.hash 64 macKey hashInput
+		Just MS.TLS12 -> return $ MS.hmac SHA1.hash 64 macKey hashInput
 		_ -> throwError "calcMacCs: not supported version"
 calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
 calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"

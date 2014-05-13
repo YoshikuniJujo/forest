@@ -122,7 +122,7 @@ data NameType
 
 parseNameType :: ByteStringM NameType
 parseNameType = do
-	nt <- head
+	nt <- headBS
 	return $ case nt of
 		0 -> NameTypeHostName
 		_ -> NameTypeRaw nt
@@ -160,7 +160,7 @@ data EcPointFormat
 
 parseEcPointFormat :: ByteStringM EcPointFormat
 parseEcPointFormat = do
-	epf <- head
+	epf <- headBS
 	return $ case epf of
 		0 -> EcPointFormatUncompressed
 		_ -> EcPointFormatRaw epf
