@@ -162,7 +162,7 @@ main = do
 					fhc <- finishedHash Client
 					liftIO $ print fhc
 					_ <- wantContent Client Nothing
-					putContent Server $
+					putContent Server .
 						ContentHandshake (Version 3 3) .
 							(: []) $
 							HandshakeRaw
@@ -307,6 +307,7 @@ query _ _ _ = return ValidationCacheUnknown
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
 
+{-
 sockHandler :: Chan () -> Socket -> PortID -> IO ()
 sockHandler lock sock pid = do
 	(cl, _, _) <- accept sock
@@ -333,6 +334,7 @@ commandProcessor lock cl sv = do
 		writeChan lock ()
 		hPutChar cl c
 	return ()
+	-}
 
 printable :: String
 printable = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ symbols ++ " "
