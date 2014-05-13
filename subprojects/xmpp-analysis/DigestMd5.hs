@@ -50,5 +50,7 @@ digestMd5 isClient username realm password qop uri nonce nc cnonce = z
 		qop +++ ":" +++ ha2
 	z = hash32 kd
 
+{-
 hex :: ByteString -> String
 hex = concatMap (flip showHex "") . BS.unpack
+-}

@@ -47,4 +47,4 @@ kd = ha1 +++ ":" +++ nonce +++ ":" +++ nc +++ ":" +++ cnonce +++ ":" +++
 z = hash32 kd
 
 hex :: ByteString -> String
-hex = concatMap (flip showHex "") . BS.unpack
+hex = concatMap (`showHex` "") . BS.unpack

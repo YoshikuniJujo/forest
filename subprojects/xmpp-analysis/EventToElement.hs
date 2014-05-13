@@ -9,10 +9,10 @@ module EventToElement (
 
 import Data.Conduit
 
-import Control.Arrow
+-- import Control.Arrow
 import Control.Applicative
 import Data.XML.Types
-import Data.Text (Text)
+-- import Data.Text (Text)
 import qualified Data.Text as T
 
 import Control.Monad.IO.Class
@@ -86,6 +86,7 @@ convert f = do
 		Just x -> yield $ f x
 		_ -> return ()
 
+{-
 testEventList :: [Event]
 testEventList = [
 	EventBeginElement hello [],
@@ -120,6 +121,8 @@ eventListToNodeList evs@(EventBeginElement _ _ : _) =
 	where
 	(elm, evs') = eventListToElement evs
 	(nds, evs'') = eventListToNodeList evs'
+eventListToNodeList _ = error "eventListToNodeList: not implemented yet"
+-}
 
 showElement :: Element -> String
 showElement (Element nm ats []) =

@@ -5,10 +5,7 @@ module XmppTypes (
 	stanzaToElement
 ) where
 
-import Debug.Trace
-
 import Control.Applicative
-import Control.Arrow
 import Data.Maybe
 import Data.List
 import Data.XML.Types
@@ -147,9 +144,9 @@ toBind e = BindRaw e
 
 fromBind :: Bind -> Element
 fromBind Required = Element (fromJust $ lookup TagRequired tagName) [] []
-fromBind (BindResource rn) = Element (fromJust $ lookup TagResource tagName) [] $
+fromBind (BindResource rn) = Element (fromJust $ lookup TagResource tagName) []
 	[NodeContent (ContentText rn)]
-fromBind (BindJid jid) = Element (fromJust $ lookup TagJid tagName) [] $
+fromBind (BindJid jid) = Element (fromJust $ lookup TagJid tagName) []
 	[NodeContent (ContentText jid)]
 fromBind (BindTag _ e) = e
 fromBind (BindRaw e) = e
@@ -195,17 +192,17 @@ data Session
 toFeature :: Element -> Feature
 toFeature (Element nm [] [NodeElement e])
 	| Just TagVer <- nameToTag nm = FeatureVer $ case e of
-		Element nm [] [] | Just TagOptional <- nameToTag nm -> Optional
+		Element n [] [] | Just TagOptional <- nameToTag n -> Optional
 		_ -> VerRaw e
 toFeature (Element nm [] [NodeElement e])
 	| Just TagBind <- nameToTag nm = FeatureBind $ case e of
-		Element nm [] []
-			| Just TagRequired <- nameToTag nm -> Required
+		Element n [] []
+			| Just TagRequired <- nameToTag n -> Required
 		_ -> BindRaw e
-toFeature (Element nm [] [(NodeElement e)])
+toFeature (Element nm [] [NodeElement e])
 	| Just TagSession <- nameToTag nm = FeatureSession $ case e of
-		Element nm [] []
-			| Just TagSessionOptional <- nameToTag nm -> SessionOptional
+		Element n [] []
+			| Just TagSessionOptional <- nameToTag n -> SessionOptional
 		_ -> SessionRaw e
 toFeature (Element nm ats [])
 	| Just TagC <- nameToTag nm = FeatureC $ toCaps ats
@@ -214,16 +211,17 @@ toFeature e@(Element nm _ _)
 toFeature e = FeatureRaw e
 
 fromFeature :: Feature -> Element
-fromFeature (FeatureVer or) = Element
-	(fromJust $ lookup TagVer tagName) [] . (: []) . NodeElement $ case or of
+fromFeature (FeatureVer o) = Element
+	(fromJust $ lookup TagVer tagName) [] . (: []) . NodeElement $ case o of
 		Optional -> Element (fromJust $ lookup TagOptional tagName) [] []
 		VerRaw e -> e
-fromFeature (FeatureBind or) = Element
-	(fromJust $ lookup TagBind tagName) [] . (: []) . NodeElement $ case or of
+fromFeature (FeatureBind o) = Element
+	(fromJust $ lookup TagBind tagName) [] . (: []) . NodeElement $ case o of
 		Required -> Element (fromJust $ lookup TagRequired tagName) [] []
 		BindRaw e -> e
-fromFeature (FeatureSession or) = Element (fromJust $ lookup TagSession tagName)
-	[] . (: []) . NodeElement $ case or of
+		_ -> error "fromFeature: error"
+fromFeature (FeatureSession o) = Element (fromJust $ lookup TagSession tagName)
+	[] . (: []) . NodeElement $ case o of
 		SessionOptional -> Element
 			(fromJust $ lookup TagSessionOptional tagName) [] []
 		SessionRaw e -> e
@@ -379,7 +377,7 @@ data Mechanism
 	deriving Show
 
 elementToStanza :: Element -> Stanza
-elementToStanza (Element nm [] [NodeElement nd@(Element nm' [] nds)])
+elementToStanza (Element nm [] [NodeElement (Element nm' [] nds)])
 	| Just TagFeatures <- nameToTag nm,
 		Just Mechanisms <- nameToTag nm' =
 		StanzaMechanismList $ map
@@ -438,8 +436,8 @@ stanzaToElement :: Stanza -> Element
 stanzaToElement (StanzaMechanismList nds) = Element
 	(fromJust $ lookup TagFeatures tagName) [] [NodeElement e]
 	where
-	e = Element (fromJust $ lookup Mechanisms tagName) [] $ map NodeElement $
-		map mechanismToElement nds
+	e = Element (fromJust $ lookup Mechanisms tagName) [] $
+		map (NodeElement . mechanismToElement) nds
 stanzaToElement (StanzaMechanism at)
 	| Just c <- mct = Element (fromJust $ lookup Auth tagName)
 		[(Name "mechanism" Nothing Nothing, [c])] []
@@ -487,6 +485,7 @@ stanzaToElement s@(StanzaMessage {}) =
 			maybe [] ((: []) . ContentText) $ messageTo s) ]
 stanzaToElement (StanzaTag _ e) = e
 stanzaToElement (StanzaRaw e) = e
+stanzaToElement _ = error "stanzaToElement: error"
 
 showSaslData :: [(ByteString, ByteString)] -> Text
 showSaslData = decodeUtf8 . B64.encode . BSC.intercalate "," .
@@ -499,6 +498,7 @@ elementToMechanism e@(Element nm [] [NodeContent (ContentText mn)])
 		"DIGEST-MD5" -> DigestMd5
 		_ -> UnknownMechanism mn
 	| otherwise = NotMechanism e
+elementToMechanism e = NotMechanism e
 
 mechanismToElement :: Mechanism -> Element
 mechanismToElement (NotMechanism e) = e
@@ -507,6 +507,7 @@ mechanismToElement m = let Just nm = lookup Mechanism tagName in
 		ScramSha1 -> "SCRAM-SHA-1"
 		DigestMd5 -> "DIGEST-MD5"
 		UnknownMechanism mn -> mn
+		NotMechanism _ -> error "mechanismToElement: never occur"
 
 tagName :: [(Tag, Name)]
 tagName = [
