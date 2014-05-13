@@ -37,8 +37,7 @@ import Control.Monad
 
 import Data.Word
 
-import ClientHello
-import ServerHello
+import Hello
 import Certificate
 import DigitallySigned
 import CertificateRequest

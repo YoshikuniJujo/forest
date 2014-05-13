@@ -16,24 +16,26 @@ module MasterSecret (
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
-	P.Random(..),
-	P.CipherSuite(..),
-	P.contentTypeToByteString,
-	P.ContentType(..),
-	P.byteStringToVersion,
-
 	P.ProtocolVersion(..),
-	P.versionToByteString,
-	P.byteStringToContentType,
-	P.Version(..),
+
+--	P.Random(..),
+--	P.CipherSuite(..),
+--	P.contentTypeToByteString,
+--	P.ContentType(..),
+--	P.byteStringToVersion,
+
+--	P.ProtocolVersion(..),
+--	P.versionToByteString,
+--	P.byteStringToContentType,
+--	P.Version(..),
 
 	hmac,
 
-	P.list1, P.whole, P.ByteStringM, P.evalByteStringM, P.headBS,
+--	P.list1, P.whole, P.ByteStringM, P.evalByteStringM, P.headBS,
 
-	P.word64ToByteString, P.lenBodyToByteString,
+--	P.word64ToByteString, P.lenBodyToByteString,
 
-	P.byteStringToInt, P.intToByteString, P.showKeySingle, P.showKey,
+--	P.byteStringToInt, P.intToByteString, P.showKeySingle, P.showKey,
 ) where
 
 import MAC
@@ -44,7 +46,7 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
 
-import qualified Parts as P
+import qualified Types as P (ProtocolVersion(..))
 
 versionToVersion :: P.ProtocolVersion -> Maybe MSVersion
 versionToVersion (P.ProtocolVersion 3 1) = Just TLS10

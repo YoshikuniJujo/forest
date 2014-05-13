@@ -1,13 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Parts (
-	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString,
+--	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString,
 	Random(..), parseRandom, randomToByteString,
-	SessionId(..), parseSessionId, sessionIdToByteString,
 	CipherSuite(..), parseCipherSuite, cipherSuiteToByteString,
 		parseCipherSuiteList, cipherSuiteListToByteString,
-	CompressionMethod(..), parseCompressionMethod, compressionMethodToByteString,
-		parseCompressionMethodList, compressionMethodListToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Version(..), byteStringToVersion, versionToByteString,
 	HashAlgorithm(..), parseHashAlgorithm, hashAlgorithmToByteString,
@@ -23,6 +20,7 @@ module Parts (
 	fst3, fromInt,
 
 	byteStringToInt, intToByteString, showKeySingle, showKey,
+	section, takeWords, takeLen, take,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -33,16 +31,6 @@ import qualified Data.ByteString as BS
 
 import ByteStringMonad
 -- import ToByteString
-
-data ProtocolVersion = ProtocolVersion Word8 Word8 deriving Show
-
-parseProtocolVersion :: ByteStringM ProtocolVersion
-parseProtocolVersion = do
-	[vmjr, vmnr] <- takeWords 2
-	return $ ProtocolVersion vmjr vmnr
-
-protocolVersionToByteString :: ProtocolVersion -> ByteString
-protocolVersionToByteString (ProtocolVersion vmjr vmnr) = pack [vmjr, vmnr]
 
 data Random = Random ByteString
 
@@ -55,18 +43,6 @@ parseRandom = Random <$> take 32
 
 randomToByteString :: Random -> ByteString
 randomToByteString (Random r) = r
-
-data SessionId = SessionId ByteString
-
-instance Show SessionId where
-	show (SessionId sid) =
-		"(SessionID " ++ concatMap (`showHex` "") (unpack sid) ++ ")"
-
-parseSessionId :: ByteStringM SessionId
-parseSessionId = SessionId <$> takeLen 1
-
-sessionIdToByteString :: SessionId -> ByteString
-sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
 
 data CipherSuite
 	= TLS_NULL_WITH_NULL_NULL
@@ -102,29 +78,6 @@ cipherSuiteToByteString TLS_DHE_RSA_WITH_AES_128_CBC_SHA = "\x00\x33"
 cipherSuiteToByteString TLS_ECDHE_PSK_WITH_NULL_SHA = "\x00\x39"
 cipherSuiteToByteString TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = "\x00\x45"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
-
-data CompressionMethod
-	= CompressionMethodNull
-	| CompressionMethodRaw Word8
-	deriving Show
-
-parseCompressionMethodList :: ByteStringM [CompressionMethod]
-parseCompressionMethodList = section 1 $ list1 parseCompressionMethod
-
-compressionMethodListToByteString :: [CompressionMethod] -> ByteString
-compressionMethodListToByteString =
-	lenBodyToByteString 1 . concat . map compressionMethodToByteString
-
-parseCompressionMethod :: ByteStringM CompressionMethod
-parseCompressionMethod = do
-	cm <- headBS
-	return $ case cm of
-		0 -> CompressionMethodNull
-		_ -> CompressionMethodRaw cm
-
-compressionMethodToByteString :: CompressionMethod -> ByteString
-compressionMethodToByteString CompressionMethodNull = "\0"
-compressionMethodToByteString (CompressionMethodRaw cm) = pack [cm]
 
 data ContentType
 	= ContentTypeChangeCipherSpec

@@ -30,7 +30,7 @@ module TlsIO (
 
 	handshakeMessages, randomByteString,
 
-	MS.list1, MS.whole, MS.ByteStringM, MS.evalByteStringM, MS.headBS,
+	list1, whole, ByteStringM, evalByteStringM, headBS,
 ) where
 
 import Prelude hiding (read)
@@ -50,12 +50,15 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
+{-
 import MasterSecret(
 	CipherSuite(..), Random(..), ContentType(..),
 	contentTypeToByteString, byteStringToVersion, ProtocolVersion(..),
 	versionToByteString, byteStringToContentType, Version(..),
 	showKey, showKeySingle, byteStringToInt, intToByteString)
--- import Parts
+	-}
+import Parts
+-- import Types
 -- import Tools
 
 import qualified Crypto.Hash.MD5 as MD5
@@ -75,9 +78,9 @@ data TlsState = TlsState {
 	tlssServerHandle :: Handle,
 	tlssClientHandle :: Handle,
 	tlssPrivateKey :: PrivateKey,
-	tlssClientWriteCipherSuite :: MS.CipherSuite,
-	tlssServerWriteCipherSuite :: MS.CipherSuite,
-	tlssCachedCipherSuite :: Maybe MS.CipherSuite,
+	tlssClientWriteCipherSuite :: CipherSuite,
+	tlssServerWriteCipherSuite :: CipherSuite,
+	tlssCachedCipherSuite :: Maybe CipherSuite,
 	tlssClientRandom :: Maybe ByteString,
 	tlssServerRandom :: Maybe ByteString,
 	tlssMasterSecret :: Maybe ByteString,
@@ -101,7 +104,7 @@ data TlsState = TlsState {
 instance Show SystemRNG where
 	show _ = "System Random Generator"
 
-setVersion :: ProtocolVersion -> TlsIO ()
+setVersion :: MS.ProtocolVersion -> TlsIO ()
 setVersion v = do
 	tlss <- get
 	case MS.versionToVersion v of
@@ -437,10 +440,10 @@ calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> ByteString ->
 calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 	sn <- getSequenceNumber partner
 	let hashInput = BS.concat [
-		MS.word64ToByteString sn ,
+		word64ToByteString sn ,
 		contentTypeToByteString ct,
 		versionToByteString v,
-		MS.lenBodyToByteString 2 body ]
+		lenBodyToByteString 2 body ]
 --	liftIO . putStrLn $ "hashInput = " ++ show hashInput
 	Just macKey <- case partner of
 		Client -> gets tlssClientWriteMacKey

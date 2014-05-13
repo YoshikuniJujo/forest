@@ -1,5 +1,7 @@
 module Extension (
-	ExtensionList, parseExtensionList, extensionListToByteString
+	ExtensionList, parseExtensionList, extensionListToByteString,
+
+	concat, emptyBS, ByteStringM,
 ) where
 
 import Prelude hiding (head, concat)
