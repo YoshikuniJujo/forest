@@ -7,6 +7,8 @@ module ClientHello (
 	Random(..), ProtocolVersion(..), CipherSuite(..),
 	SignatureAlgorithm(..), HashAlgorithm(..),
 	CompressionMethod(..), SessionId(..), Version(..),
+
+	fst3, fromInt,
 ) where
 
 import Prelude hiding (concat)

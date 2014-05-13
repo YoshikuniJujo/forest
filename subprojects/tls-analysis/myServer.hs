@@ -22,7 +22,7 @@ import Content
 -- import CertificateRequest
 -- import PreMasterSecret
 -- import Parts
-import Tools
+-- import Tools
 
 import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS

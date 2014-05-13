@@ -5,11 +5,19 @@ module ByteStringMonad (
 
 	ByteStringM, evalByteStringM, throwError,
 	headBS, take, takeWords, takeInt, takeWord16, takeLen, emptyBS,
-	list1, list, section, whole
+	list1, list, section, whole,
+
+	lenBodyToByteString, word16ToByteString, word64ToByteString,
+
+	fst3, fromInt,
+
+	byteStringToInt, intToByteString, showKeySingle, showKey,
 ) where
 
 import Prelude hiding (head, take)
+import qualified Prelude
 
+import Numeric
 import Control.Applicative ((<$>), (<*>))
 
 import Data.Bits
@@ -19,7 +27,7 @@ import qualified Data.ByteString as BS
 import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Error
 
-import Tools
+-- import Tools
 
 type ByteStringM = ErrorT String (State ByteString)
 
@@ -82,3 +90,49 @@ section n m = do
 
 whole :: ByteStringM ByteString
 whole = do w <- get; put ""; return w
+
+lenBodyToByteString :: Int -> ByteString -> ByteString
+lenBodyToByteString n bs = intToByteString n (BS.length bs) `BS.append` bs
+
+word16ToByteString :: Word16 -> ByteString
+word16ToByteString w = BS.pack [fromIntegral (w `shiftR` 8), fromIntegral w]
+
+word64ToByteString :: Word64 -> ByteString
+word64ToByteString w64 = BS.replicate (8 - BS.length bs) 0 `BS.append` bs
+	where
+	bs = BS.reverse $ wtb w64
+	wtb 0 = ""
+	wtb w = fromIntegral (w .&. 0xff) `BS.cons` wtb (w `shiftR` 8)
+
+byteStringToInt :: ByteString -> Int
+byteStringToInt bs = wordsToInt (BS.length bs - 1) $ BS.unpack bs
+
+wordsToInt :: Int -> [Word8] -> Int
+wordsToInt n _ | n < 0 = 0
+wordsToInt _ [] = 0
+wordsToInt n (x : xs) = fromIntegral x `shift` (n * 8) .|. wordsToInt (n - 1) xs
+
+intToByteString :: Int -> Int -> ByteString
+intToByteString n = BS.pack . reverse . intToWords n
+
+intToWords :: Int -> Int -> [Word8]
+intToWords 0 _ = []
+intToWords n i = fromIntegral i : intToWords (n - 1) (i `shiftR` 8)
+
+showKeySingle :: ByteString -> String
+showKeySingle = unwords . map showH . BS.unpack
+
+showKey :: ByteString -> String
+showKey = unlines . map (('\t' :) . unwords) . separateN 16 . map showH . BS.unpack
+	where
+	separateN _ [] = []
+	separateN n xs = Prelude.take n xs : separateN n (drop n xs)
+
+showH :: Word8 -> String
+showH w = let s = showHex w "" in replicate (2 - length s) '0' ++ s
+
+fromInt :: Integral i => Int -> i
+fromInt = fromIntegral
+
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x

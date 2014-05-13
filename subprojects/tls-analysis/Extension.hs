@@ -7,7 +7,7 @@ import Prelude hiding (head, concat)
 import Control.Applicative
 
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 
 type ExtensionList = [Extension]
 

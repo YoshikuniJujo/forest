@@ -26,6 +26,8 @@ module Handshake (
 	CompressionMethod(..),
 	SessionId(..),
 	Version(..),
+
+	fst3, fromInt,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -41,8 +43,9 @@ import Certificate
 import DigitallySigned
 import CertificateRequest
 import PreMasterSecret
-import ByteStringMonad
-import ToByteString
+import Data.ByteString(ByteString, pack)
+-- import ByteStringMonad
+-- import ToByteString
 -- import Parts
 
 data Handshake

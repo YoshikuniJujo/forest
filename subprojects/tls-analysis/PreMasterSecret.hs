@@ -1,7 +1,10 @@
 module PreMasterSecret (
 	EncryptedPreMasterSecret(..),
 	parseEncryptedPreMasterSecret,
-	encryptedPreMasterSecretToByteString
+	encryptedPreMasterSecretToByteString,
+
+	ByteStringM, section, emptyBS, throwError, whole, append,
+	lenBodyToByteString, headBS,
 ) where
 
 import Numeric
@@ -9,17 +12,17 @@ import Numeric
 import Control.Applicative
 
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 
 data EncryptedPreMasterSecret
 	= EncryptedPreMasterSecret { getEncryptedPreMasterSecret :: ByteString }
 
 instance Show EncryptedPreMasterSecret where
 	show (EncryptedPreMasterSecret epms) = "(EncryptedPreMasterSecret " ++
-		showKey epms ++ ")"
+		showKeyPMS epms ++ ")"
 
-showKey :: ByteString -> String
-showKey = concatMap showH . unpack
+showKeyPMS :: ByteString -> String
+showKeyPMS = concatMap showH . unpack
 
 showH :: Word8 -> String
 showH w = replicate (2 - length s) '0' ++ s

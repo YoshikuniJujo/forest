@@ -11,7 +11,7 @@ import Control.Applicative
 import qualified Data.X509 as X509
 
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 
 data Certificate
 	= CertificateRaw ByteString

@@ -18,7 +18,11 @@ module Parts (
 
 	list1, whole, ByteStringM, evalByteStringM, headBS,
 
-	word64ToByteString, lenBodyToByteString, emptyBS, concat
+	word64ToByteString, lenBodyToByteString, emptyBS, concat,
+
+	fst3, fromInt,
+
+	byteStringToInt, intToByteString, showKeySingle, showKey,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -28,7 +32,7 @@ import Control.Applicative ((<$>), (<*>))
 import qualified Data.ByteString as BS
 
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 
 data ProtocolVersion = ProtocolVersion Word8 Word8 deriving Show
 

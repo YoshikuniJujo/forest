@@ -10,7 +10,7 @@ import Prelude hiding (head)
 import Control.Applicative
 import qualified Data.ByteString as BS
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 import Parts
 
 data DigitallySigned

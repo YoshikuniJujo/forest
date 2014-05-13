@@ -42,6 +42,8 @@ module Content (
 	SessionId(..),
 	Version(..),
 	ProtocolVersion(..),
+
+	fst3, fromInt,
 ) where
 
 import Prelude hiding (concat, head)

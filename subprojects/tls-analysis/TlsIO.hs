@@ -53,9 +53,10 @@ import qualified MasterSecret as MS
 import MasterSecret(
 	CipherSuite(..), Random(..), ContentType(..),
 	contentTypeToByteString, byteStringToVersion, ProtocolVersion(..),
-	versionToByteString, byteStringToContentType, Version(..))
+	versionToByteString, byteStringToContentType, Version(..),
+	showKey, showKeySingle, byteStringToInt, intToByteString)
 -- import Parts
-import Tools
+-- import Tools
 
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Crypto.Hash.SHA1 as SHA1

@@ -16,7 +16,7 @@ import Data.ASN1.Types
 import Data.X509
 
 import ByteStringMonad
-import ToByteString
+-- import ToByteString
 import Parts
 
 data CertificateRequest
