@@ -1,16 +1,38 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Types (
-	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString
+	Version(..), byteStringToVersion, versionToByteString,
+	ContentType(..), byteStringToContentType, contentTypeToByteString,
 ) where
 
 import Data.Word
-import ByteStringMonad
+import Data.ByteString (ByteString, pack, unpack)
 
-data ProtocolVersion = ProtocolVersion Word8 Word8 deriving Show
+data Version
+	= Version Word8 Word8
+	deriving Show
 
-parseProtocolVersion :: ByteStringM ProtocolVersion
-parseProtocolVersion = do
-	[vmjr, vmnr] <- takeWords 2
-	return $ ProtocolVersion vmjr vmnr
+byteStringToVersion :: ByteString -> Version
+byteStringToVersion v = let [vmjr, vmnr] = unpack v in Version vmjr vmnr
 
-protocolVersionToByteString :: ProtocolVersion -> ByteString
-protocolVersionToByteString (ProtocolVersion vmjr vmnr) = pack [vmjr, vmnr]
+versionToByteString :: Version -> ByteString
+versionToByteString (Version vmjr vmnr) = pack [vmjr, vmnr]
+
+data ContentType
+	= ContentTypeChangeCipherSpec
+	| ContentTypeHandshake
+	| ContentTypeApplicationData
+	| ContentTypeRaw Word8
+	deriving Show
+
+byteStringToContentType :: ByteString -> ContentType
+byteStringToContentType "\20" = ContentTypeChangeCipherSpec
+byteStringToContentType "\22" = ContentTypeHandshake
+byteStringToContentType "\23" = ContentTypeApplicationData
+byteStringToContentType bs = let [ct] = unpack bs in ContentTypeRaw ct
+
+contentTypeToByteString :: ContentType -> ByteString
+contentTypeToByteString ContentTypeChangeCipherSpec = pack [20]
+contentTypeToByteString ContentTypeHandshake = pack [22]
+contentTypeToByteString ContentTypeApplicationData = pack [23]
+contentTypeToByteString (ContentTypeRaw ct) = pack [ct]

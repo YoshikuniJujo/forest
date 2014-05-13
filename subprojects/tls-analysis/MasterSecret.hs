@@ -16,7 +16,7 @@ module MasterSecret (
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
-	P.ProtocolVersion(..),
+	P.Version(..),
 
 --	P.Random(..),
 --	P.CipherSuite(..),
@@ -24,7 +24,7 @@ module MasterSecret (
 --	P.ContentType(..),
 --	P.byteStringToVersion,
 
---	P.ProtocolVersion(..),
+--	P.Version(..),
 --	P.versionToByteString,
 --	P.byteStringToContentType,
 --	P.Version(..),
@@ -46,11 +46,11 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
 
-import qualified Types as P (ProtocolVersion(..))
+import qualified Types as P (Version(..))
 
-versionToVersion :: P.ProtocolVersion -> Maybe MSVersion
-versionToVersion (P.ProtocolVersion 3 1) = Just TLS10
-versionToVersion (P.ProtocolVersion 3 3) = Just TLS12
+versionToVersion :: P.Version -> Maybe MSVersion
+versionToVersion (P.Version 3 1) = Just TLS10
+versionToVersion (P.Version 3 3) = Just TLS12
 versionToVersion _ = Nothing
 
 type Bytes = ByteString

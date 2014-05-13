@@ -41,7 +41,6 @@ module Content (
 	Random(..),
 	SessionId(..),
 	Version(..),
-	ProtocolVersion(..),
 
 	fst3, fromInt,
 ) where
@@ -140,13 +139,13 @@ serverRandom (ContentHandshake _ hss) = case mapMaybe handshakeServerRandom hss 
 	_ -> Nothing
 serverRandom _ = Nothing
 
-clientVersion :: Content -> Maybe ProtocolVersion
+clientVersion :: Content -> Maybe Version
 clientVersion (ContentHandshake _ hss) = case mapMaybe handshakeClientVersion hss of
 	[v] -> Just v
 	_ -> Nothing
 clientVersion _ = Nothing
 
-serverVersion :: Content -> Maybe ProtocolVersion
+serverVersion :: Content -> Maybe Version
 serverVersion (ContentHandshake _ hss) = case mapMaybe handshakeServerVersion hss of
 	[v] -> Just v
 	_ -> Nothing

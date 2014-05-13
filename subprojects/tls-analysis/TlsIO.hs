@@ -29,8 +29,6 @@ module TlsIO (
 	getCipherSuite, CipherSuite(..), showRandom,
 
 	handshakeMessages, randomByteString,
-
-	list1, whole, ByteStringM, evalByteStringM, headBS,
 ) where
 
 import Prelude hiding (read)
@@ -53,11 +51,15 @@ import qualified MasterSecret as MS
 {-
 import MasterSecret(
 	CipherSuite(..), Random(..), ContentType(..),
-	contentTypeToByteString, byteStringToVersion, ProtocolVersion(..),
+	contentTypeToByteString, byteStringToVersion, Version(..),
 	versionToByteString, byteStringToContentType, Version(..),
 	showKey, showKeySingle, byteStringToInt, intToByteString)
 	-}
-import Parts
+import Types
+import Parts (
+	Random(..), CipherSuite(..),
+	showKey, showKeySingle, word64ToByteString,
+	byteStringToInt, intToByteString, lenBodyToByteString)
 -- import Types
 -- import Tools
 
@@ -104,7 +106,7 @@ data TlsState = TlsState {
 instance Show SystemRNG where
 	show _ = "System Random Generator"
 
-setVersion :: MS.ProtocolVersion -> TlsIO ()
+setVersion :: MS.Version -> TlsIO ()
 setVersion v = do
 	tlss <- get
 	case MS.versionToVersion v of

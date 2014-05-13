@@ -1,13 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Parts (
---	ProtocolVersion(..), parseProtocolVersion, protocolVersionToByteString,
-	Random(..), parseRandom, randomToByteString,
-	CipherSuite(..), parseCipherSuite, cipherSuiteToByteString,
-		parseCipherSuiteList, cipherSuiteListToByteString,
-	ContentType(..), byteStringToContentType, contentTypeToByteString,
-	Version(..), byteStringToVersion, versionToByteString,
-	HashAlgorithm(..), parseHashAlgorithm, hashAlgorithmToByteString,
+	Parsable(..), Random(..), CipherSuite(..),
+	HashAlgorithm(..), -- parseHashAlgorithm, hashAlgorithmToByteString,
 	SignatureAlgorithm(..), parseSignatureAlgorithm,
 	signatureAlgorithmToByteString,
 	hashSignatureAlgorithmToByteString,
@@ -29,6 +25,7 @@ import Numeric
 import Control.Applicative ((<$>), (<*>))
 import qualified Data.ByteString as BS
 
+import Types
 import ByteStringMonad
 -- import ToByteString
 
@@ -37,6 +34,11 @@ data Random = Random ByteString
 instance Show Random where
 	show (Random r) =
 		"(Random " ++ concatMap (`showHex` "") (unpack r) ++ ")"
+
+instance Parsable Random where
+	parse = parseRandom
+	toByteString = randomToByteString
+	listLength _ = Nothing
 
 parseRandom :: ByteStringM Random
 parseRandom = Random <$> take 32
@@ -53,12 +55,10 @@ data CipherSuite
 	| CipherSuiteRaw Word8 Word8
 	deriving Show
 
-parseCipherSuiteList :: ByteStringM [CipherSuite]
-parseCipherSuiteList = section 2 $ list1 parseCipherSuite
-
-cipherSuiteListToByteString :: [CipherSuite] -> ByteString
-cipherSuiteListToByteString =
-	lenBodyToByteString 2 . concat . map cipherSuiteToByteString
+instance Parsable CipherSuite where
+	parse = parseCipherSuite
+	toByteString = cipherSuiteToByteString
+	listLength _ = Just 2
 
 parseCipherSuite :: ByteStringM CipherSuite
 parseCipherSuite = do
@@ -79,35 +79,6 @@ cipherSuiteToByteString TLS_ECDHE_PSK_WITH_NULL_SHA = "\x00\x39"
 cipherSuiteToByteString TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = "\x00\x45"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 
-data ContentType
-	= ContentTypeChangeCipherSpec
-	| ContentTypeHandshake
-	| ContentTypeApplicationData
-	| ContentTypeRaw Word8
-	deriving Show
-
-byteStringToContentType :: ByteString -> ContentType
-byteStringToContentType "\20" = ContentTypeChangeCipherSpec
-byteStringToContentType "\22" = ContentTypeHandshake
-byteStringToContentType "\23" = ContentTypeApplicationData
-byteStringToContentType bs = let [ct] = unpack bs in ContentTypeRaw ct
-
-contentTypeToByteString :: ContentType -> ByteString
-contentTypeToByteString ContentTypeChangeCipherSpec = pack [20]
-contentTypeToByteString ContentTypeHandshake = pack [22]
-contentTypeToByteString ContentTypeApplicationData = pack [23]
-contentTypeToByteString (ContentTypeRaw ct) = pack [ct]
-
-data Version
-	= Version Word8 Word8
-	deriving Show
-
-byteStringToVersion :: ByteString -> Version
-byteStringToVersion v = let [vmjr, vmnr] = unpack v in Version vmjr vmnr
-
-versionToByteString :: Version -> ByteString
-versionToByteString (Version vmjr vmnr) = pack [vmjr, vmnr]
-
 data HashAlgorithm
 	= HashAlgorithmSha1
 	| HashAlgorithmSha224
@@ -116,6 +87,11 @@ data HashAlgorithm
 	| HashAlgorithmSha512
 	| HashAlgorithmRaw Word8
 	deriving Show
+
+instance Parsable HashAlgorithm where
+	parse = parseHashAlgorithm
+	toByteString = hashAlgorithmToByteString
+	listLength _ = Nothing
 
 parseHashAlgorithm :: ByteStringM HashAlgorithm
 parseHashAlgorithm = do
@@ -163,3 +139,13 @@ hashSignatureAlgorithmToByteString (ha, sa) = BS.concat [
 parseHashSignatureAlgorithm :: ByteStringM (HashAlgorithm, SignatureAlgorithm)
 parseHashSignatureAlgorithm =
 	(,) <$> parseHashAlgorithm <*> parseSignatureAlgorithm
+
+instance Parsable Version where
+	parse = parseVersion
+	toByteString = versionToByteString
+	listLength _ = Nothing
+
+parseVersion :: ByteStringM Version
+parseVersion = do
+	[vmjr, vmnr] <- takeWords 2
+	return $ Version vmjr vmnr

@@ -24,8 +24,6 @@ module Fragment (
 	handshakeMessages,
 	updateSequenceNumberSmart,
 	randomByteString,
-
-	list1, whole, ByteStringM, evalByteStringM, headBS,
 ) where
 
 import Prelude hiding (read)

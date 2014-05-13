@@ -24,12 +24,12 @@ digitallySignedSign _ = Nothing
 
 parseDigitallySigned :: ByteStringM DigitallySigned
 parseDigitallySigned = DigitallySigned
-	<$> ((,) <$> parseHashAlgorithm <*> parseSignatureAlgorithm)
+	<$> ((,) <$> parse <*> parseSignatureAlgorithm)
 	<*> takeLen 2
 
 digitallySignedToByteString :: DigitallySigned -> ByteString
 digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
-	hashAlgorithmToByteString ha,
+	toByteString ha,
 	signatureAlgorithmToByteString sa,
 	lenBodyToByteString 2 bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs

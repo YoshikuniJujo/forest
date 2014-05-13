@@ -17,7 +17,6 @@ module Handshake (
 	ClientCertificateType(..),
 	EncryptedPreMasterSecret(..),
 
-	ProtocolVersion(..),
 	Random(..),
 	CipherSuite(..),
 
@@ -27,7 +26,7 @@ module Handshake (
 	SessionId(..),
 	Version(..),
 
-	fst3, fromInt,
+	fst3, fromInt, headBS, list1, whole, ByteStringM, evalByteStringM,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -75,11 +74,11 @@ handshakeServerRandom :: Handshake -> Maybe Random
 handshakeServerRandom (HandshakeServerHello sh) = serverHelloServerRandom sh
 handshakeServerRandom _ = Nothing
 
-handshakeClientVersion :: Handshake -> Maybe ProtocolVersion
+handshakeClientVersion :: Handshake -> Maybe Version
 handshakeClientVersion (HandshakeClientHello ch) = clientHelloClientVersion ch
 handshakeClientVersion _ = Nothing
 
-handshakeServerVersion :: Handshake -> Maybe ProtocolVersion
+handshakeServerVersion :: Handshake -> Maybe Version
 handshakeServerVersion (HandshakeServerHello ch) = serverHelloServerVersion ch
 handshakeServerVersion _ = Nothing
 

@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE PackageImports, OverloadedStrings, ScopedTypeVariables #-}
 
 module ByteStringMonad (
 	ByteString, Word8, Word16, BS.pack, BS.unpack, BS.append, BS.concat,
@@ -12,6 +12,8 @@ module ByteStringMonad (
 	fst3, fromInt,
 
 	byteStringToInt, intToByteString, showKeySingle, showKey,
+
+	Parsable(..),
 ) where
 
 import Prelude hiding (head, take)
@@ -28,6 +30,20 @@ import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Error
 
 -- import Tools
+
+class Parsable a where
+	parse :: ByteStringM a
+	toByteString :: a -> ByteString
+	listLength :: a -> Maybe Int
+
+instance Parsable a => Parsable [a] where
+	parse = case listLength (undefined :: a) of
+		Just n -> section n $ list parse
+		_ -> error "Parsable [a]: Not set list len"
+	toByteString = case listLength (undefined :: a) of
+		Just n -> lenBodyToByteString n . BS.concat . map toByteString
+		_ -> error "Parsable [a]: Not set list len"
+	listLength _ = Nothing
 
 type ByteStringM = ErrorT String (State ByteString)
 

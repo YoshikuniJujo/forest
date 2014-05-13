@@ -274,7 +274,7 @@ mkServerHello :: TlsIO Handshake
 mkServerHello = do
 	sr <- randomByteString 32
 	return . HandshakeServerHello $ ServerHello
-		(ProtocolVersion 3 3)
+		(Version 3 3)
 		(Random sr)
 		(SessionId "")
 		TLS_RSA_WITH_AES_128_CBC_SHA CompressionMethodNull Nothing
