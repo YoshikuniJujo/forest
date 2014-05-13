@@ -2,7 +2,15 @@
 
 module XmppTypes (
 	elementToStanza,
-	stanzaToElement
+	stanzaToElement,
+	Stanza(..),
+	Mechanism(..),
+	Challenge(..),
+	Response(..),
+	Feature(..),
+	Bind(..),
+	IqType(..),
+	IqBody(..),
 ) where
 
 import Control.Applicative
@@ -129,7 +137,7 @@ data Bind
 	| BindJid Text
 	| BindTag Tag Element
 	| BindRaw Element
-	deriving Show
+	deriving (Show, Eq)
 
 toBind :: Element -> Bind
 toBind (Element nm [] [])
@@ -158,12 +166,12 @@ data Feature
 	| FeatureC Caps
 	| FeatureTag Tag Element
 	| FeatureRaw Element
-	deriving Show
+	deriving (Show, Eq)
 
 data Caps = Caps {
 	capsHash :: Text,
 	capsVer :: Text,
-	capsNode :: Text } deriving Show
+	capsNode :: Text } deriving (Show, Eq)
 
 toCaps :: [(Name, [Content])] -> Caps
 toCaps ats = Caps {
@@ -182,12 +190,12 @@ fromCaps ats = [
 data Ver
 	= Optional
 	| VerRaw Element
-	deriving Show
+	deriving (Show, Eq)
 
 data Session
 	= SessionOptional
 	| SessionRaw Element
-	deriving Show
+	deriving (Show, Eq)
 
 toFeature :: Element -> Feature
 toFeature (Element nm [] [NodeElement e])
@@ -374,7 +382,7 @@ data Mechanism
 	| DigestMd5
 	| UnknownMechanism Text
 	| NotMechanism Element
-	deriving Show
+	deriving (Show, Eq)
 
 elementToStanza :: Element -> Stanza
 elementToStanza (Element nm [] [NodeElement (Element nm' [] nds)])
