@@ -51,7 +51,7 @@ main = do
 			
 run :: CertificateStore -> CertificateChain -> PrivateKey -> Int -> TlsIO Content ()
 run certStore certChain pkys cid = do
-	ch <- peekContent Client
+	ch <- readContent Client
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 	output Client cid "Hello" [
 		take 60 (show ch) ++ "...",
@@ -71,17 +71,16 @@ run certStore certChain pkys cid = do
 	setServerRandom sr
 	output Server cid "Hello" [show version, show cipherSuite, showRandom sr]
 
+	c1 <- readContent Client
+	c2 <- readContent Client
 	hms <- handshakeMessages
-	c1@(ContentHandshake _ hs1) <- peekContent Client
-	c2@(ContentHandshake _ hs2) <- peekContent Client
-	c3 <- peekContent Client
-	let	hms' = BS.concat $ hms : [toByteString hs1, toByteString hs2]
-		Right signed'' = sign Nothing hashDescrSHA256 pkys hms'
-		Just ds = digitalSign c3
-		Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
+	c3 <- readContent Client
+	let	Right signed'' = sign Nothing hashDescrSHA256 pkys hms
 		Just cc@(CertificateChain certs) = certificateChain c1
+		Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
+		Just ds = digitalSign c3
 	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
-	unless (verify hashDescrSHA256 pub hms' ds) $
+	unless (verify hashDescrSHA256 pub hms ds) $
 		throwError "client authentificatio failed"
 	pms <- decryptRSA epms
 	generateMasterSecret pms
@@ -97,14 +96,13 @@ run certStore certChain pkys cid = do
 			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
 		++ debugKeysStr
 
-	cccs <- peekContent Client
+	cccs <- readContent Client
 	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
 	output Client cid "Change Cipher Spec" [take 60 $ show cccs]
 
 	fhc <- finishedHash Client
-	cf <- peekContent Client
-	output Client cid "Finished"
-		[show fhc, show $ (\(ContentHandshake _ h) -> h) cf]
+	cf <- readContent Client
+	output Client cid "Finished" [show fhc, showHandshake cf]
 
 	writeFragment Client $ contentToFragment changeCipherSpec
 	flushCipherSuite Server
@@ -112,31 +110,25 @@ run certStore certChain pkys cid = do
 
 	sf <- finishedHash Server
 	writeFragment Client $ contentToFragment $ finished sf
-	output Server cid "Finished"
-		[show . (\(ContentHandshake _ h) -> h) $ finished sf]
+	output Server cid "Finished" [showHandshake $ finished sf]
 
 	when (cid == 1) $ do
-		g <- peekContent Client
+		g <- readContent Client
 		output Client cid "GET" [take 60 (show g) ++ "..."]
 		writeFragment Client $ contentToFragment $ applicationData answer
 		output Server cid "Contents"
 			[take 60 (show $ applicationData answer) ++ "..."]
 
-peekContent :: Partner -> TlsIO Content Content
-peekContent partner = do
-	c <- readContent partner
-	let f = contentToFragment c
-	updateSequenceNumberSmart partner
-	fragmentUpdateHash f
-	return c
-
 readContent :: Partner -> TlsIO Content Content
-readContent partner = readCached $ readContentList partner
+readContent partner = do
+	c <- readCached (readContentList partner)
+		<* updateSequenceNumberSmart partner
+	fragmentUpdateHash $ contentToFragment c
+	return c
 
 readContentList :: Partner -> TlsIO Content [Content]
-readContentList partner = do
-	Right c <- fragmentToContent <$> readFragmentNoHash partner
-	return c
+readContentList partner =
+	(\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash partner
 
 writeContentList :: Partner -> [Content] -> TlsIO Content ()
 writeContentList partner cs = do

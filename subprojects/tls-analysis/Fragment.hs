@@ -45,6 +45,9 @@ readFragment p = do
 		ContentTypeHandshake -> updateHash body
 --		ContentTypeRaw 23 ->  liftIO $ print r
 		_ -> return ()
+	case p of
+		Client -> return () -- updateSequenceNumberSmart Client
+		_ -> return ()
 	return $ Fragment ct v body
 
 readFragmentNoHash :: Partner -> TlsIO cnt Fragment

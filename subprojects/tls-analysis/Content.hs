@@ -1,23 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content(ContentHandshake),
+	Content, fragmentToContent, contentToFragment, contentListToFragment,
+	serverHello, certificate, certificateRequest, serverHelloDone,
+	changeCipherSpec, finished, applicationData,
+	showHandshake,
+
 	EncryptedPreMasterSecret(..),
 
-	fragmentToContent, contentToFragment, contentListToFragment,
-
-	serverHello, certificate, certificateRequest, serverHelloDone,
-	changeCipherSpec, finished,
-	applicationData,
-
-	doesChangeCipherSpec,
-
 	version, cipherSuite,
+	doesChangeCipherSpec,
 
 	clientVersion, clientRandom, encryptedPreMasterSecret,
 	certificateChain, digitalSign,
-
-	toByteString,
 ) where
 
 import Prelude hiding (concat, head)
@@ -33,6 +28,10 @@ import Handshake
 import Data.ByteString(ByteString, pack, concat)
 import Data.Word
 import Basic
+
+showHandshake :: Content -> String
+showHandshake (ContentHandshake _ hs) = show hs
+showHandshake _ = ""
 
 version :: Version
 version = Version 3 3
