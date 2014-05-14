@@ -1,4 +1,5 @@
 module Content (
+	Parsable(..),
 	Content(..), fragmentToContent, contentToFragment,
 	ChangeCipherSpec(..), doesChangeCipherSpec,
 	doesServerHelloFinish, doesFinish,
@@ -26,7 +27,6 @@ module Content (
 
 	Handshake(..),
 	HandshakeType(..),
-	handshakeToByteString,
 
 	ServerHello(..),
 	CertificateRequest(..),
@@ -63,7 +63,7 @@ fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) bod
 
 parseContent :: ContentType -> Version -> ByteStringM Content
 parseContent ContentTypeChangeCipherSpec v = ContentChangeCipherSpec v <$> parseChangeCipherSpec
-parseContent ContentTypeHandshake v = ContentHandshake v <$> list1 parseHandshake
+parseContent ContentTypeHandshake v = ContentHandshake v <$> parse
 parseContent ContentTypeApplicationData v = ContentApplicationData v <$> whole
 parseContent ct v = ContentRaw ct v <$> whole
 
@@ -71,7 +71,7 @@ contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =
 	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
 contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v .
-	concat $ map handshakeToByteString hss
+	concat $ map toByteString hss
 contentToFragment (ContentApplicationData v body) =
 	Fragment ContentTypeApplicationData v body
 contentToFragment (ContentRaw ct v body) = Fragment ct v body

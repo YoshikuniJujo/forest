@@ -3,13 +3,11 @@
 
 module Parts (
 	Parsable(..), Random(..), CipherSuite(..),
-	HashAlgorithm(..), -- parseHashAlgorithm, hashAlgorithmToByteString,
-	SignatureAlgorithm(..), parseSignatureAlgorithm,
-	signatureAlgorithmToByteString,
-	hashSignatureAlgorithmToByteString,
-	parseHashSignatureAlgorithm,
+	HashAlgorithm(..), SignatureAlgorithm(..),
+	parseSignatureAlgorithm,
 
-	list1, whole, ByteStringM, evalByteStringM, headBS,
+--	list1,
+	whole, ByteStringM, evalByteStringM, headBS,
 
 	word64ToByteString, lenBodyToByteString, emptyBS, concat,
 
@@ -22,8 +20,7 @@ module Parts (
 import Prelude hiding (head, take, concat)
 import Numeric
 
-import Control.Applicative ((<$>), (<*>))
-import qualified Data.ByteString as BS
+import Control.Applicative ((<$>))
 
 import Types
 import ByteStringMonad
@@ -91,7 +88,7 @@ data HashAlgorithm
 instance Parsable HashAlgorithm where
 	parse = parseHashAlgorithm
 	toByteString = hashAlgorithmToByteString
-	listLength _ = Nothing
+	listLength _ = Just 1
 
 parseHashAlgorithm :: ByteStringM HashAlgorithm
 parseHashAlgorithm = do
@@ -118,6 +115,11 @@ data SignatureAlgorithm
 	| SignatureAlgorithmRaw Word8
 	deriving Show
 
+instance Parsable SignatureAlgorithm where
+	parse = parseSignatureAlgorithm
+	toByteString = signatureAlgorithmToByteString
+	listLength _ = Just 1
+
 parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
 parseSignatureAlgorithm = do
 	sa <- headBS
@@ -130,15 +132,6 @@ signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
 signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
 signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
 signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]
-
-hashSignatureAlgorithmToByteString :: (HashAlgorithm, SignatureAlgorithm) -> ByteString
-hashSignatureAlgorithmToByteString (ha, sa) = BS.concat [
-	hashAlgorithmToByteString ha,
-	signatureAlgorithmToByteString sa ]
-
-parseHashSignatureAlgorithm :: ByteStringM (HashAlgorithm, SignatureAlgorithm)
-parseHashSignatureAlgorithm =
-	(,) <$> parseHashAlgorithm <*> parseSignatureAlgorithm
 
 instance Parsable Version where
 	parse = parseVersion

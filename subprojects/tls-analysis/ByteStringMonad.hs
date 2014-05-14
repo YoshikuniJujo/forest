@@ -39,11 +39,18 @@ class Parsable a where
 instance Parsable a => Parsable [a] where
 	parse = case listLength (undefined :: a) of
 		Just n -> section n $ list parse
-		_ -> error "Parsable [a]: Not set list len"
+		_ -> list parse
 	toByteString = case listLength (undefined :: a) of
 		Just n -> lenBodyToByteString n . BS.concat . map toByteString
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
+
+instance (Parsable a, Parsable b) => Parsable (a, b) where
+	parse = (,) <$> parse <*> parse
+	toByteString (x, y) = toByteString x `BS.append` toByteString y
+	listLength _ = (+)
+		<$> listLength (undefined :: a)
+		<*> listLength (undefined :: b)
 
 type ByteStringM = ErrorT String (State ByteString)
 

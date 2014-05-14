@@ -1,16 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hello (
-	clientHelloToByteString, clientHelloOnlyKnownCipherSuite, parseClientHello,
-	CipherSuite(..), Random(..), ClientHello(..),
+	Parsable(..), ByteStringM,
+	ClientHello(..),
+	clientHelloOnlyKnownCipherSuite,
 	clientHelloClientRandom, clientHelloClientVersion,
+	CipherSuite(..), Random(..),
 	SignatureAlgorithm(..), HashAlgorithm(..), CompressionMethod(..),
-	SessionId(..), Version(..), fst3, fromInt,
+	SessionId(..), Version(..),
 
-	serverHelloToByteString, parseServerHello, ServerHello(..),
+	ServerHello(..),
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
-	list1, evalByteStringM,
+--	list1,
+	evalByteStringM, fst3, fromInt, lenBodyToByteString
  ) where
 
 import Prelude hiding (concat, take)
@@ -30,7 +33,9 @@ import Parts(
 --	Version(..),
 
 	fst3, fromInt,
-	lenBodyToByteString, headBS, takeLen, list1, evalByteStringM)
+	lenBodyToByteString, headBS, takeLen,
+--	list1,
+	evalByteStringM)
 import Extension
 
 data ClientHello
@@ -51,6 +56,11 @@ clientHelloClientRandom _ = Nothing
 clientHelloClientVersion :: ClientHello -> Maybe Version
 clientHelloClientVersion (ClientHello v _ _ _ _ _) = Just v
 clientHelloClientVersion _ = Nothing
+
+instance Parsable ClientHello where
+	parse = parseClientHello
+	toByteString = clientHelloToByteString
+	listLength _ = Nothing
 
 parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
@@ -81,6 +91,11 @@ data ServerHello
 		CompressionMethod (Maybe ExtensionList)
 	| ServerHelloRaw ByteString
 	deriving Show
+
+instance Parsable ServerHello where
+	parse = parseServerHello
+	toByteString = serverHelloToByteString
+	listLength _ = Nothing
 
 serverHelloServerRandom :: ServerHello -> Maybe Random
 serverHelloServerRandom (ServerHello _ r _ _ _ _) = Just r

@@ -6,13 +6,6 @@
 
 ### 小さいモジュールをまとめていく
 
-#### ServerHelloとClientHello
+#### Certificate, CertificateRequest, DigitallySigned, PreMasterSecret
 
-構造が似ているのでまとめる。
-これをまとめることでPartsモジュールの一部をこちらに移せるかもしれない。
-
-#### DigitallySignedとCertificateRequest
-
-#### その他
-
-CertificateとPreMasterSecretの両モジュールをまとめるかどうか検討する
+Certificateモジュールにまとめる

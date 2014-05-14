@@ -107,7 +107,7 @@ main = do
 --				liftIO . putStrLn $ "Messages: " ++ show hms
 				c@(ContentHandshake _ hss) <- peekContent Client (Just 70)
 				let	hms'' = BS.concat $ hms :
-						map handshakeToByteString (take 2 hss)
+						map toByteString (take 2 hss)
 					Right signed'' = sign Nothing hashDescrSHA256 pkys hms''
 					Just ds = digitalSign c
 					Just (EncryptedPreMasterSecret epms) =
