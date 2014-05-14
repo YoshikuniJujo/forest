@@ -24,6 +24,7 @@ module Fragment (
 	handshakeMessages,
 	updateSequenceNumberSmart,
 	randomByteString,
+	readCached,
 ) where
 
 import Prelude hiding (read)
@@ -35,7 +36,7 @@ import qualified Data.ByteString as BS
 import TlsIO
 import Basic
 
-readFragment :: Partner -> TlsIO Fragment
+readFragment :: Partner -> TlsIO cnt Fragment
 readFragment p = do
 	RawFragment ct v ebody <- readRawFragment p
 	body <- decryptBody p ct v ebody
@@ -45,17 +46,17 @@ readFragment p = do
 		_ -> return ()
 	return $ Fragment ct v body
 
-readFragmentNoHash :: Partner -> TlsIO Fragment
+readFragmentNoHash :: Partner -> TlsIO cnt Fragment
 readFragmentNoHash p = do
 	RawFragment ct v ebody <- readRawFragment p
 	body <- decryptBody p ct v ebody
 	return $ Fragment ct v body
 
-fragmentUpdateHash :: Fragment -> TlsIO ()
+fragmentUpdateHash :: Fragment -> TlsIO cnt ()
 fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
 fragmentUpdateHash _ = return ()
 
-decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
+decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO cnt ByteString
 decryptBody p ct v ebody = do
 	bm <- decrypt p ebody
 	(body, mac) <- takeBodyMac p bm
@@ -69,7 +70,7 @@ decryptBody p ct v ebody = do
 		"caluculate MAC: " ++ show cmac
 	return body
 
-encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO ByteString
+encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIO cnt ByteString
 encryptBody p ct v body = do
 	mac <- calcMac p ct v body
 	_ <- updateSequenceNumber p
@@ -82,7 +83,7 @@ mkPadd bs len = let
 	plen = bs - ((len + 1) `mod` bs) in
 	BS.replicate (plen + 1) $ fromIntegral plen
 
-writeFragment :: Partner -> Fragment -> TlsIO ()
+writeFragment :: Partner -> Fragment -> TlsIO cnt ()
 writeFragment p (Fragment ct v bs) = do
 	cs <- getCipherSuite (opponent p)
 	case cs of
@@ -92,11 +93,11 @@ writeFragment p (Fragment ct v bs) = do
 		TLS_NULL_WITH_NULL_NULL -> writeRawFragment p (RawFragment ct v bs)
 		_ -> throwError "writeFragment: not implemented"
 
-readRawFragment :: Partner -> TlsIO RawFragment
+readRawFragment :: Partner -> TlsIO cnt RawFragment
 readRawFragment p =
 	RawFragment <$> readContentType p <*> readVersion p <*> readLen p 2
 
-writeRawFragment :: Partner -> RawFragment -> TlsIO ()
+writeRawFragment :: Partner -> RawFragment -> TlsIO cnt ()
 writeRawFragment p (RawFragment ct v bs) =
 	writeContentType p ct >> writeVersion p v >> writeLen p 2 bs
 	

@@ -31,13 +31,13 @@ import Crypto.PubKey.HashDescr
 locker :: Chan ()
 locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
 
-begin :: Partner -> Int -> String -> TlsIO ()
+begin :: Partner -> Int -> String -> TlsIO Content ()
 begin partner cid msg = liftIO $ do
 	readChan locker
 	putStrLn $ replicate 10 '-' ++ " " ++ show partner ++ "(" ++
 		show cid ++ ") " ++ msg ++ " " ++ replicate 10 '-'
 
-end :: TlsIO ()
+end :: TlsIO Content ()
 end = liftIO $ putStrLn "" >> writeChan locker ()
 
 main :: IO ()
@@ -58,7 +58,7 @@ main = do
 			ep <- createEntropyPool
 			(\act -> evalTlsIO act ep cid client server pk) $ do
 				begin Client cid "Hello"
-				[ch] <- peekContent Client (Just 70)
+				ch <- peekContent Client (Just 70)
 				let	Just cv = clientVersion ch
 					Just cr = clientRandom ch
 				setClientRandom cr
@@ -88,11 +88,11 @@ main = do
 
 				begin Client cid "Key Exchange"
 				hms <- handshakeMessages
---				[c@(ContentHandshake _ hss)] <- peekContent Client (Just 70)
-				[	c1@(ContentHandshake _ hs1),
-					c2@(ContentHandshake _ hs2),
-					c3@(ContentHandshake _ _) ] <-
-						peekContent Client (Just 70)
+				c1@(ContentHandshake _ hs1) <-
+					peekContent Client (Just 70)
+				c2@(ContentHandshake _ hs2) <-
+					peekContent Client (Just 70)
+				c3 <- peekContent Client (Just 70)
 				let	hms'' = BS.concat $ hms : [
 						toByteString hs1, toByteString hs2 ]
 					Right signed'' = sign Nothing hashDescrSHA256 pkys hms''
@@ -121,7 +121,7 @@ main = do
 				end
 
 				begin Client cid "Change Cipher Spec"
-				[cccs] <- peekContent Client Nothing
+				cccs <- peekContent Client Nothing
 				when (doesChangeCipherSpec cccs) $
 					flushCipherSuite Client
 				end
@@ -160,21 +160,34 @@ main = do
 			return ()
 		return ()
 
-peekContent :: Partner -> Maybe Int -> TlsIO [Content]
+peekContent :: Partner -> Maybe Int -> TlsIO Content Content
 peekContent partner n = do
 	c <- readContent partner n
+	let f = contentToFragment c
+	updateSequenceNumberSmart partner
+	fragmentUpdateHash f
+	return c
+
+{-
+peekContentList :: Partner -> Maybe Int -> TlsIO Content [Content]
+peekContentList partner n = do
+	c <- readContentList partner n
 	let f = map contentToFragment c
 	updateSequenceNumberSmart partner
 	mapM_ fragmentUpdateHash f
 	return c
+	-}
 
-readContent :: Partner -> Maybe Int -> TlsIO [Content]
-readContent partner n = do
+readContent :: Partner -> Maybe Int -> TlsIO Content Content
+readContent partner n = readCached $ readContentList partner n
+
+readContentList :: Partner -> Maybe Int -> TlsIO Content [Content]
+readContentList partner n = do
 	Right c <- fragmentToContent <$> readFragmentNoHash partner
 	forM_ c $ liftIO . putStrLn . maybe id (((++ " ...") .) . take) n . show
 	return c
 
-writeContentList :: Partner -> [Content] -> TlsIO ()
+writeContentList :: Partner -> [Content] -> TlsIO Content ()
 writeContentList partner cs = do
 	let f = contentListToFragment cs
 	writeFragment partner f
