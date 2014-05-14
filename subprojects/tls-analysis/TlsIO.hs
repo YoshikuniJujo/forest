@@ -19,6 +19,7 @@ module TlsIO (
 	masterSecret,
 
 	debugPrintKeys,
+	debugShowKeys,
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 
@@ -300,6 +301,23 @@ debugPrintKeys = do
 		putStrLn $ "\tSrvrWr Key    : " ++ showKeySingle swk
 		putStrLn $ "\tClntWr IV     : " ++ showKeySingle cwi
 		putStrLn $ "\tSrvrWr IV     : " ++ showKeySingle swi
+
+debugShowKeys :: TlsIO cnt [String]
+debugShowKeys = do
+	Just cwmk <- gets tlssClientWriteMacKey
+	Just swmk <- gets tlssServerWriteMacKey
+	Just cwk <- gets tlssClientWriteKey
+	Just swk <- gets tlssServerWriteKey
+	Just cwi <- gets tlssClientWriteIv
+	Just swi <- gets tlssServerWriteIv
+	return [
+		"### GENERATED KEYS ###",
+		"ClntWr MAC Key: " ++ showKeySingle cwmk,
+		"SrvrWr MAC Key: " ++ showKeySingle swmk,
+		"ClntWr Key    : " ++ showKeySingle cwk,
+		"SrvrWr Key    : " ++ showKeySingle swk,
+		"ClntWr IV     : " ++ showKeySingle cwi,
+		"SrvrWr IV     : " ++ showKeySingle swi ]
 
 decrypt :: Partner -> ByteString -> TlsIO cnt ByteString
 decrypt partner e = do

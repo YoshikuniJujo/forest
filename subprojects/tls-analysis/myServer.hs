@@ -25,20 +25,9 @@ import qualified Data.ByteString as BS
 import Data.X509.CertificateStore
 import Data.X509.Validation
 
+import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
 import Crypto.PubKey.HashDescr
-
-locker :: Chan ()
-locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
-
-begin :: Partner -> Int -> String -> TlsIO Content ()
-begin partner cid msg = liftIO $ do
-	readChan locker
-	putStrLn $ replicate 10 '-' ++ " " ++ show partner ++ "(" ++
-		show cid ++ ") " ++ msg ++ " " ++ replicate 10 '-'
-
-end :: TlsIO Content ()
-end = liftIO $ putStrLn "" >> writeChan locker ()
 
 main :: IO ()
 main = do
@@ -56,145 +45,108 @@ main = do
 		let server = ServerHandle undefined
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIO act ep cid client server pk) $ do
-				begin Client cid "Hello"
-				ch <- peekContent Client (Just 70)
-				let	Just cv = clientVersion ch
-					Just cr = clientRandom ch
-				setClientRandom cr
-				liftIO $ do
-					putStrLn . ("\t" ++) $ show cv
-					putStr $ showRandom cr
-				end
-
-				begin Server cid "Hello"
-				sr <- Random <$> randomByteString 32
-				let	certs1 = listCertificates certStore
-					dns = map (certIssuerDN .
-						signedObject . getSigned) certs1
-				writeContentList Client [
-					serverHello sr,
-					certificate certChain,
-					certificateRequest dns,
-					serverHelloDone ]
-				setVersion version
-				cacheCipherSuite cipherSuite
-				setServerRandom sr
-				liftIO $ do
-					putStrLn . ("\t" ++) $ show version
-					putStrLn . ("\t" ++) $ show cipherSuite
-					putStr $ showRandom sr
-				end
-
-				begin Client cid "Key Exchange"
-				hms <- handshakeMessages
-				c1@(ContentHandshake _ hs1) <-
-					peekContent Client (Just 70)
-				c2@(ContentHandshake _ hs2) <-
-					peekContent Client (Just 70)
-				c3 <- peekContent Client (Just 70)
-				let	hms'' = BS.concat $ hms : [
-						toByteString hs1, toByteString hs2 ]
-					Right signed'' = sign Nothing hashDescrSHA256 pkys hms''
-					Just ds = digitalSign c3
-					Just (EncryptedPreMasterSecret epms) =
-						encryptedPreMasterSecret c2
-					Just cc@(CertificateChain certs) = certificateChain c1
-				liftIO $ do
-					v <- validateDefault certStore
-						(ValidationCache query add)
-						("Yoshikuni", "Yoshio") cc
-					putStrLn $ if null v
-						then "Validate Success"
-						else "Validate Failure"
-				liftIO . putStrLn $ "local sign   : " ++
-					take 60 (show signed'') ++ " ..."
-				liftIO . putStrLn $ "recieved sign: " ++
-					take 60 (show ds) ++ " ..."
-				let 	PubKeyRSA pub = certPubKey .
-						getCertificate $ head certs
-				unless (verify hashDescrSHA256 pub hms'' ds) $
-					throwError "client authentificatio failed"
-				pms <- decryptRSA epms
-				generateMasterSecret pms
-				debugPrintKeys
-				end
-
-				begin Client cid "Change Cipher Spec"
-				cccs <- peekContent Client Nothing
-				when (doesChangeCipherSpec cccs) $
-					flushCipherSuite Client
-				end
-
-				begin Client cid "Finished"
-				finishedHash Client >>= liftIO . print
-				_ <- peekContent Client Nothing
-				end
-
-				begin Server cid "Change Cipher Spec"
-				liftIO $ print changeCipherSpec
-				writeFragment Client $
-					contentToFragment changeCipherSpec
-				flushCipherSuite Server
-				end
-
-				begin Server cid "Finished"
-				sf <- finishedHash Server
-				let sfc = finished sf
-				liftIO $ do
-					print sf
-					print $ (\(ContentHandshake _ h) -> h)
-						sfc
-				writeFragment Client $ contentToFragment sfc
-				end
-
-				when (cid == 1) $ do
-					begin Client cid "GET"
-					_ <- peekContent Client Nothing
-					end
-					begin Server cid "Contents"
-					let ans = applicationData answer
-					liftIO $ print ans
-					writeFragment Client $ contentToFragment ans
-					end
-			return ()
+			(\act -> evalTlsIO act ep cid client server pk) $
+				run certStore certChain pkys cid
 		return ()
+			
+run :: CertificateStore -> CertificateChain -> PrivateKey -> Int -> TlsIO Content ()
+run certStore certChain pkys cid = do
+	ch <- peekContent Client
+	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
+	output Client cid "Hello" [
+		take 60 (show ch) ++ "...",
+		maybe "No Version" show $ clientVersion ch,
+		maybe "No Random" showRandom $ clientRandom ch ]
 
-peekContent :: Partner -> Maybe Int -> TlsIO Content Content
-peekContent partner n = do
-	c <- readContent partner n
+	sr <- Random <$> randomByteString 32
+	let	certs1 = listCertificates certStore
+		dns = map (certIssuerDN .  signedObject . getSigned) certs1
+	writeContentList Client [
+		serverHello sr,
+		certificate certChain,
+		certificateRequest dns,
+		serverHelloDone ]
+	setVersion version
+	cacheCipherSuite cipherSuite
+	setServerRandom sr
+	output Server cid "Hello" [show version, show cipherSuite, showRandom sr]
+
+	hms <- handshakeMessages
+	c1@(ContentHandshake _ hs1) <- peekContent Client
+	c2@(ContentHandshake _ hs2) <- peekContent Client
+	c3 <- peekContent Client
+	let	hms' = BS.concat $ hms : [toByteString hs1, toByteString hs2]
+		Right signed'' = sign Nothing hashDescrSHA256 pkys hms'
+		Just ds = digitalSign c3
+		Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
+		Just cc@(CertificateChain certs) = certificateChain c1
+	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
+	unless (verify hashDescrSHA256 pub hms' ds) $
+		throwError "client authentificatio failed"
+	pms <- decryptRSA epms
+	generateMasterSecret pms
+	v <- liftIO $ validateDefault certStore
+		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
+	debugKeysStr <- debugShowKeys
+	output Client cid "Key Exchange" $ [
+			take 60 (show c1) ++ " ...",
+			take 60 (show c2) ++ " ...",
+			take 60 (show c3) ++ " ...",
+			if null v then "Validate Success" else "Validate Failure",
+			"local sign   : " ++ take 50 (show signed'') ++ " ...",
+			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
+		++ debugKeysStr
+
+	cccs <- peekContent Client
+	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
+	output Client cid "Change Cipher Spec" [take 60 $ show cccs]
+
+	fhc <- finishedHash Client
+	cf <- peekContent Client
+	output Client cid "Finished"
+		[show fhc, show $ (\(ContentHandshake _ h) -> h) cf]
+
+	writeFragment Client $ contentToFragment changeCipherSpec
+	flushCipherSuite Server
+	output Server cid "Change Cipher Spec" [show changeCipherSpec]
+
+	sf <- finishedHash Server
+	writeFragment Client $ contentToFragment $ finished sf
+	output Server cid "Finished"
+		[show . (\(ContentHandshake _ h) -> h) $ finished sf]
+
+	when (cid == 1) $ do
+		g <- peekContent Client
+		output Client cid "GET" [take 60 (show g) ++ "..."]
+		writeFragment Client $ contentToFragment $ applicationData answer
+		output Server cid "Contents"
+			[take 60 (show $ applicationData answer) ++ "..."]
+
+peekContent :: Partner -> TlsIO Content Content
+peekContent partner = do
+	c <- readContent partner
 	let f = contentToFragment c
 	updateSequenceNumberSmart partner
 	fragmentUpdateHash f
 	return c
 
-{-
-peekContentList :: Partner -> Maybe Int -> TlsIO Content [Content]
-peekContentList partner n = do
-	c <- readContentList partner n
-	let f = map contentToFragment c
-	updateSequenceNumberSmart partner
-	mapM_ fragmentUpdateHash f
-	return c
-	-}
+readContent :: Partner -> TlsIO Content Content
+readContent partner = readCached $ readContentList partner
 
-readContent :: Partner -> Maybe Int -> TlsIO Content Content
-readContent partner n = readCached $ readContentList partner n
-
-readContentList :: Partner -> Maybe Int -> TlsIO Content [Content]
-readContentList partner n = do
+readContentList :: Partner -> TlsIO Content [Content]
+readContentList partner = do
 	Right c <- fragmentToContent <$> readFragmentNoHash partner
-	forM_ c $ liftIO . putStrLn . maybe id (((++ " ...") .) . take) n . show
 	return c
 
 writeContentList :: Partner -> [Content] -> TlsIO Content ()
 writeContentList partner cs = do
 	let f = contentListToFragment cs
+	updateSequenceNumberSmart partner
 	writeFragment partner f
 	fragmentUpdateHash f
 
 {-
-writeContent :: Partner -> Content -> TlsIO ()
+writeContent :: Partner -> Content -> TlsIO Content ()
 writeContent partner c = do
 	let f = contentToFragment c
 	writeFragment partner f
@@ -218,3 +170,18 @@ query _ _ _ = return ValidationCacheUnknown
 
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
+
+output :: Partner -> Int -> String -> [String] -> TlsIO Content ()
+output partner cid msg strs = do
+	begin
+	liftIO . mapM_ putStr $ map (unlines . map ("\t" ++) . lines) strs
+	end
+	where
+	begin = liftIO $ do
+		readChan locker
+		putStrLn $ replicate 10 '-' ++ " " ++ show partner ++ "(" ++
+			show cid ++ ") " ++ msg ++ " " ++ replicate 10 '-'
+	end = liftIO $ putStrLn "" >> writeChan locker ()
+
+locker :: Chan ()
+locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan

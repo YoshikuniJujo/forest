@@ -64,7 +64,7 @@ showKeySingle :: ByteString -> String
 showKeySingle = unwords . map showH . BS.unpack
 
 showKey :: ByteString -> String
-showKey = unlines . map (('\t' :) . unwords) . separateN 16 . map showH . BS.unpack
+showKey = init . unlines . map unwords . separateN 16 . map showH . BS.unpack
 	where
 	separateN _ [] = []
 	separateN n xs = Prelude.take n xs : separateN n (drop n xs)

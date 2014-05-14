@@ -16,6 +16,7 @@ module Fragment (
 	masterSecret,
 
 	debugPrintKeys,
+	debugShowKeys,
 
 	ClientHandle(..), ServerHandle(..), Partner(..),
 	TlsIO, evalTlsIO, liftIO,
