@@ -23,10 +23,10 @@ import Control.Applicative
 import Data.ByteString (ByteString, pack, unpack)
 import Data.Word
 
-import Types
+-- import Types
 
 import Parts(
-	Parsable(..), CipherSuite(..), Random(..),
+	Version(..), Parsable(..), CipherSuite(..), Random(..),
 
 	SignatureAlgorithm(..),
 	HashAlgorithm(..),

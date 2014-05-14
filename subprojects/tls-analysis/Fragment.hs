@@ -33,6 +33,7 @@ import Control.Monad
 import qualified Data.ByteString as BS
 
 import TlsIO
+import Basic
 
 readFragment :: Partner -> TlsIO Fragment
 readFragment p = do
@@ -101,8 +102,4 @@ writeRawFragment p (RawFragment ct v bs) =
 	
 data RawFragment
 	= RawFragment ContentType Version ByteString
-	deriving Show
-
-data Fragment
-	= Fragment ContentType Version ByteString
 	deriving Show

@@ -2,14 +2,14 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Parts (
-	Parsable(..), Random(..), CipherSuite(..),
+	Version(..), Parsable(..), Random(..), CipherSuite(..),
 	HashAlgorithm(..), SignatureAlgorithm(..),
 	parseSignatureAlgorithm,
 
 --	list1,
 	whole, ByteStringM, evalByteStringM, headBS,
 
-	word64ToByteString, lenBodyToByteString, emptyBS, concat,
+	lenBodyToByteString, emptyBS, concat,
 
 	fst3, fromInt,
 
@@ -18,15 +18,14 @@ module Parts (
 ) where
 
 import Prelude hiding (head, take, concat)
+import qualified Prelude
 import Numeric
 
 import Control.Applicative ((<$>))
 
-import Types
+import Basic
 import ByteStringMonad
 -- import ToByteString
-
-data Random = Random ByteString
 
 instance Show Random where
 	show (Random r) =
@@ -42,15 +41,6 @@ parseRandom = Random <$> take 32
 
 randomToByteString :: Random -> ByteString
 randomToByteString (Random r) = r
-
-data CipherSuite
-	= TLS_NULL_WITH_NULL_NULL
-	| TLS_RSA_WITH_AES_128_CBC_SHA
-	| TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-	| TLS_ECDHE_PSK_WITH_NULL_SHA
-	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
-	| CipherSuiteRaw Word8 Word8
-	deriving Show
 
 instance Parsable CipherSuite where
 	parse = parseCipherSuite

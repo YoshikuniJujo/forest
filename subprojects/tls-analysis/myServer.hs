@@ -15,14 +15,9 @@ import Data.X509
 
 import Network
 
--- import Fragment
+import Fragment
 import Content
--- import Handshake
--- import ServerHello
--- import CertificateRequest
--- import PreMasterSecret
--- import Parts
--- import Tools
+import Basic
 
 import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
@@ -58,14 +53,14 @@ main = do
 		cid <- readIORef cidRef
 		modifyIORef cidRef succ
 		client <- ClientHandle . fst3 <$> accept scl
+		let server = ServerHandle undefined
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIO act ep cid client (ServerHandle undefined) pk) $ do
+			(\act -> evalTlsIO act ep cid client server pk) $ do
 				begin Client cid "Hello"
 				c1 <- peekContent Client (Just 70)
 				let	Just cv = clientVersion c1
 					Just cr = clientRandom c1
---				liftIO $ print c1
 				setClientRandom cr
 				liftIO $ do
 					putStrLn . ("\t" ++) $ show cv
@@ -73,38 +68,25 @@ main = do
 				end
 
 				begin Server cid "Hello"
-				sh' <- handshakeToContent <$> mkServerHello
-				writeContent Client sh'
-				writeContent Client . handshakeToContent $
-					HandshakeCertificate certChain
+				sr <- Random <$> randomByteString 32
+				writeContent Client $ serverHello sr
+				writeContent Client $ certificate certChain
 				let	certs1 = listCertificates certStore
-					dns = map (certIssuerDN . signedObject . getSigned) certs1
-					cReq' = mkCertReq dns
-				writeContent Client $ handshakeToContent cReq'
-				writeContent Client $ ContentHandshake (Version 3 3)
-					[HandshakeServerHelloDone]
-				let	Just sv = serverVersion sh'
-					Just cs = cipherSuite sh'
-					Just sr = serverRandom sh'
-				setVersion sv
-				cacheCipherSuite cs
+					dns = map (certIssuerDN .
+						signedObject . getSigned) certs1
+				writeContent Client $ certificateRequest dns
+				writeContent Client serverHelloDone
+				setVersion version
+				cacheCipherSuite cipherSuite
 				setServerRandom sr
 				liftIO $ do
-					putStrLn . ("\t" ++) $ show sv
-					putStrLn . ("\t" ++) $ show cs
+					putStrLn . ("\t" ++) $ show version
+					putStrLn . ("\t" ++) $ show cipherSuite
 					putStr $ showRandom sr
 				end
-				return ()
-
-{-
-				begin Client cid "Client Certificate"
-				peekContent Client (Just 70)
-				end
-				-}
 
 				begin Client cid "Key Exchange"
 				hms <- handshakeMessages
---				liftIO . putStrLn $ "Messages: " ++ show hms
 				c@(ContentHandshake _ hss) <- peekContent Client (Just 70)
 				let	hms'' = BS.concat $ hms :
 						map toByteString (take 2 hss)
@@ -113,8 +95,6 @@ main = do
 					Just (EncryptedPreMasterSecret epms) =
 						encryptedPreMasterSecret c
 					Just cc@(CertificateChain certs) = certificateChain c
---				liftIO $ putStrLn $ "signed: " ++ show signed
---				liftIO $ putStrLn $ "signed': " ++ show signed'
 				liftIO $ do
 					v <- validateDefault certStore
 						(ValidationCache query add)
@@ -128,20 +108,10 @@ main = do
 					take 60 (show ds) ++ " ..."
 				let 	PubKeyRSA pub = certPubKey .
 						getCertificate $ head certs
---					sigAlg = certSignatureAlg .
---						getCertificate $ head certs
-
---				liftIO $ print pub
---				liftIO $ print sigAlg
 				unless (verify hashDescrSHA256 pub hms'' ds) $
 					throwError "client authentificatio failed"
 				pms <- decryptRSA epms
 				generateMasterSecret pms
-				{-
-				liftIO $ do
-					print epms
-					print pms
-					-}
 				debugPrintKeys
 				end
 
@@ -154,37 +124,23 @@ main = do
 				begin Client cid "Finished"
 				finishedHash Client >>= liftIO . print
 				_ <- peekContent Client Nothing
-				{-
-				RawFragment _ e <- peekRawFragment Client
-				d <- decrypt e
-				-}
 				end
 
 				begin Server cid "Change Cipher Spec"
-				let sccs = ContentChangeCipherSpec (Version 3 3)
-					ChangeCipherSpec
-				liftIO $ print sccs
-				writeFragment Client $ contentToFragment sccs
+				liftIO $ print changeCipherSpec
+				writeFragment Client $
+					contentToFragment changeCipherSpec
 				flushCipherSuite Server
 				end
 
-{-
-				sccs <- peekContent Server Nothing
-				when (doesChangeCipherSpec sccs) $
-					flushCipherSuite Server
-				end
-				-}
-
 				begin Server cid "Finished"
 				sf <- finishedHash Server
-				let sfc = ContentHandshake (Version 3 3)
-					[HandshakeRaw HandshakeTypeFinished sf]
+				let sfc = finished sf
 				liftIO $ do
 					print sf
 					print $ (\(ContentHandshake _ [h]) -> h)
 						sfc
 				writeFragment Client $ contentToFragment sfc
---				_ <- peekContent Server Nothing
 				end
 
 				when (cid == 1) $ do
@@ -192,42 +148,17 @@ main = do
 					_ <- peekContent Client Nothing
 					end
 					begin Server cid "Contents"
-					let ans = ContentApplicationData
-						(Version 3 3) answer
+					let ans = applicationData answer
 					liftIO $ print ans
 					writeFragment Client $ contentToFragment ans
 					end
-
-{-
-			forkIO $ do
-				ep <- createEntropyPool
-				(\act -> evalTlsIO act ep cid client server pk) $ do
-					forever $ do
-						f <- readRawFragment Client
-						writeRawFragment Server f
-						begin Client cid "Others"
-						liftIO $ print f
-						end
-			forkIO $ do
-				ep <- createEntropyPool
-				(\act -> evalTlsIO act ep cid client server pk) $ do
-					forever $ do
-						f <- readRawFragment Server
-						writeRawFragment Client f
-						begin Server cid "Others"
-						liftIO $ print f
-						end
-						-}
 			return ()
 		return ()
 
 peekContent :: Partner -> Maybe Int -> TlsIO Content
 peekContent partner n = do
 	c <- readContent partner n
---	writeContent (opponent partner) c
---	fragmentUpdateHash $ contentToFragment c
 	let f = contentToFragment c
---	writeFragment (opponent partner) f
 	updateSequenceNumberSmart partner
 	fragmentUpdateHash f
 	return c
@@ -235,7 +166,6 @@ peekContent partner n = do
 readContent :: Partner -> Maybe Int -> TlsIO Content
 readContent partner n = do
 	Right c <- fragmentToContent <$> readFragmentNoHash partner
---	Right c <- fragmentToContent <$> readFragment partner
 	case c of
 		ContentHandshake _ hss -> forM_ hss $
 			liftIO . putStrLn . maybe id (((++ " ...") .) . take) n . show
@@ -266,21 +196,3 @@ query _ _ _ = return ValidationCacheUnknown
 
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
-
-handshakeToContent :: Handshake -> Content
-handshakeToContent = ContentHandshake (Version 3 3) . (: [])
-
-mkServerHello :: TlsIO Handshake
-mkServerHello = do
-	sr <- randomByteString 32
-	return . HandshakeServerHello $ ServerHello
-		(Version 3 3)
-		(Random sr)
-		(SessionId "")
-		TLS_RSA_WITH_AES_128_CBC_SHA CompressionMethodNull Nothing
-
-mkCertReq :: [DistinguishedName] -> Handshake
-mkCertReq dns = HandshakeCertificateRequest $ CertificateRequest
-	[ClientCertificateTypeRsaSign]
-	[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
-	dns

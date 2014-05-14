@@ -55,12 +55,8 @@ import MasterSecret(
 	versionToByteString, byteStringToContentType, Version(..),
 	showKey, showKeySingle, byteStringToInt, intToByteString)
 	-}
-import Types
-import Parts (
-	Random(..), CipherSuite(..),
-	showKey, showKeySingle, word64ToByteString,
-	byteStringToInt, intToByteString, lenBodyToByteString)
--- import Types
+import Basic
+-- import Basic
 -- import Tools
 
 import qualified Crypto.Hash.MD5 as MD5

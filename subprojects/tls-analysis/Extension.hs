@@ -9,6 +9,7 @@ import Prelude hiding (head, concat)
 import Control.Applicative
 
 import ByteStringMonad
+import Basic
 -- import ToByteString
 
 type ExtensionList = [Extension]

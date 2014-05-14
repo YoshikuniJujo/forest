@@ -1,62 +1,71 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Content (
-	Parsable(..),
-	Content(..), fragmentToContent, contentToFragment,
-	ChangeCipherSpec(..), doesChangeCipherSpec,
-	doesServerHelloFinish, doesFinish,
-	doesClientKeyExchange,
-	clientRandom, serverRandom, cipherSuite,
-	clientVersion, serverVersion,
-	encryptedPreMasterSecret,
-	onlyKnownCipherSuite,
-	certificateChain,
-	digitalSign,
-
-	Partner(..),
-	TlsIO, evalTlsIO, setClientRandom, showRandom, setVersion,
-	cacheCipherSuite, setServerRandom, handshakeMessages, throwError,
-	ClientHandle(..),
-	ServerHandle(..),
-	decryptRSA, generateMasterSecret, debugPrintKeys, flushCipherSuite,
-	finishedHash,
-
-	writeFragment,
-	updateSequenceNumberSmart,
-	fragmentUpdateHash,
-	readFragmentNoHash,
-	randomByteString,
-
-	Handshake(..),
-	HandshakeType(..),
-
-	ServerHello(..),
-	CertificateRequest(..),
-	ClientCertificateType(..),
-
+	Content(ContentHandshake),
 	EncryptedPreMasterSecret(..),
 
-	SignatureAlgorithm(..),
-	HashAlgorithm(..),
-	CompressionMethod(..),
-	CipherSuite(..),
-	Random(..),
-	SessionId(..),
-	Version(..),
+	fragmentToContent, contentToFragment,
 
-	fst3, fromInt,
+	serverHello, certificate, certificateRequest, serverHelloDone,
+	changeCipherSpec, finished,
+	applicationData,
+
+	doesChangeCipherSpec,
+
+	version, cipherSuite,
+
+	clientVersion, clientRandom, encryptedPreMasterSecret,
+	certificateChain, digitalSign,
+
+	toByteString,
 ) where
 
 import Prelude hiding (concat, head)
 
 import Control.Applicative
 import Data.Maybe
+import Data.X509
 
-import Fragment
+-- import Fragment
 -- import ByteStringMonad
 import Handshake
 -- import PreMasterSecret
 -- import Parts
 import Data.ByteString(ByteString, pack, concat)
 import Data.Word
+import Basic
+
+version :: Version
+version = Version 3 3
+
+serverHello :: Random -> Content
+serverHello sr = ContentHandshake (Version 3 3) . (: []) . HandshakeServerHello $
+	ServerHello (Version 3 3) sr (SessionId "")
+		TLS_RSA_WITH_AES_128_CBC_SHA
+		CompressionMethodNull
+		Nothing
+
+certificateRequest :: [DistinguishedName] -> Content
+certificateRequest = ContentHandshake (Version 3 3) . (: [])
+	. HandshakeCertificateRequest
+	. CertificateRequest
+		[ClientCertificateTypeRsaSign]
+		[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
+
+serverHelloDone :: Content
+serverHelloDone = ContentHandshake (Version 3 3) [HandshakeServerHelloDone]
+
+certificate :: CertificateChain -> Content
+certificate = ContentHandshake (Version 3 3) . (: []) . HandshakeCertificate
+
+changeCipherSpec :: Content
+changeCipherSpec = ContentChangeCipherSpec (Version 3 3) ChangeCipherSpec
+
+finished :: ByteString -> Content
+finished fh = ContentHandshake (Version 3 3) [HandshakeFinished fh]
+
+applicationData :: ByteString -> Content
+applicationData = ContentApplicationData (Version 3 3)
 
 fragmentToContent :: Fragment -> Either String Content
 fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) body
@@ -103,20 +112,6 @@ changeCipherSpecToByteString :: ChangeCipherSpec -> ByteString
 changeCipherSpecToByteString ChangeCipherSpec = pack [1]
 changeCipherSpecToByteString (ChangeCipherSpecRaw ccs) = pack [ccs]
 
-doesServerHelloFinish :: Content -> Bool
-doesServerHelloFinish (ContentHandshake _ hss) =
-	any handshakeDoesServerHelloFinish hss
-doesServerHelloFinish _ = False
-
-doesFinish :: Content -> Bool
-doesFinish (ContentHandshake _ hss) = any handshakeDoesFinish hss
-doesFinish _ = False
-
-doesClientKeyExchange :: Content -> Bool
-doesClientKeyExchange (ContentHandshake _ hss) =
-	any handshakeDoesClientKeyExchange hss
-doesClientKeyExchange _ = False
-
 digitalSign :: Content -> Maybe ByteString
 digitalSign (ContentHandshake _ hss) = case mapMaybe handshakeSign hss of
 	[ds] -> Just ds
@@ -129,15 +124,11 @@ certificateChain (ContentHandshake _ hss) = case mapMaybe handshakeCertificate h
 	_ -> Nothing
 certificateChain _ = Nothing
 
-clientRandom, serverRandom :: Content -> Maybe Random
+clientRandom :: Content -> Maybe Random
 clientRandom (ContentHandshake _ hss) = case mapMaybe handshakeClientRandom hss of
 	[r] -> Just r
 	_ -> Nothing
 clientRandom _ = Nothing
-serverRandom (ContentHandshake _ hss) = case mapMaybe handshakeServerRandom hss of
-	[r] -> Just r
-	_ -> Nothing
-serverRandom _ = Nothing
 
 clientVersion :: Content -> Maybe Version
 clientVersion (ContentHandshake _ hss) = case mapMaybe handshakeClientVersion hss of
@@ -145,17 +136,8 @@ clientVersion (ContentHandshake _ hss) = case mapMaybe handshakeClientVersion hs
 	_ -> Nothing
 clientVersion _ = Nothing
 
-serverVersion :: Content -> Maybe Version
-serverVersion (ContentHandshake _ hss) = case mapMaybe handshakeServerVersion hss of
-	[v] -> Just v
-	_ -> Nothing
-serverVersion _ = Nothing
-
-cipherSuite :: Content -> Maybe CipherSuite
-cipherSuite (ContentHandshake _ hss) = case mapMaybe handshakeCipherSuite hss of
-	[cs] -> Just cs
-	_ -> Nothing
-cipherSuite _ = Nothing
+cipherSuite :: CipherSuite
+cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
 
 encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
 encryptedPreMasterSecret (ContentHandshake _ hss) =
@@ -163,8 +145,3 @@ encryptedPreMasterSecret (ContentHandshake _ hss) =
 		[epms] -> Just epms
 		_ -> Nothing
 encryptedPreMasterSecret _ = Nothing
-
-onlyKnownCipherSuite :: Content -> Content
-onlyKnownCipherSuite (ContentHandshake v hss) =
-	ContentHandshake v $ map handshakeOnlyKnownCipherSuite hss
-onlyKnownCipherSuite c = c

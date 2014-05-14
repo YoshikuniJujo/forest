@@ -8,8 +8,6 @@ module Certificate (
 	EncryptedPreMasterSecret(..),
 	DigitallySigned(..), digitallySignedSign,
 
---	module DigitallySigned,
-
 	section, whole, headBS,
 ) where
 

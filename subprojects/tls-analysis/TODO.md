@@ -4,8 +4,6 @@
 次にすること
 ------------
 
-### 小さいモジュールをまとめていく
+### モジュール構成の整理
 
-#### Certificate, CertificateRequest, DigitallySigned, PreMasterSecret
-
-Certificateモジュールにまとめる
+ContentとFragmentを独立のモジュールにできないか検討する。
