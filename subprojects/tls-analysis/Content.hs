@@ -4,7 +4,7 @@ module Content (
 	Content(ContentHandshake),
 	EncryptedPreMasterSecret(..),
 
-	fragmentToContent, contentToFragment,
+	fragmentToContent, contentToFragment, contentListToFragment,
 
 	serverHello, certificate, certificateRequest, serverHelloDone,
 	changeCipherSpec, finished,
@@ -23,7 +23,6 @@ module Content (
 import Prelude hiding (concat, head)
 
 import Control.Applicative
-import Data.Maybe
 import Data.X509
 
 -- import Fragment
@@ -78,6 +77,11 @@ parseContent ContentTypeHandshake v =
 parseContent ContentTypeApplicationData v =
 	(: []) . ContentApplicationData v <$> whole
 parseContent ct v = (: []) . ContentRaw ct v <$> whole
+
+contentListToFragment :: [Content] -> Fragment
+contentListToFragment cs = let
+	fs@(Fragment ct vsn _ : _) = map contentToFragment cs in
+	Fragment ct vsn . concat $ map (\(Fragment _ _ b) -> b) fs
 
 contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =

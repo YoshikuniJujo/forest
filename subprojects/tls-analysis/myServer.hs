@@ -58,9 +58,9 @@ main = do
 			ep <- createEntropyPool
 			(\act -> evalTlsIO act ep cid client server pk) $ do
 				begin Client cid "Hello"
-				[c1] <- peekContent Client (Just 70)
-				let	Just cv = clientVersion c1
-					Just cr = clientRandom c1
+				[ch] <- peekContent Client (Just 70)
+				let	Just cv = clientVersion ch
+					Just cr = clientRandom ch
 				setClientRandom cr
 				liftIO $ do
 					putStrLn . ("\t" ++) $ show cv
@@ -69,13 +69,14 @@ main = do
 
 				begin Server cid "Hello"
 				sr <- Random <$> randomByteString 32
-				writeContent Client $ serverHello sr
-				writeContent Client $ certificate certChain
 				let	certs1 = listCertificates certStore
 					dns = map (certIssuerDN .
 						signedObject . getSigned) certs1
-				writeContent Client $ certificateRequest dns
-				writeContent Client serverHelloDone
+				writeContentList Client [
+					serverHello sr,
+					certificate certChain,
+					certificateRequest dns,
+					serverHelloDone ]
 				setVersion version
 				cacheCipherSuite cipherSuite
 				setServerRandom sr
@@ -90,7 +91,7 @@ main = do
 --				[c@(ContentHandshake _ hss)] <- peekContent Client (Just 70)
 				[	c1@(ContentHandshake _ hs1),
 					c2@(ContentHandshake _ hs2),
-					c3@(ContentHandshake _ hs3) ] <-
+					c3@(ContentHandshake _ _) ] <-
 						peekContent Client (Just 70)
 				let	hms'' = BS.concat $ hms : [
 						toByteString hs1, toByteString hs2 ]
@@ -173,11 +174,19 @@ readContent partner n = do
 	forM_ c $ liftIO . putStrLn . maybe id (((++ " ...") .) . take) n . show
 	return c
 
+writeContentList :: Partner -> [Content] -> TlsIO ()
+writeContentList partner cs = do
+	let f = contentListToFragment cs
+	writeFragment partner f
+	fragmentUpdateHash f
+
+{-
 writeContent :: Partner -> Content -> TlsIO ()
 writeContent partner c = do
 	let f = contentToFragment c
 	writeFragment partner f
 	fragmentUpdateHash f
+	-}
 
 answer :: BS.ByteString
 answer = BS.concat [
