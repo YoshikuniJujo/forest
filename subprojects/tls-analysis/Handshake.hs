@@ -10,6 +10,8 @@ module Handshake (
 	handshakeEncryptedPreMasterSecret,
 	handshakeOnlyKnownCipherSuite,
 
+	handshakeGetFinish,
+
 	HandshakeType(HandshakeTypeFinished),
 	handshakeCertificate, CertificateChain, handshakeSign,
 
@@ -103,6 +105,10 @@ handshakeDoesClientKeyExchange _ = False
 handshakeDoesFinish :: Handshake -> Bool
 handshakeDoesFinish (HandshakeRaw HandshakeTypeFinished _) = True
 handshakeDoesFinish _ = False
+
+handshakeGetFinish :: Handshake -> Maybe ByteString
+handshakeGetFinish (HandshakeFinished f) = Just f
+handshakeGetFinish _ = Nothing
 
 handshakeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
 handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms

@@ -68,7 +68,7 @@ decryptBody p ct v ebody = do
 	when (mac /= cmac) . throwError $
 		"decryptBody: Bad MAC value\n\t" ++
 		"ebody         : " ++ show ebody ++ "\n\t" ++
-		"bm            : " ++ show ebody ++ "\n\t" ++
+		"bm            : " ++ show bm ++ "\n\t" ++
 		"body          : " ++ show body ++ "\n\t" ++
 		"given MAC     : " ++ show mac ++ "\n\t" ++
 		"caluculate MAC: " ++ show cmac

@@ -13,6 +13,8 @@ module Content (
 
 	clientVersion, clientRandom, encryptedPreMasterSecret,
 	certificateChain, digitalSign,
+
+	serverVersion, serverRandom, serverCipherSuite, getFinish,
 ) where
 
 import Prelude hiding (concat, head)
@@ -146,3 +148,19 @@ encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
 encryptedPreMasterSecret (ContentHandshake _ hss) =
 	handshakeEncryptedPreMasterSecret hss
 encryptedPreMasterSecret _ = Nothing
+
+serverVersion :: Content -> Maybe Version
+serverVersion (ContentHandshake _ hs) = handshakeServerVersion hs
+serverVersion _ = Nothing
+
+serverRandom :: Content -> Maybe Random
+serverRandom (ContentHandshake _ hs) = handshakeServerRandom hs
+serverRandom _ = Nothing
+
+serverCipherSuite :: Content -> Maybe CipherSuite
+serverCipherSuite (ContentHandshake _ hs) = handshakeCipherSuite hs
+serverCipherSuite _ = Nothing
+
+getFinish :: Content -> Maybe ByteString
+getFinish (ContentHandshake _ hs) = handshakeGetFinish hs
+getFinish _ = Nothing
