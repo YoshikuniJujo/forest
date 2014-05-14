@@ -51,30 +51,38 @@ main = do
 			
 run :: CertificateStore -> CertificateChain -> PrivateKey -> Int -> TlsIO Content ()
 run certStore certChain pkys cid = do
-	ch <- readContent Client
+
+	------------------------------------------
+	--           CLIENT HELLO               --
+	------------------------------------------
+	ch <- readContent
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 	output Client cid "Hello" [
 		take 60 (show ch) ++ "...",
 		maybe "No Version" show $ clientVersion ch,
 		maybe "No Random" showRandom $ clientRandom ch ]
 
+	------------------------------------------
+	--           SERVER HELLO               --
+	------------------------------------------
 	sr <- Random <$> randomByteString 32
-	let	certs1 = listCertificates certStore
-		dns = map (certIssuerDN .  signedObject . getSigned) certs1
-	writeContentList Client [
+	writeContentList [
 		serverHello sr,
 		certificate certChain,
-		certificateRequest dns,
+		certificateRequest $ getDistinguishedNames certStore,
 		serverHelloDone ]
 	setVersion version
-	cacheCipherSuite cipherSuite
 	setServerRandom sr
+	cacheCipherSuite cipherSuite
 	output Server cid "Hello" [show version, show cipherSuite, showRandom sr]
 
-	c1 <- readContent Client
-	c2 <- readContent Client
+	------------------------------------------
+	--          CLIENT KEY EXCHANGE         --
+	------------------------------------------
+	c1 <- readContent
+	c2 <- readContent
 	hms <- handshakeMessages
-	c3 <- readContent Client
+	c3 <- readContent
 	let	Right signed'' = sign Nothing hashDescrSHA256 pkys hms
 		Just cc@(CertificateChain certs) = certificateChain c1
 		Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
@@ -96,33 +104,51 @@ run certStore certChain pkys cid = do
 			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
 		++ debugKeysStr
 
-	cccs <- readContent Client
+	------------------------------------------
+	--      CLIENT CHANGE CIPHER SPEC       --
+	------------------------------------------
+	cccs <- readContent
 	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
 	output Client cid "Change Cipher Spec" [take 60 $ show cccs]
 
+	------------------------------------------
+	--      CLIENT FINISHED                 --
+	------------------------------------------
 	fhc <- finishedHash Client
-	cf <- readContent Client
+	cf <- readContent
 	output Client cid "Finished" [show fhc, showHandshake cf]
 
+	------------------------------------------
+	--      SERVER CHANGE CIPHER SPEC       --
+	------------------------------------------
 	writeFragment Client $ contentToFragment changeCipherSpec
 	flushCipherSuite Server
 	output Server cid "Change Cipher Spec" [show changeCipherSpec]
 
+	------------------------------------------
+	--      SERVER FINISHED                 --
+	------------------------------------------
 	sf <- finishedHash Server
 	writeFragment Client $ contentToFragment $ finished sf
 	output Server cid "Finished" [showHandshake $ finished sf]
 
-	when (cid == 1) $ do
-		g <- readContent Client
-		output Client cid "GET" [take 60 (show g) ++ "..."]
-		writeFragment Client $ contentToFragment $ applicationData answer
-		output Server cid "Contents"
-			[take 60 (show $ applicationData answer) ++ "..."]
+	------------------------------------------
+	--      CLIENT GET                      --
+	------------------------------------------
+	g <- readContent
+	output Client cid "GET" [take 60 (show g) ++ "..."]
 
-readContent :: Partner -> TlsIO Content Content
-readContent partner = do
-	c <- readCached (readContentList partner)
-		<* updateSequenceNumberSmart partner
+	------------------------------------------
+	--      SERVER CONTENT                  --
+	------------------------------------------
+	writeContent Client $ applicationData answer
+	output Server cid "Contents"
+		[take 60 (show $ applicationData answer) ++ "..."]
+
+readContent :: TlsIO Content Content
+readContent = do
+	c <- readCached (readContentList Client)
+		<* updateSequenceNumberSmart Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
@@ -130,20 +156,18 @@ readContentList :: Partner -> TlsIO Content [Content]
 readContentList partner =
 	(\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash partner
 
-writeContentList :: Partner -> [Content] -> TlsIO Content ()
-writeContentList partner cs = do
+writeContentList :: [Content] -> TlsIO Content ()
+writeContentList cs = do
 	let f = contentListToFragment cs
-	updateSequenceNumberSmart partner
-	writeFragment partner f
+	updateSequenceNumberSmart Client
+	writeFragment Client f
 	fragmentUpdateHash f
 
-{-
 writeContent :: Partner -> Content -> TlsIO Content ()
 writeContent partner c = do
 	let f = contentToFragment c
 	writeFragment partner f
 	fragmentUpdateHash f
-	-}
 
 answer :: BS.ByteString
 answer = BS.concat [
@@ -177,3 +201,7 @@ output partner cid msg strs = do
 
 locker :: Chan ()
 locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
+
+getDistinguishedNames :: CertificateStore -> [DistinguishedName]
+getDistinguishedNames cs =
+	map (certIssuerDN .  signedObject . getSigned) $ listCertificates cs
