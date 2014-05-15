@@ -29,8 +29,17 @@ import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
 import Crypto.PubKey.HashDescr
 
-doClientCert :: Bool
-doClientCert = True
+import System.Console.GetOpt
+
+options :: [OptDescr Option]
+options = [
+	Option "d" ["disable-client-cert"] (NoArg OptDisableClientCert)
+		"disable client certification"
+ ]
+
+data Option
+	= OptDisableClientCert
+	deriving (Show, Eq)
 
 main :: IO ()
 main = do
@@ -39,7 +48,9 @@ main = do
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
-	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) =<< getArgs
+	(opts, args, _errs) <- getOpt Permute options <$> getArgs
+	let doClientCert = OptDisableClientCert `notElem` opts
+	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) args
 	scl <- listenOn pcl
 	forever $ do
 		cid <- readIORef cidRef
