@@ -31,11 +31,14 @@ main = do
 		(PortNumber $ fromIntegral (read svpn :: Int))
 	let	client = ClientHandle undefined
 		server = ServerHandle sv
-	evalTlsIO (run cid pkys certChain) ep cid client server pk
+	evalTlsIO (run pkys certChain) ep cid client server pk
 	return ()
 
-run :: Int -> PrivateKey -> CertificateChain -> TlsIO Content ()
-run _cid pkys certChain = do
+run :: PrivateKey -> CertificateChain -> TlsIO Content ()
+run pkys certChain = handshake pkys certChain >> getHttp
+
+handshake :: PrivateKey -> CertificateChain -> TlsIO Content ()
+handshake pkys certChain = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -138,6 +141,9 @@ run _cid pkys certChain = do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
 
+getHttp :: TlsIO Content ()
+getHttp = do
+
 	-------------------------------------------
 	--     CLIENT GET                        --
 	-------------------------------------------
@@ -159,7 +165,7 @@ serverHelloDone = do
 	liftIO . putStrLn $
 		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 
-	if doesServerHelloDone crtReq then return () else do
+	unless (doesServerHelloDone crtReq) $ do
 
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --

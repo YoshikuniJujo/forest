@@ -105,8 +105,8 @@ run dcc certStore certChain pkys cid = do
 	pms <- decryptRSA epms
 	generateMasterSecret pms
 	debugKeysStr <- debugShowKeys
-	output Client cid "Key Exchange" $ [ take 60 (show c2) ++ " ..." ]
-		++ debugKeysStr
+	output Client cid "Key Exchange" $ (take 60 (show c2) ++ " ...") :
+		debugKeysStr
 
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
@@ -164,7 +164,7 @@ clientCertification cid certStore = do
 	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
 	v <- liftIO $ validateDefault certStore
 		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
-	output Client cid "Client Certificate" $ [
+	output Client cid "Client Certificate" [
 		take 60 (show c1) ++ " ...",
 		if null v then "Validate Success" else "Validate Failure" ]
 	return pub
@@ -180,7 +180,7 @@ certificateVerify cid pkys pub = do
 	let	Just ds = digitalSign c3
 	unless (verify hashDescrSHA256 pub hms ds) $
 		throwError "client authentification failed"
-	output Client cid "Certificate Verify" $ [
+	output Client cid "Certificate Verify" [
 			take 60 (show c3) ++ " ...",
 			"local sign   : " ++ take 50 (show signed'') ++ " ...",
 			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
@@ -218,6 +218,8 @@ answer = BS.concat [
 	"Content-Type: text/plain\r\n\r\n",
 	"004\r\n",
 	"PONC\r\n",
+	"003\r\n",
+	"abc\r\n",
 	"0\r\n\r\n"
  ]
 
