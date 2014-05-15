@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 import System.Environment
 import System.IO
@@ -6,6 +6,7 @@ import Control.Concurrent
 import Control.Applicative
 import Control.Monad
 import Data.IORef
+import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
 import Network
@@ -16,6 +17,7 @@ import Crypto.PubKey.HashDescr
 
 import Fragment
 import Content
+import Basic
 
 main :: IO ()
 main = do
@@ -23,6 +25,7 @@ main = do
 	clpn : svpn : _ <- getArgs
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
+	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
 	sock <- listenOn . PortNumber . fromIntegral $ read clpn
 	forever $ do
 		cid <- readIORef cidRef
@@ -33,17 +36,19 @@ main = do
 		let	client = ClientHandle cl
 			server = ServerHandle sv
 		forkIO $ do
-			evalTlsIO (run cid pkys) ep cid client server pk
+			evalTlsIO (run cid pkys certChain) ep cid client server pk
 --			forkIO $ evalTlsIO c2s ep cid client server pk
 --			evalTlsIO s2c ep cid client server pk
 
-run :: Int -> PrivateKey -> TlsIO Content ()
-run cid pkys = do
+run :: Int -> PrivateKey -> CertificateChain -> TlsIO Content ()
+run cid pkys certChain = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
 	-------------------------------------------
+	cr <- Random <$> randomByteString 32
 	ch <- readContent Client
+	let ch' = clientHello cr
 	writeContent Server ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 	liftIO . putStrLn $ "CLIENT HELLO: " ++ take 60 (show ch) ++ "..."
@@ -62,8 +67,12 @@ run cid pkys = do
 	--     SERVER CERTIFICATE                --
 	-------------------------------------------
 	crt <- readContent Server
+	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
+		PubKeyRSA pub = certPubKey $ getCertificate cert
 	writeContent Client crt
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
+	liftIO . putStrLn $ "CERTIFICATE Chain: " ++ take 60 (show scc) ++ "..."
+	liftIO . putStrLn $ "PUBKEY: " ++ take 60 (show pub) ++ "..."
 
 	-------------------------------------------
 	--     CERTIFICATE REQUEST               --
@@ -84,22 +93,35 @@ run cid pkys = do
 	--     CLIENT CERTIFICATE                --
 	-------------------------------------------
 	cCrt <- readContent Client
-	writeContent Server cCrt
-	let Just cc@(CertificateChain certs) = certificateChain cCrt
+--	writeContent Server cCrt
+	let Just cc = certificateChain cCrt
+	writeContent Server $ certificate certChain
 	liftIO . putStrLn $
 		"CLIENT CERTIFICATE: " ++ take 60 (show cCrt) ++ "..."
 
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
-	cke <- readContent Client
-	writeContent Server cke
+	cke <- readContentNoHash Client
 	let Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret cke
 	liftIO . putStrLn $
 		"KEY EXCHANGE: " ++ take 60 (show cke) ++ "..."
 	pms <- decryptRSA epms
+	epms' <- encryptRSA pub pms
+	pms' <- decryptRSA epms'
 	generateMasterSecret pms
+
+	let	cke'  = makeClientKeyExchange $ EncryptedPreMasterSecret epms
+	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
+
+	fragmentUpdateHash $ contentToFragment cke'
+	writeContent Server cke'
+
 	debugKeysStr <- debugShowKeys
+	liftIO . putStrLn $ "EPMS : " ++ show epms
+	liftIO . putStrLn $ "PMS  : " ++ show pms
+	liftIO . putStrLn $ "PMS' : " ++ show pms'
+	liftIO . putStrLn $ "PMS LENGTH: " ++ show (BS.length pms)
 	liftIO $ mapM_ putStrLn debugKeysStr
 
 	-------------------------------------------
@@ -107,33 +129,40 @@ run cid pkys = do
 	-------------------------------------------
 	hms <- handshakeMessages
 	cv <- readContent Client
-	writeContent Server cv
-	let	Just ds = digitalSign cv
-		Right signed = sign Nothing hashDescrSHA256 pkys hms
-	liftIO $ do
-		putStrLn $ "FIREFOX  : " ++ take 60 (show ds) ++ "..."
-		putStrLn $ "CALCULATE: " ++ take 60 (show signed) ++ "..."
-	liftIO . putStrLn $
-		"CERTIFICATE VERIFY: " ++ take 60 (show cv) ++ "..."
+--	writeContent Server cv
+--	let	Just ds = digitalSign cv
+	let	Right signed = sign Nothing hashDescrSHA256 pkys hms
+	writeContent Server $ makeVerify signed
+--	fragmentUpdateHash . contentToFragment $ makeVerify signed
+--	liftIO $ do
+--		putStrLn $ "FIREFOX  : " ++ take 60 (show ds) ++ "..."
+--		putStrLn $ "CALCULATE: " ++ take 60 (show signed) ++ "..."
+--	liftIO . putStrLn $
+--		"CERTIFICATE VERIFY: " ++ take 60 (show cv) ++ "..."
 
 	-------------------------------------------
 	--     CLIENT CHANGE CIPHER SPEC         --
 	-------------------------------------------
-	cccs <- readContent Client
-	writeContent Server cccs
-	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
-	liftIO . putStrLn $ "CHANGE CIPHER SPEC: " ++ take 60 (show cccs)
+--	cccs <- readContent Client
+	writeContent Server changeCipherSpec
+	fragmentUpdateHash $ contentToFragment changeCipherSpec
+--	writeContent Server cccs
+	flushCipherSuite Client
+--	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
+--	liftIO . putStrLn $ "CHANGE CIPHER SPEC: " ++ take 60 (show cccs)
 
 	-------------------------------------------
 	--     CLIENT FINISHED                   --
 	-------------------------------------------
 	fhc <- finishedHash Client
-	cf <- readContent Client
-	writeContent Server cf
-	finish <- maybe (throwError "Not Finished") return $ getFinish cf
-	liftIO $ do
-		putStrLn $ "FINISHED FIREFOX     : " ++ take 60 (show finish)
-		putStrLn $ "FINISHED CALCULATE   : " ++ take 60 (show fhc)
+--	cf <- readContent Client
+--	writeContent Server cf
+	writeContent Server $ finished fhc
+	fragmentUpdateHash $ contentToFragment $ finished fhc
+--	finish <- maybe (throwError "Not Finished") return $ getFinish cf
+--	liftIO $ do
+--		putStrLn $ "FINISHED FIREFOX     : " ++ take 60 (show finish)
+--		putStrLn $ "FINISHED CALCULATE   : " ++ take 60 (show fhc)
 
 	-------------------------------------------
 	--     SERVER CHANGE CIPHER SPEC         --
@@ -149,7 +178,8 @@ run cid pkys = do
 	sfhc <- finishedHash Server
 	scf <- readContent Server
 	writeContent Client scf
-	sfinish <- maybe (throwError "Not Finished") return $ getFinish scf
+	sfinish <- maybe (throwError $ "Not Finished: " ++ show scf)
+		return $ getFinish scf
 	liftIO $ do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
@@ -157,9 +187,9 @@ run cid pkys = do
 	-------------------------------------------
 	--     CLIENT GET                        --
 	-------------------------------------------
-	g <- readContent Client
-	writeContent Server g
-	liftIO . putStrLn $ "CLIENT GET: " ++ take 60 (show g) ++ "..."
+--	g <- readContent Client
+	writeContent Server $ applicationData getRequest
+--	liftIO . putStrLn $ "CLIENT GET: " ++ take 60 (show g) ++ "..."
 
 	-------------------------------------------
 	--     SERVER CONTENTS                   --
@@ -178,6 +208,12 @@ s2c = forever $ do
 	f <- readRawFragment Server
 	liftIO . putStrLn $ "SERVER: " ++ take 60 (show f) ++ "..."
 	writeRawFragment Client f
+
+readContentNoHash :: Partner -> TlsIO Content Content
+readContentNoHash partner = do
+	c <- readCached (readContentList partner)
+--		<* updateSequenceNumberSmart partner
+	return c
 
 readContent :: Partner -> TlsIO Content Content
 readContent partner = do
@@ -202,3 +238,19 @@ writeContent partner c = do
 	let f = contentToFragment c
 	writeFragment partner f
 --	fragmentUpdateHash f
+
+(+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
+(+++) = BS.append
+
+getRequest :: BS.ByteString
+getRequest =
+	"GET / HTTP/1.1\r\n" +++
+	"Host: localhost:4492\r\n" +++
+	"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
+		"Gecko/20140415 Firefox/24.0\r\n" +++
+	"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;" +++
+		"q=0.8\r\n" +++
+	"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
+	"Accept-Encoding: gzip, deflate\r\n" +++
+	"Connection: keep-alive\r\n" +++
+	"Cache-Control: max-age=0\r\n\r\n"

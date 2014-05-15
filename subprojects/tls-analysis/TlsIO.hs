@@ -15,6 +15,7 @@ module TlsIO (
 	generateMasterSecret,
 
 	decryptRSA, decrypt, encrypt, takeBodyMac,
+	encryptRSA,
 
 	masterSecret,
 
@@ -226,6 +227,14 @@ decryptRSA e = do
 	case RSA.decrypt Nothing pk e of
 		Right d -> return d
 		Left err -> throwError $ show err
+
+encryptRSA :: PublicKey -> ByteString -> TlsIO cnt ByteString
+encryptRSA pub pln = do
+	g <- gets tlssRandomGen
+	tlss <- get
+	let (Right e, g') = RSA.encrypt g pub pln
+	put tlss { tlssRandomGen = g' }
+	return e
 
 setClientRandom, setServerRandom :: Random -> TlsIO cnt ()
 setClientRandom (Random cr) = do

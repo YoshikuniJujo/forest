@@ -89,7 +89,7 @@ run certStore certChain pkys cid = do
 		Just ds = digitalSign c3
 	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
 	unless (verify hashDescrSHA256 pub hms ds) $
-		throwError "client authentificatio failed"
+		throwError "client authentification failed"
 	pms <- decryptRSA epms
 	generateMasterSecret pms
 	v <- liftIO $ validateDefault certStore

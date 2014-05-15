@@ -12,6 +12,7 @@ module Fragment (
 	generateMasterSecret,
 
 	decryptRSA, finishedHash,
+	encryptRSA,
 	
 	masterSecret,
 

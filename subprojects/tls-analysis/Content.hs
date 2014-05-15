@@ -13,8 +13,11 @@ module Content (
 
 	clientVersion, clientRandom, encryptedPreMasterSecret,
 	certificateChain, digitalSign,
+	makeVerify,
+	makeClientKeyExchange,
 
 	serverVersion, serverRandom, serverCipherSuite, getFinish,
+	clientHello,
 ) where
 
 import Prelude hiding (concat, head)
@@ -43,6 +46,13 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 	ServerHello (Version 3 3) sr (SessionId "")
 		TLS_RSA_WITH_AES_128_CBC_SHA
 		CompressionMethodNull
+		Nothing
+
+clientHello :: Random -> Content
+clientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
+	ClientHello (Version 3 3) cr (SessionId "")
+		[TLS_RSA_WITH_AES_128_CBC_SHA]
+		[CompressionMethodNull]
 		Nothing
 
 certificateRequest :: [DistinguishedName] -> Content
@@ -129,6 +139,9 @@ digitalSign :: Content -> Maybe ByteString
 digitalSign (ContentHandshake _ hss) = handshakeSign hss
 digitalSign _ = Nothing
 
+makeVerify :: ByteString -> Content
+makeVerify = ContentHandshake (Version 3 3) . handshakeMakeVerify
+
 certificateChain :: Content -> Maybe CertificateChain
 certificateChain (ContentHandshake _ hss) = handshakeCertificate hss
 certificateChain _ = Nothing
@@ -148,6 +161,10 @@ encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
 encryptedPreMasterSecret (ContentHandshake _ hss) =
 	handshakeEncryptedPreMasterSecret hss
 encryptedPreMasterSecret _ = Nothing
+
+makeClientKeyExchange :: EncryptedPreMasterSecret -> Content
+makeClientKeyExchange =
+	ContentHandshake (Version 3 3) . handshakeMakeClientKeyExchange
 
 serverVersion :: Content -> Maybe Version
 serverVersion (ContentHandshake _ hs) = handshakeServerVersion hs

@@ -14,8 +14,11 @@ module Handshake (
 
 	HandshakeType(HandshakeTypeFinished),
 	handshakeCertificate, CertificateChain, handshakeSign,
+	handshakeMakeVerify,
+	handshakeMakeClientKeyExchange,
 
 	ServerHello(..),
+	ClientHello(..),
 	CertificateRequest(..),
 	ClientCertificateType(..),
 	EncryptedPreMasterSecret(..),
@@ -69,6 +72,10 @@ handshakeSign :: Handshake -> Maybe ByteString
 handshakeSign (HandshakeCertificateVerify ds) = digitallySignedSign ds
 handshakeSign _ = Nothing
 
+handshakeMakeVerify :: ByteString -> Handshake
+handshakeMakeVerify = HandshakeCertificateVerify .
+	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
+
 handshakeCertificate :: Handshake -> Maybe CertificateChain
 handshakeCertificate (HandshakeCertificate cc) = Just cc
 handshakeCertificate _ = Nothing
@@ -113,6 +120,9 @@ handshakeGetFinish _ = Nothing
 handshakeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
 handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
 handshakeEncryptedPreMasterSecret _ = Nothing
+
+handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
+handshakeMakeClientKeyExchange = HandshakeClientKeyExchange
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do
