@@ -29,6 +29,9 @@ import Crypto.PubKey.RSA
 import Crypto.PubKey.RSA.PKCS15
 import Crypto.PubKey.HashDescr
 
+doClientCert :: Bool
+doClientCert = True
+
 main :: IO ()
 main = do
 	cidRef <- newIORef 0
@@ -46,11 +49,12 @@ main = do
 		_ <- forkIO $ do
 			ep <- createEntropyPool
 			(\act -> evalTlsIO act ep cid client server pk) $
-				run certStore certChain pkys cid
+				run doClientCert certStore certChain pkys cid
 		return ()
 			
-run :: CertificateStore -> CertificateChain -> PrivateKey -> Int -> TlsIO Content ()
-run certStore certChain pkys cid = do
+run :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
+	Int -> TlsIO Content ()
+run dcc certStore certChain pkys cid = do
 
 	------------------------------------------
 	--           CLIENT HELLO               --
@@ -66,43 +70,37 @@ run certStore certChain pkys cid = do
 	--           SERVER HELLO               --
 	------------------------------------------
 	sr <- Random <$> randomByteString 32
-	writeContentList [
+	writeContentList $ [
 		serverHello sr,
-		certificate certChain,
-		certificateRequest $ getDistinguishedNames certStore,
-		serverHelloDone ]
+		certificate certChain ] ++ if not dcc then [] else [
+			certificateRequest $ getDistinguishedNames certStore ]
+	writeContent Client serverHelloDone
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite cipherSuite
 	output Server cid "Hello" [show version, show cipherSuite, showRandom sr]
 
 	------------------------------------------
+	--          CLIENT CERTIFICATION        --
+	------------------------------------------
+	pub <- if not dcc then return Nothing else
+		Just <$> clientCertification cid certStore
+
+	------------------------------------------
 	--          CLIENT KEY EXCHANGE         --
 	------------------------------------------
-	c1 <- readContent
 	c2 <- readContent
-	hms <- handshakeMessages
-	c3 <- readContent
-	let	Right signed'' = sign Nothing hashDescrSHA256 pkys hms
-		Just cc@(CertificateChain certs) = certificateChain c1
-		Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
-		Just ds = digitalSign c3
-	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
-	unless (verify hashDescrSHA256 pub hms ds) $
-		throwError "client authentification failed"
+	let	Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
 	pms <- decryptRSA epms
 	generateMasterSecret pms
-	v <- liftIO $ validateDefault certStore
-		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
 	debugKeysStr <- debugShowKeys
-	output Client cid "Key Exchange" $ [
-			take 60 (show c1) ++ " ...",
-			take 60 (show c2) ++ " ...",
-			take 60 (show c3) ++ " ...",
-			if null v then "Validate Success" else "Validate Failure",
-			"local sign   : " ++ take 50 (show signed'') ++ " ...",
-			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
+	output Client cid "Key Exchange" $ [ take 60 (show c2) ++ " ..." ]
 		++ debugKeysStr
+
+	------------------------------------------
+	--          CERTIFICATE VERIFY          --
+	------------------------------------------
+	maybe (return ()) (certificateVerify cid pkys) pub
 
 	------------------------------------------
 	--      CLIENT CHANGE CIPHER SPEC       --
@@ -144,6 +142,37 @@ run certStore certChain pkys cid = do
 	writeContent Client $ applicationData answer
 	output Server cid "Contents"
 		[take 60 (show $ applicationData answer) ++ "..."]
+
+clientCertification :: Int -> CertificateStore -> TlsIO Content PublicKey
+clientCertification cid certStore = do
+	------------------------------------------
+	--          CLIENT CERTIFICATION        --
+	------------------------------------------
+	c1 <- readContent
+	let	Just cc@(CertificateChain certs) = certificateChain c1
+	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
+	v <- liftIO $ validateDefault certStore
+		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
+	output Client cid "Client Certificate" $ [
+		take 60 (show c1) ++ " ...",
+		if null v then "Validate Success" else "Validate Failure" ]
+	return pub
+
+certificateVerify :: Int -> PrivateKey -> PublicKey -> TlsIO Content ()
+certificateVerify cid pkys pub = do
+	------------------------------------------
+	--          CERTIFICATE VERIFY          --
+	------------------------------------------
+	hms <- handshakeMessages
+	c3 <- readContent
+	let	Right signed'' = sign Nothing hashDescrSHA256 pkys hms
+	let	Just ds = digitalSign c3
+	unless (verify hashDescrSHA256 pub hms ds) $
+		throwError "client authentification failed"
+	output Client cid "Certificate Verify" $ [
+			take 60 (show c3) ++ " ...",
+			"local sign   : " ++ take 50 (show signed'') ++ " ...",
+			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
 
 readContent :: TlsIO Content Content
 readContent = do
