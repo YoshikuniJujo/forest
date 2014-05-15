@@ -9,8 +9,6 @@ import Data.X509.File
 import Network
 import "crypto-random" Crypto.Random
 import Crypto.PubKey.RSA
-import Crypto.PubKey.RSA.PKCS15
-import Crypto.PubKey.HashDescr
 
 import Fragment
 import Content hiding (serverHelloDone)
@@ -24,8 +22,7 @@ main = do
 	ep <- createEntropyPool
 	sv <- connectTo "localhost"
 		(PortNumber $ fromIntegral (read svpn :: Int))
-	let	server = ServerHandle sv
-	evalTlsIo (run pkys certChain) ep server
+	evalTlsIo (run pkys certChain) ep sv
 	return ()
 
 run :: PrivateKey -> CertificateChain -> TlsIo Content ()
@@ -39,14 +36,14 @@ handshake pkys certChain = do
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
 	let ch' = clientHello cr
-	writeContent Server ch'
+	writeContent ch'
 	fragmentUpdateHash $ contentToFragment ch'
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch'
 
 	-------------------------------------------
 	--     SERVER HELLO                      --
 	-------------------------------------------
-	sh <- readContent Server
+	sh <- readContent
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
@@ -55,7 +52,7 @@ handshake pkys certChain = do
 	-------------------------------------------
 	--     SERVER CERTIFICATE                --
 	-------------------------------------------
-	crt <- readContent Server
+	crt <- readContent
 	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
 		PubKeyRSA pub = certPubKey $ getCertificate cert
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
@@ -75,7 +72,7 @@ handshake pkys certChain = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			writeContent Server $ certificate certChain
+			writeContent $ certificate certChain
 			fragmentUpdateHash . contentToFragment $ certificate certChain
 		_ -> return ()
 
@@ -86,26 +83,24 @@ handshake pkys certChain = do
 	epms' <- encryptRSA pub pms
 	generateMasterSecret pms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
-	writeContent Server cke''
+	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''
-	debugKeysStr <- debugShowKeys
-	liftIO $ mapM_ putStrLn debugKeysStr
+	liftIO $ putStrLn "GENERATE KEYS"
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			hms <- handshakeMessages
-			let	Right signed = sign Nothing hashDescrSHA256 pkys hms
-			writeContent Server $ makeVerify signed
+			signed <- clientVerifySign pkys
+			writeContent $ makeVerify signed
 			fragmentUpdateHash . contentToFragment $ makeVerify signed
 		_ -> return ()
 
 	-------------------------------------------
 	--     CLIENT CHANGE CIPHER SPEC         --
 	-------------------------------------------
-	writeContent Server changeCipherSpec
+	writeContent changeCipherSpec
 	fragmentUpdateHash $ contentToFragment changeCipherSpec
 	flushCipherSuite Client
 
@@ -113,13 +108,13 @@ handshake pkys certChain = do
 	--     CLIENT FINISHED                   --
 	-------------------------------------------
 	fhc <- finishedHash Client
-	writeContent Server $ finished fhc
+	writeContent $ finished fhc
 	fragmentUpdateHash . contentToFragment $ finished fhc
 
 	-------------------------------------------
 	--     SERVER CHANGE CIPHER SPEC         --
 	-------------------------------------------
-	sccs <- readContent Server
+	sccs <- readContent
 	when (doesChangeCipherSpec sccs) $ flushCipherSuite Server
 	liftIO . putStrLn $ "SERVER CHANGE CIPHER SPEC: " ++ take 60 (show sccs)
 
@@ -127,7 +122,7 @@ handshake pkys certChain = do
 	--     SERVER FINISHED                   --
 	-------------------------------------------
 	sfhc <- finishedHash Server
-	scf <- readContent Server
+	scf <- readContent
 	updateSequenceNumberSmart Server
 	sfinish <- maybe (throwError $ "Not Finished: " ++ show scf)
 		return $ getFinish scf
@@ -141,12 +136,12 @@ getHttp = do
 	-------------------------------------------
 	--     CLIENT GET                        --
 	-------------------------------------------
-	writeContent Server $ applicationData getRequest
+	writeContent $ applicationData getRequest
 
 	-------------------------------------------
 	--     SERVER CONTENTS                   --
 	-------------------------------------------
-	cnt <- readContent Server
+	cnt <- readContent
 	liftIO . putStrLn $ "SERVER CONTENTS: " ++ take 60 (show cnt) ++ "..."
 
 serverHelloDone :: TlsIo Content (Maybe CertificateRequest)
@@ -155,7 +150,7 @@ serverHelloDone = do
 	-------------------------------------------
 	--     CERTIFICATE REQUEST               --
 	-------------------------------------------
-	crtReq <- readContent Server
+	crtReq <- readContent
 	liftIO . putStrLn $
 		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 
@@ -164,45 +159,31 @@ serverHelloDone = do
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-		shd <- readContent Server
+		shd <- readContent
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
 	return $ getCertificateRequest crtReq
 
-c2s, s2c :: TlsIo Content ()
-c2s = forever $ do
-	f <- readRawFragment Client
-	liftIO . putStrLn $ "CLIENT: " ++ take 60 (show f) ++ "..."
-	writeRawFragment Server f
-
-s2c = forever $ do
-	f <- readRawFragment Server
-	liftIO . putStrLn $ "SERVER: " ++ take 60 (show f) ++ "..."
-	writeRawFragment Client f
-
-readContentNoHash :: Partner -> TlsIo Content Content
-readContentNoHash partner = readCached partner (readContentList partner)
-
-readContent :: Partner -> TlsIo Content Content
-readContent partner = do
-	c <- readCached partner (readContentList partner)
+readContent :: TlsIo Content Content
+readContent = do
+	c <- readCached $ readContentList
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
-readContentList :: Partner -> TlsIo Content [Content]
-readContentList partner =
-	(\(Right c) -> c) . fragmentToContent <$> readFragmentNoHash partner
+readContentList :: TlsIo Content [Content]
+readContentList =
+	(\(Right c) -> c) . fragmentToContent <$> readFragmentNoHash
 
 writeContentList :: Partner -> [Content] -> TlsIo Content ()
 writeContentList partner cs = do
 	let f = contentListToFragment cs
 	updateSequenceNumberSmart partner
-	writeFragment partner f
+	writeFragment f
 
-writeContent :: Partner -> Content -> TlsIo Content ()
-writeContent partner c = do
+writeContent :: Content -> TlsIo Content ()
+writeContent c = do
 	let f = contentToFragment c
-	writeFragment partner f
+	writeFragment f
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
