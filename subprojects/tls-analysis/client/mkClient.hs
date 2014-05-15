@@ -3,7 +3,6 @@
 import System.Environment
 import Control.Applicative
 import Control.Monad
-import Data.IORef
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
@@ -19,25 +18,20 @@ import Basic
 
 main :: IO ()
 main = do
-	cidRef <- newIORef 0
 	svpn : _ <- getArgs
-	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
-	cid <- readIORef cidRef
-	modifyIORef cidRef succ
 	ep <- createEntropyPool
 	sv <- connectTo "localhost"
 		(PortNumber $ fromIntegral (read svpn :: Int))
-	let	client = ClientHandle undefined
-		server = ServerHandle sv
-	evalTlsIO (run pkys certChain) ep cid client server pk
+	let	server = ServerHandle sv
+	evalTlsIo (run pkys certChain) ep server
 	return ()
 
-run :: PrivateKey -> CertificateChain -> TlsIO Content ()
+run :: PrivateKey -> CertificateChain -> TlsIo Content ()
 run pkys certChain = handshake pkys certChain >> getHttp
 
-handshake :: PrivateKey -> CertificateChain -> TlsIO Content ()
+handshake :: PrivateKey -> CertificateChain -> TlsIo Content ()
 handshake pkys certChain = do
 
 	-------------------------------------------
@@ -141,7 +135,7 @@ handshake pkys certChain = do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
 
-getHttp :: TlsIO Content ()
+getHttp :: TlsIo Content ()
 getHttp = do
 
 	-------------------------------------------
@@ -155,7 +149,7 @@ getHttp = do
 	cnt <- readContent Server
 	liftIO . putStrLn $ "SERVER CONTENTS: " ++ take 60 (show cnt) ++ "..."
 
-serverHelloDone :: TlsIO Content (Maybe CertificateRequest)
+serverHelloDone :: TlsIo Content (Maybe CertificateRequest)
 serverHelloDone = do
 
 	-------------------------------------------
@@ -175,7 +169,7 @@ serverHelloDone = do
 
 	return $ getCertificateRequest crtReq
 
-c2s, s2c :: TlsIO Content ()
+c2s, s2c :: TlsIo Content ()
 c2s = forever $ do
 	f <- readRawFragment Client
 	liftIO . putStrLn $ "CLIENT: " ++ take 60 (show f) ++ "..."
@@ -186,26 +180,26 @@ s2c = forever $ do
 	liftIO . putStrLn $ "SERVER: " ++ take 60 (show f) ++ "..."
 	writeRawFragment Client f
 
-readContentNoHash :: Partner -> TlsIO Content Content
+readContentNoHash :: Partner -> TlsIo Content Content
 readContentNoHash partner = readCached partner (readContentList partner)
 
-readContent :: Partner -> TlsIO Content Content
+readContent :: Partner -> TlsIo Content Content
 readContent partner = do
 	c <- readCached partner (readContentList partner)
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
-readContentList :: Partner -> TlsIO Content [Content]
+readContentList :: Partner -> TlsIo Content [Content]
 readContentList partner =
 	(\(Right c) -> c) . fragmentToContent <$> readFragmentNoHash partner
 
-writeContentList :: Partner -> [Content] -> TlsIO Content ()
+writeContentList :: Partner -> [Content] -> TlsIo Content ()
 writeContentList partner cs = do
 	let f = contentListToFragment cs
 	updateSequenceNumberSmart partner
 	writeFragment partner f
 
-writeContent :: Partner -> Content -> TlsIO Content ()
+writeContent :: Partner -> Content -> TlsIo Content ()
 writeContent partner c = do
 	let f = contentToFragment c
 	writeFragment partner f
