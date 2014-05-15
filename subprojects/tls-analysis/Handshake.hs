@@ -14,6 +14,7 @@ module Handshake (
 
 	HandshakeType(HandshakeTypeFinished),
 	handshakeCertificate, CertificateChain, handshakeSign,
+	handshakeCertificateRequest,
 	handshakeMakeVerify,
 	handshakeMakeClientKeyExchange,
 
@@ -203,3 +204,7 @@ handshakeOnlyKnownCipherSuite :: Handshake -> Handshake
 handshakeOnlyKnownCipherSuite (HandshakeClientHello ch) =
 	HandshakeClientHello $ clientHelloOnlyKnownCipherSuite ch
 handshakeOnlyKnownCipherSuite hs = hs
+
+handshakeCertificateRequest :: Handshake -> Maybe CertificateRequest
+handshakeCertificateRequest (HandshakeCertificateRequest cr) = Just cr
+handshakeCertificateRequest _ = Nothing

@@ -14,7 +14,7 @@ import Crypto.PubKey.RSA.PKCS15
 import Crypto.PubKey.HashDescr
 
 import Fragment
-import Content
+import Content hiding (serverHelloDone)
 import Basic
 
 main :: IO ()
@@ -68,21 +68,19 @@ run _cid pkys certChain = do
 	-------------------------------------------
 	--     CERTIFICATE REQUEST               --
 	-------------------------------------------
-	crtReq <- readContent Server
-	liftIO . putStrLn $
-		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
-
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-	shd <- readContent Server
-	liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
+	crtReq <- serverHelloDone
 
 	-------------------------------------------
 	--     CLIENT CERTIFICATE                --
 	-------------------------------------------
-	writeContent Server $ certificate certChain
-	fragmentUpdateHash . contentToFragment $ certificate certChain
+	case crtReq of
+		Just _ -> do
+			writeContent Server $ certificate certChain
+			fragmentUpdateHash . contentToFragment $ certificate certChain
+		_ -> return ()
 
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
@@ -99,10 +97,13 @@ run _cid pkys certChain = do
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
 	-------------------------------------------
-	hms <- handshakeMessages
-	let	Right signed = sign Nothing hashDescrSHA256 pkys hms
-	writeContent Server $ makeVerify signed
-	fragmentUpdateHash . contentToFragment $ makeVerify signed
+	case crtReq of
+		Just _ -> do
+			hms <- handshakeMessages
+			let	Right signed = sign Nothing hashDescrSHA256 pkys hms
+			writeContent Server $ makeVerify signed
+			fragmentUpdateHash . contentToFragment $ makeVerify signed
+		_ -> return ()
 
 	-------------------------------------------
 	--     CLIENT CHANGE CIPHER SPEC         --
@@ -147,6 +148,26 @@ run _cid pkys certChain = do
 	-------------------------------------------
 	cnt <- readContent Server
 	liftIO . putStrLn $ "SERVER CONTENTS: " ++ take 60 (show cnt) ++ "..."
+
+serverHelloDone :: TlsIO Content (Maybe CertificateRequest)
+serverHelloDone = do
+
+	-------------------------------------------
+	--     CERTIFICATE REQUEST               --
+	-------------------------------------------
+	crtReq <- readContent Server
+	liftIO . putStrLn $
+		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
+
+	if doesServerHelloDone crtReq then return () else do
+
+	-------------------------------------------
+	--     SERVER HELLO DONE                 --
+	-------------------------------------------
+		shd <- readContent Server
+		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
+
+	return $ getCertificateRequest crtReq
 
 c2s, s2c :: TlsIO Content ()
 c2s = forever $ do

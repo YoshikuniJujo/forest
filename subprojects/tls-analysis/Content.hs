@@ -10,6 +10,7 @@ module Content (
 
 	version, cipherSuite,
 	doesChangeCipherSpec,
+	doesServerHelloDone,
 
 	clientVersion, clientRandom, encryptedPreMasterSecret,
 	certificateChain, digitalSign,
@@ -17,7 +18,9 @@ module Content (
 	makeClientKeyExchange,
 
 	serverVersion, serverRandom, serverCipherSuite, getFinish,
+	getCertificateRequest,
 	clientHello,
+	CertificateRequest,
 ) where
 
 import Prelude hiding (concat, head)
@@ -114,6 +117,10 @@ doesChangeCipherSpec :: Content -> Bool
 doesChangeCipherSpec (ContentChangeCipherSpec _ ChangeCipherSpec) = True
 doesChangeCipherSpec _ = False
 
+doesServerHelloDone :: Content -> Bool
+doesServerHelloDone (ContentHandshake _ HandshakeServerHelloDone) = True
+doesServerHelloDone _ = False
+
 data ChangeCipherSpec
 	= ChangeCipherSpec
 	| ChangeCipherSpecRaw Word8
@@ -181,3 +188,7 @@ serverCipherSuite _ = Nothing
 getFinish :: Content -> Maybe ByteString
 getFinish (ContentHandshake _ hs) = handshakeGetFinish hs
 getFinish _ = Nothing
+
+getCertificateRequest :: Content -> Maybe CertificateRequest
+getCertificateRequest (ContentHandshake _ hs) = handshakeCertificateRequest hs
+getCertificateRequest _ = Nothing
