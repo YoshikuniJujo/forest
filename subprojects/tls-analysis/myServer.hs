@@ -129,7 +129,7 @@ run certStore certChain pkys cid = do
 	--      SERVER FINISHED                 --
 	------------------------------------------
 	sf <- finishedHash Server
-	writeFragment Client $ contentToFragment $ finished sf
+	writeFragment Client . contentToFragment $ finished sf
 	output Server cid "Finished" [showHandshake $ finished sf]
 
 	------------------------------------------

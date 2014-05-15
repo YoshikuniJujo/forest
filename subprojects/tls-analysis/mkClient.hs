@@ -1,8 +1,6 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 import System.Environment
-import System.IO
-import Control.Concurrent
 import Control.Applicative
 import Control.Monad
 import Data.IORef
@@ -22,29 +20,22 @@ import Basic
 main :: IO ()
 main = do
 	cidRef <- newIORef 0
-	clpn : svpn : _ <- getArgs
+	svpn : _ <- getArgs
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
---	sock <- listenOn . PortNumber . fromIntegral $ read clpn
---	forever $ do
-	do
-		cid <- readIORef cidRef
-		modifyIORef cidRef succ
---		(cl, _, _) <- accept sock
-		ep <- createEntropyPool
-		sv <- connectTo "localhost" (PortNumber . fromIntegral $ read svpn)
-		let	client = ClientHandle undefined -- cl
-			server = ServerHandle sv
---		forkIO $ do
-		do
-			evalTlsIO (run cid pkys certChain) ep cid client server pk
---			forkIO $ evalTlsIO c2s ep cid client server pk
---			evalTlsIO s2c ep cid client server pk
+	cid <- readIORef cidRef
+	modifyIORef cidRef succ
+	ep <- createEntropyPool
+	sv <- connectTo "localhost"
+		(PortNumber $ fromIntegral (read svpn :: Int))
+	let	client = ClientHandle undefined -- cl
+		server = ServerHandle sv
+	evalTlsIO (run cid pkys certChain) ep cid client server pk
 	return ()
 
 run :: Int -> PrivateKey -> CertificateChain -> TlsIO Content ()
-run cid pkys certChain = do
+run _cid pkys certChain = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -100,7 +91,7 @@ run cid pkys certChain = do
 --	writeContent Server cCrt
 --	let Just cc = certificateChain cCrt
 	writeContent Server $ certificate certChain
-	fragmentUpdateHash $ contentToFragment $ certificate certChain
+	fragmentUpdateHash . contentToFragment $ certificate certChain
 --	liftIO . putStrLn $
 --		"CLIENT CERTIFICATE: " ++ take 60 (show cCrt) ++ "..."
 
@@ -140,7 +131,7 @@ run cid pkys certChain = do
 --	let	Just ds = digitalSign cv
 	let	Right signed = sign Nothing hashDescrSHA256 pkys hms
 	writeContent Server $ makeVerify signed
-	fragmentUpdateHash $ contentToFragment $ makeVerify signed
+	fragmentUpdateHash . contentToFragment $ makeVerify signed
 --	fragmentUpdateHash . contentToFragment $ makeVerify signed
 --	liftIO $ do
 --		putStrLn $ "FIREFOX  : " ++ take 60 (show ds) ++ "..."
@@ -166,7 +157,7 @@ run cid pkys certChain = do
 --	cf <- readContent Client
 --	writeContent Server cf
 	writeContent Server $ finished fhc
-	fragmentUpdateHash $ contentToFragment $ finished fhc
+	fragmentUpdateHash . contentToFragment $ finished fhc
 --	finish <- maybe (throwError "Not Finished") return $ getFinish cf
 --	liftIO $ do
 --		putStrLn $ "FINISHED FIREFOX     : " ++ take 60 (show finish)
@@ -219,10 +210,8 @@ s2c = forever $ do
 	writeRawFragment Client f
 
 readContentNoHash :: Partner -> TlsIO Content Content
-readContentNoHash partner = do
-	c <- readCached partner (readContentList partner)
+readContentNoHash partner = readCached partner (readContentList partner)
 --		<* updateSequenceNumberSmart partner
-	return c
 
 readContent :: Partner -> TlsIO Content Content
 readContent partner = do

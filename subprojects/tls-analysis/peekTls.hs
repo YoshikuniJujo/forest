@@ -32,7 +32,7 @@ main = do
 		sv <- connectTo "localhost" (PortNumber . fromIntegral $ read svpn)
 		let	client = ClientHandle cl
 			server = ServerHandle sv
-		forkIO $ do
+		forkIO $ -- do
 			evalTlsIO (run cid pkys) ep cid client server pk
 --			forkIO $ evalTlsIO c2s ep cid client server pk
 --			evalTlsIO s2c ep cid client server pk

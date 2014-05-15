@@ -16,7 +16,7 @@ module Fragment (
 	
 	masterSecret,
 
-	debugPrintKeys,
+--	debugPrintKeys,
 	debugShowKeys,
 
 	ClientHandle(..), ServerHandle(..), Partner(..),

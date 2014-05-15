@@ -19,7 +19,7 @@ module TlsIO (
 
 	masterSecret,
 
-	debugPrintKeys,
+--	debugPrintKeys,
 	debugShowKeys,
 
 	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
@@ -108,7 +108,7 @@ data TlsState cnt = TlsState {
 instance Show SystemRNG where
 	show _ = "System Random Generator"
 
-readCached :: Partner -> (TlsIO cnt [cnt]) -> TlsIO cnt cnt
+readCached :: Partner -> TlsIO cnt [cnt] -> TlsIO cnt cnt
 readCached partner rd = do
 	cch <- gets $ case partner of
 		Client -> tlssContentCacheClient
@@ -302,6 +302,7 @@ divide (n : ns) bs
 	| bs == BS.empty = []
 	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
 
+{-
 debugPrintKeys :: TlsIO cnt ()
 debugPrintKeys = do
 	Just cwmk <- gets tlssClientWriteMacKey
@@ -318,6 +319,7 @@ debugPrintKeys = do
 		putStrLn $ "\tSrvrWr Key    : " ++ showKeySingle swk
 		putStrLn $ "\tClntWr IV     : " ++ showKeySingle cwi
 		putStrLn $ "\tSrvrWr IV     : " ++ showKeySingle swi
+		-}
 
 debugShowKeys :: TlsIO cnt [String]
 debugShowKeys = do
