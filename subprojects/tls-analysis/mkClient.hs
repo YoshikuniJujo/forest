@@ -26,19 +26,22 @@ main = do
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
-	sock <- listenOn . PortNumber . fromIntegral $ read clpn
-	forever $ do
+--	sock <- listenOn . PortNumber . fromIntegral $ read clpn
+--	forever $ do
+	do
 		cid <- readIORef cidRef
 		modifyIORef cidRef succ
-		(cl, _, _) <- accept sock
+--		(cl, _, _) <- accept sock
 		ep <- createEntropyPool
 		sv <- connectTo "localhost" (PortNumber . fromIntegral $ read svpn)
-		let	client = ClientHandle cl
+		let	client = ClientHandle undefined -- cl
 			server = ServerHandle sv
-		forkIO $ do
+--		forkIO $ do
+		do
 			evalTlsIO (run cid pkys certChain) ep cid client server pk
 --			forkIO $ evalTlsIO c2s ep cid client server pk
 --			evalTlsIO s2c ep cid client server pk
+	return ()
 
 run :: Int -> PrivateKey -> CertificateChain -> TlsIO Content ()
 run cid pkys certChain = do
@@ -47,17 +50,18 @@ run cid pkys certChain = do
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	ch <- readContent Client
+--	ch <- readContentNoHash Client
 	let ch' = clientHello cr
-	writeContent Server ch
-	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
-	liftIO . putStrLn $ "CLIENT HELLO: " ++ take 60 (show ch) ++ "..."
+	writeContent Server ch'
+	fragmentUpdateHash $ contentToFragment ch'
+	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch'
+--	liftIO . putStrLn $ "CLIENT HELLO: " ++ take 60 (show ch) ++ "..."
 
 	-------------------------------------------
 	--     SERVER HELLO                      --
 	-------------------------------------------
 	sh <- readContent Server
-	writeContent Client sh
+--	writeContent Client sh
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
@@ -69,7 +73,7 @@ run cid pkys certChain = do
 	crt <- readContent Server
 	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
 		PubKeyRSA pub = certPubKey $ getCertificate cert
-	writeContent Client crt
+--	writeContent Client crt
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
 	liftIO . putStrLn $ "CERTIFICATE Chain: " ++ take 60 (show scc) ++ "..."
 	liftIO . putStrLn $ "PUBKEY: " ++ take 60 (show pub) ++ "..."
@@ -78,7 +82,7 @@ run cid pkys certChain = do
 	--     CERTIFICATE REQUEST               --
 	-------------------------------------------
 	crtReq <- readContent Server
-	writeContent Client crtReq
+--	writeContent Client crtReq
 	liftIO . putStrLn $
 		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 
@@ -86,53 +90,57 @@ run cid pkys certChain = do
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
 	shd <- readContent Server
-	writeContent Client shd
+--	writeContent Client shd
 	liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
 	-------------------------------------------
 	--     CLIENT CERTIFICATE                --
 	-------------------------------------------
-	cCrt <- readContent Client
+--	cCrt <- readContentNoHash Client
 --	writeContent Server cCrt
-	let Just cc = certificateChain cCrt
+--	let Just cc = certificateChain cCrt
 	writeContent Server $ certificate certChain
-	liftIO . putStrLn $
-		"CLIENT CERTIFICATE: " ++ take 60 (show cCrt) ++ "..."
+	fragmentUpdateHash $ contentToFragment $ certificate certChain
+--	liftIO . putStrLn $
+--		"CLIENT CERTIFICATE: " ++ take 60 (show cCrt) ++ "..."
 
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
-	cke <- readContentNoHash Client
-	let Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret cke
-	liftIO . putStrLn $
-		"KEY EXCHANGE: " ++ take 60 (show cke) ++ "..."
-	pms <- decryptRSA epms
+--	cke <- readContentNoHash Client
+--	let Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret cke
+--	liftIO . putStrLn $
+--		"KEY EXCHANGE: " ++ take 60 (show cke) ++ "..."
+--	pms <- decryptRSA epms
+
+	pms <- randomByteString 48
 	epms' <- encryptRSA pub pms
-	pms' <- decryptRSA epms'
+--	pms' <- decryptRSA epms'
 	generateMasterSecret pms
 
-	let	cke'  = makeClientKeyExchange $ EncryptedPreMasterSecret epms
+--	let	cke'  = makeClientKeyExchange $ EncryptedPreMasterSecret epms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
 
-	fragmentUpdateHash $ contentToFragment cke'
-	writeContent Server cke'
+	writeContent Server cke''
+	fragmentUpdateHash $ contentToFragment cke''
 
 	debugKeysStr <- debugShowKeys
-	liftIO . putStrLn $ "EPMS : " ++ show epms
-	liftIO . putStrLn $ "PMS  : " ++ show pms
-	liftIO . putStrLn $ "PMS' : " ++ show pms'
-	liftIO . putStrLn $ "PMS LENGTH: " ++ show (BS.length pms)
+--	liftIO . putStrLn $ "EPMS : " ++ show epms
+--	liftIO . putStrLn $ "PMS  : " ++ show pms
+--	liftIO . putStrLn $ "PMS' : " ++ show pms'
+--	liftIO . putStrLn $ "PMS LENGTH: " ++ show (BS.length pms)
 	liftIO $ mapM_ putStrLn debugKeysStr
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
 	-------------------------------------------
 	hms <- handshakeMessages
-	cv <- readContent Client
+--	cv <- readContentNoHash Client
 --	writeContent Server cv
 --	let	Just ds = digitalSign cv
 	let	Right signed = sign Nothing hashDescrSHA256 pkys hms
 	writeContent Server $ makeVerify signed
+	fragmentUpdateHash $ contentToFragment $ makeVerify signed
 --	fragmentUpdateHash . contentToFragment $ makeVerify signed
 --	liftIO $ do
 --		putStrLn $ "FIREFOX  : " ++ take 60 (show ds) ++ "..."
@@ -168,7 +176,7 @@ run cid pkys certChain = do
 	--     SERVER CHANGE CIPHER SPEC         --
 	-------------------------------------------
 	sccs <- readContent Server
-	writeContent Client sccs
+--	writeContent Client sccs
 	when (doesChangeCipherSpec sccs) $ flushCipherSuite Server
 	liftIO . putStrLn $ "SERVER CHANGE CIPHER SPEC: " ++ take 60 (show sccs)
 
@@ -177,7 +185,8 @@ run cid pkys certChain = do
 	-------------------------------------------
 	sfhc <- finishedHash Server
 	scf <- readContent Server
-	writeContent Client scf
+--	writeContent Client scf
+	updateSequenceNumberSmart Server
 	sfinish <- maybe (throwError $ "Not Finished: " ++ show scf)
 		return $ getFinish scf
 	liftIO $ do
@@ -195,7 +204,7 @@ run cid pkys certChain = do
 	--     SERVER CONTENTS                   --
 	-------------------------------------------
 	cnt <- readContent Server
-	writeContent Client cnt
+--	writeContent Client cnt
 	liftIO . putStrLn $ "SERVER CONTENTS: " ++ take 60 (show cnt) ++ "..."
 
 c2s, s2c :: TlsIO Content ()
@@ -211,13 +220,13 @@ s2c = forever $ do
 
 readContentNoHash :: Partner -> TlsIO Content Content
 readContentNoHash partner = do
-	c <- readCached (readContentList partner)
+	c <- readCached partner (readContentList partner)
 --		<* updateSequenceNumberSmart partner
 	return c
 
 readContent :: Partner -> TlsIO Content Content
 readContent partner = do
-	c <- readCached (readContentList partner)
+	c <- readCached partner (readContentList partner)
 --		<* updateSequenceNumberSmart partner
 	fragmentUpdateHash $ contentToFragment c
 	return c

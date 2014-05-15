@@ -101,23 +101,30 @@ data TlsState cnt = TlsState {
 	tlssDecryptIv :: Maybe ByteString,
 	tlssRandomGen :: SystemRNG,
 	tlssHandshakeMessages :: ByteString,
-	tlssContentCache :: [cnt]
+	tlssContentCacheClient :: [cnt],
+	tlssContentCacheServer :: [cnt]
  } deriving Show
 
 instance Show SystemRNG where
 	show _ = "System Random Generator"
 
-readCached :: (TlsIO cnt [cnt]) -> TlsIO cnt cnt
-readCached rd = do
-	cch <- gets tlssContentCache
+readCached :: Partner -> (TlsIO cnt [cnt]) -> TlsIO cnt cnt
+readCached partner rd = do
+	cch <- gets $ case partner of
+		Client -> tlssContentCacheClient
+		Server -> tlssContentCacheServer
 	tlss <- get
 	case cch of
 		[] -> do
 			r : cch' <- rd
-			put tlss { tlssContentCache = cch' }
+			case partner of
+				Client -> put tlss { tlssContentCacheClient = cch' }
+				Server -> put tlss { tlssContentCacheServer = cch' }
 			return r
 		r : cch' -> do
-		 	put tlss { tlssContentCache = cch' }
+			case partner of
+				Client -> put tlss { tlssContentCacheClient = cch' }
+				Server -> put tlss { tlssContentCacheServer = cch' }
 			return r
 
 setVersion :: MS.Version -> TlsIO cnt ()
@@ -174,7 +181,8 @@ initTlsState ep cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 	tlssDecryptIv = Nothing,
 	tlssRandomGen = cprgCreate ep,
 	tlssHandshakeMessages = "",
-	tlssContentCache = []
+	tlssContentCacheClient = [],
+	tlssContentCacheServer = []
  }
 
 data Partner = Server | Client deriving (Show, Eq)

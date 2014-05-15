@@ -147,7 +147,7 @@ run certStore certChain pkys cid = do
 
 readContent :: TlsIO Content Content
 readContent = do
-	c <- readCached (readContentList Client)
+	c <- readCached Client (readContentList Client)
 		<* updateSequenceNumberSmart Client
 	fragmentUpdateHash $ contentToFragment c
 	return c

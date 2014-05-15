@@ -181,7 +181,7 @@ s2c = forever $ do
 
 readContent :: Partner -> TlsIO Content Content
 readContent partner = do
-	c <- readCached (readContentList partner)
+	c <- readCached partner (readContentList partner)
 --		<* updateSequenceNumberSmart partner
 	fragmentUpdateHash $ contentToFragment c
 	return c
