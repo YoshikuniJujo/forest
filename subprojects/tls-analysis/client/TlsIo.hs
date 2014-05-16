@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGet, tGetWhole, 
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetWhole, 
 ) where
 
 import Prelude hiding (read)
@@ -29,6 +29,7 @@ import "monads-tf" Control.Monad.State
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.HashDescr as RSA
@@ -431,3 +432,27 @@ tGet ts n = do
 	else do	msg <- tGetWhole ts
 		atomically $ writeTVar (tlsBuffer ts) msg
 		(bfr `BS.append`) <$> tGet ts (n - BS.length bfr)
+
+splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
+splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
+	(True, _) -> let
+		(l, ls) = BSC.span (/= '\r') bs
+		Just ('\r', ls') = BSC.uncons ls in
+		case BSC.uncons ls' of
+			Just ('\n', ls'') -> Just (l, ls'')
+			_ -> Just (l, ls')
+	(_, True) -> let
+		(l, ls) = BSC.span (/= '\n') bs
+		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
+	_ -> Nothing
+
+tGetLine :: TlsServer -> IO BS.ByteString
+tGetLine ts = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	case splitOneLine bfr of
+		Just (l, ls) -> atomically $ do
+			writeTVar (tlsBuffer ts) ls
+			return l
+		_ -> do	msg <- tGetWhole ts
+			atomically $ writeTVar (tlsBuffer ts) msg
+			(bfr `BS.append`) <$> tGetLine ts
