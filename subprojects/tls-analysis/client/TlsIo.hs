@@ -225,7 +225,7 @@ encryptRSA pub pln = do
 
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do
-	liftIO $ putStrLn $ "Pre Master Secret: " ++ show pms
+--	liftIO $ putStrLn $ "Pre Master Secret: " ++ show pms
 	mv <- gets tlssVersion
 	mcr <- gets $ (CT.ClientRandom <$>) . tlssClientRandom
 	msr <- gets $ (CT.ServerRandom <$>) . tlssServerRandom
@@ -279,7 +279,7 @@ encryptMessage partner ct v msg = do
 	version <- gets tlssVersion
 	cs <- cipherSuite partner
 	mwk <- writeKey partner
-	liftIO $ print mwk
+--	liftIO $ print mwk
 	sn <- sequenceNumber partner
 	mmk <- macKey partner
 	gen <- gets tlssRandomGen
