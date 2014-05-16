@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
 module Client (openTlsServer, tPut, tGetWhole) where
 
@@ -140,7 +140,7 @@ serverHelloDone = do
 
 readContent :: TlsIo Content Content
 readContent = do
-	c <- readCached $ readContentList
+	c <- readCached readContentList
 	fragmentUpdateHash $ contentToFragment c
 	return c
 

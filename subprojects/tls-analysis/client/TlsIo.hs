@@ -92,10 +92,10 @@ runOpen :: TlsIo cnt () -> Handle -> IO TlsServer
 runOpen opn sv = do
 	ep <- createEntropyPool
 	(_, tlss) <- opn `runTlsIo` initTlsClientState ep sv
-	tvgen <- atomically $ newTVar $ tlssRandomGen tlss
-	tvcsn <- atomically $ newTVar $ tlssClientSequenceNumber tlss
-	tvssn <- atomically $ newTVar $ tlssServerSequenceNumber tlss
-	return $ TlsServer {
+	tvgen <- atomically . newTVar $ tlssRandomGen tlss
+	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
+	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
+	return TlsServer {
 		tlsVersion = fromJust $ tlssVersion tlss,
 		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
 		tlsHandle = tlssHandle tlss,

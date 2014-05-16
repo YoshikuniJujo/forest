@@ -36,11 +36,10 @@ decryptBody = decryptMessage Server
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) = do
 	cs <- isCiphered Client
-	case cs of
-		True -> do
-			eb <- encryptBody ct v bs
-			writeContentType ct >> writeVersion v >> writeLen 2 eb
-		False -> writeContentType ct >> writeVersion v >> writeLen 2 bs
+	if cs then do
+		eb <- encryptBody ct v bs
+		writeContentType ct >> writeVersion v >> writeLen 2 eb
+	else writeContentType ct >> writeVersion v >> writeLen 2 bs
 
 encryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptBody ct v body = do
