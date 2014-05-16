@@ -7,7 +7,7 @@ import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
 import Network
-import "crypto-random" Crypto.Random
+-- import "crypto-random" Crypto.Random
 import Crypto.PubKey.RSA
 
 import Fragment
@@ -19,9 +19,12 @@ main = do
 	(svpn :: Int) : _ <- mapM readIO =<< getArgs
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
-	ep <- createEntropyPool
+--	ep <- createEntropyPool
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
-	evalTlsIo (run pkys certChain) ep sv
+--	evalTlsIo (run pkys certChain) ep sv
+	tls <- runOpen (handshake pkys certChain) sv
+	tPut tls getRequest
+	tGetWhole tls >>= print
 
 run :: PrivateKey -> CertificateChain -> TlsIo Content ()
 run pkys certChain = handshake pkys certChain >> getHttp

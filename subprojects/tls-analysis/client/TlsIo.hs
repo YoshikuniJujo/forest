@@ -15,14 +15,18 @@ module TlsIo (
 
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
+
+	TlsServer, runOpen, tPut, tGetWhole, 
 ) where
 
 import Prelude hiding (read)
 
 import System.IO
+import Control.Concurrent.STM
 import Control.Applicative
 import "monads-tf" Control.Monad.Error
 import "monads-tf" Control.Monad.State
+import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
@@ -83,6 +87,34 @@ initTlsClientState ep sv = TlsClientState {
 	tlssClientSequenceNumber	= 0,
 	tlssServerSequenceNumber	= 0
  }
+
+runOpen :: TlsIo cnt () -> Handle -> IO TlsServer
+runOpen opn sv = do
+	ep <- createEntropyPool
+	(_, tlss) <- opn `runTlsIo` initTlsClientState ep sv
+	tvgen <- atomically $ newTVar $ tlssRandomGen tlss
+	tvcsn <- atomically $ newTVar $ tlssClientSequenceNumber tlss
+	tvssn <- atomically $ newTVar $ tlssServerSequenceNumber tlss
+	return $ TlsServer {
+		tlsVersion = fromJust $ tlssVersion tlss,
+		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
+		tlsHandle = tlssHandle tlss,
+		_tlsBuffer = undefined,
+		tlsRandomGen = tvgen,
+		tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
+		tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
+		tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
+		tlsServerWriteKey = fromJust $ tlssServerWriteKey tlss,
+		tlsClientSequenceNumber = tvcsn,
+		tlsServerSequenceNumber = tvssn
+	 }
+
+runTlsIo :: TlsIo cnt a -> TlsClientState cnt -> IO (a, TlsClientState cnt)
+runTlsIo io st = do
+	(ret, st') <- runErrorT io `runStateT` st
+	case ret of
+		Right r -> return (r, st')
+		Left err -> error err
 
 evalTlsIo :: TlsIo cnt a -> EntropyPool -> Handle -> IO a
 evalTlsIo io ep sv = do
@@ -306,3 +338,68 @@ updateSequenceNumber partner = do
 updateSequenceNumberSmart :: Partner -> TlsIo cnt ()
 updateSequenceNumberSmart partner =
 	flip when (updateSequenceNumber partner) =<< isCiphered partner
+
+data TlsServer = TlsServer {
+	tlsVersion :: CT.MSVersion,
+	tlsCipherSuite :: CipherSuite,
+	tlsHandle :: Handle,
+	_tlsBuffer :: TVar BS.ByteString,
+	tlsRandomGen :: TVar SystemRNG,
+	tlsClientWriteMacKey :: BS.ByteString,
+	tlsServerWriteMacKey :: BS.ByteString,
+	tlsClientWriteKey :: BS.ByteString,
+	tlsServerWriteKey :: BS.ByteString,
+	tlsClientSequenceNumber :: TVar Word64,
+	tlsServerSequenceNumber :: TVar Word64
+ }
+
+tPut :: TlsServer -> BS.ByteString -> IO ()
+tPut ts msg = case (vr, cs) of
+	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
+		ebody <- atomically $ do
+			gen <- readTVar tvgen
+			sn <- readTVar tvsn
+			let (e, gen') = enc gen sn
+			writeTVar tvgen gen'
+			writeTVar tvsn $ succ sn
+			return e
+		BS.hPut h $ BS.concat [
+			contentTypeToByteString ct,
+			versionToByteString v,
+			lenBodyToByteString 2 ebody]
+		
+	_ -> error "tPut: not implemented"
+	where
+	vr = tlsVersion ts
+	cs = tlsCipherSuite ts
+	h = tlsHandle ts
+	key = tlsClientWriteKey ts
+	mk = tlsClientWriteMacKey ts
+	ct = ContentTypeApplicationData
+	v = Version 3 3
+	tvsn = tlsClientSequenceNumber ts
+	tvgen = tlsRandomGen ts
+	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
+
+tGetWhole :: TlsServer -> IO BS.ByteString
+tGetWhole ts = case (vr, cs) of
+	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
+		ct <- byteStringToContentType <$> BS.hGet h 1
+		v <- byteStringToVersion <$> BS.hGet h 2
+		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
+		sn <- atomically $ do
+			n <- readTVar tvsn
+			writeTVar tvsn $ succ n
+			return n
+		case dec sn ct v enc of
+			Right r -> return r
+			Left err -> error err
+	_ -> error "tPut: not implemented"
+	where
+	vr = tlsVersion ts
+	cs = tlsCipherSuite ts
+	h = tlsHandle ts
+	key = tlsServerWriteKey ts
+	mk = tlsServerWriteMacKey ts
+	tvsn = tlsServerSequenceNumber ts
+	dec sn = CT.decryptMessage key sn mk

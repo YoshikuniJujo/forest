@@ -12,6 +12,8 @@ module Fragment (
 	encryptRSA, generateKeys, finishedHash, clientVerifySign,
 
 	updateSequenceNumberSmart,
+
+	TlsServer, runOpen, tPut, tGetWhole,
 ) where
 
 import Prelude hiding (read)

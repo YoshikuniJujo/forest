@@ -145,7 +145,8 @@ run dcc certStore certChain pkys cid = do
 	--      CLIENT GET                      --
 	------------------------------------------
 	g <- readContent
-	output Client cid "GET" [take 60 (show g) ++ "..."]
+--	output Client cid "GET" [take 60 (show g) ++ "..."]
+	output Client cid "GET" [show g]
 
 	------------------------------------------
 	--      SERVER CONTENT                  --
