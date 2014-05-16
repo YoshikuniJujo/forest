@@ -35,10 +35,10 @@ handshake pkys certChain = do
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	let ch' = clientHello cr
-	writeContent ch'
-	fragmentUpdateHash $ contentToFragment ch'
-	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch'
+	let ch = clientHello cr
+	writeContent ch
+	fragmentUpdateHash $ contentToFragment ch
+	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 
 	-------------------------------------------
 	--     SERVER HELLO                      --
@@ -81,7 +81,7 @@ handshake pkys certChain = do
 	-------------------------------------------
 	pms <- randomByteString 48
 	epms' <- encryptRSA pub pms
-	generateMasterSecret pms
+	generateKeys pms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
 	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''

@@ -8,7 +8,7 @@ module Content (
 
 	EncryptedPreMasterSecret(..),
 
-	version, cipherSuite,
+	version,
 	doesChangeCipherSpec,
 	doesServerHelloDone,
 
@@ -160,9 +160,6 @@ clientRandom _ = Nothing
 clientVersion :: Content -> Maybe Version
 clientVersion (ContentHandshake _ hss) = handshakeClientVersion hss
 clientVersion _ = Nothing
-
-cipherSuite :: CipherSuite
-cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
 
 encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
 encryptedPreMasterSecret (ContentHandshake _ hss) =

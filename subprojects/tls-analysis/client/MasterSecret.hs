@@ -16,7 +16,7 @@ module MasterSecret (
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
-	P.Version(..),
+--	P.Version(..),
 
 --	P.Random(..),
 --	P.CipherSuite(..),
@@ -79,8 +79,6 @@ generateMasterSecretTls prf premasterSecret (ClientRandom c) (ServerRandom s) =
   where seed = B.concat [ "master secret", c, s ]
 
 generateFinished :: MSVersion -> Bool -> Bytes -> Bytes -> Bytes
-generateFinished TLS10 isC ms hash =
-	prfMd5Sha1 ms (getFinishedLabel isC `B.append` hash) 12
 generateFinished TLS12 isC ms hash =
 	prfSha256 ms (getFinishedLabel isC `B.append` hash) 12
 generateFinished _ _ _ _ = error "Not implemented"

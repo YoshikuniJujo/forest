@@ -6,7 +6,7 @@ module Fragment (
 
 	setVersion, setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
-	generateMasterSecret,
+	generateKeys,
 
 	finishedHash,
 	encryptRSA,
@@ -52,7 +52,7 @@ decryptBody :: Partner ->
 	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptBody p ct v ebody = do
 	bm <- decrypt p ebody
-	(body, mac) <- takeBodyMac p bm
+	(body, mac) <- bodyMac p bm
 	cmac <- calcMac p ct v body
 	when (mac /= cmac) . throwError $
 		"decryptBody: Bad MAC value\n\t" ++
@@ -67,7 +67,7 @@ encryptBody :: Partner ->
 	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptBody p ct v body = do
 	mac <- calcMac p ct v body
-	_ <- updateSequenceNumber p
+	updateSequenceNumber p
 	let	bm = body `BS.append` mac
 		padd = mkPadd 16 $ BS.length bm
 	encrypt p (bm `BS.append` padd)
@@ -79,17 +79,15 @@ mkPadd bs len = let
 
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) = do
-	cs <- getCipherSuite Client
+	cs <- isCiphered Client
 	case cs of
-		TLS_RSA_WITH_AES_128_CBC_SHA -> do
+		True -> do
 			eb <- encryptBody Client ct v bs
 			writeRawFragment (RawFragment ct v eb)
-		TLS_NULL_WITH_NULL_NULL -> writeRawFragment (RawFragment ct v bs)
-		_ -> throwError "writeFragment: not implemented"
+		False -> writeRawFragment (RawFragment ct v bs)
 
 readRawFragment :: TlsIo cnt RawFragment
-readRawFragment =
-	RawFragment <$> readContentType <*> readVersion <*> readLen 2
+readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2
 
 writeRawFragment :: RawFragment -> TlsIo cnt ()
 writeRawFragment (RawFragment ct v bs) =

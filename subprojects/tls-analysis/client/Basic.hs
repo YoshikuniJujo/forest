@@ -58,7 +58,7 @@ data CipherSuite
 	| TLS_ECDHE_PSK_WITH_NULL_SHA
 	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 	| CipherSuiteRaw Word8 Word8
-	deriving Show
+	deriving (Show, Eq)
 
 showKeySingle :: ByteString -> String
 showKeySingle = unwords . map showH . BS.unpack
