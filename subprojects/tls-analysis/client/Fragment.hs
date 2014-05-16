@@ -54,12 +54,9 @@ writeFragment (Fragment ct v bs) = do
 
 encryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptBody ct v body = do
-	mac <- calcMac Client ct v body
+	ret <- encryptMessage Client ct v body
 	updateSequenceNumber Client
-	let	bm = body `BS.append` mac
-		plen = 16 - (BS.length bm + 1) `mod` 16
-		padd = BS.replicate (plen + 1) $ fromIntegral plen
-	encrypt Client (bm `BS.append` padd)
+	return ret
 
 fragmentUpdateHash :: Fragment -> TlsIo cnt ()
 fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b

@@ -2,7 +2,7 @@
 
 module Content (
 	Content, fragmentToContent, contentToFragment, contentListToFragment,
-	serverHello, certificate, certificateRequest, serverHelloDone,
+	serverHello, certificate, certificateRequest,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
 
@@ -64,9 +64,6 @@ certificateRequest = ContentHandshake (Version 3 3)
 	. CertificateRequest
 		[ClientCertificateTypeRsaSign]
 		[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
-
-serverHelloDone :: Content
-serverHelloDone = ContentHandshake (Version 3 3) HandshakeServerHelloDone
 
 certificate :: CertificateChain -> Content
 certificate = ContentHandshake (Version 3 3) . HandshakeCertificate

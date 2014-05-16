@@ -13,8 +13,11 @@ module TlsIo (
 	
 	encryptRSA, generateKeys, updateHash, finishedHash, clientVerifySign,
 
+	encryptMessage,
 	encrypt, decrypt, bodyMac, calcMac,
 	updateSequenceNumber, updateSequenceNumberSmart,
+
+	CT.padd,
 ) where
 
 import Prelude hiding (read)
@@ -26,15 +29,13 @@ import "monads-tf" Control.Monad.State
 import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
-import Crypto.Cipher.AES
-import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
-import qualified MasterSecret as MS
+import qualified CryptoTools as CT
 import Basic
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
@@ -43,7 +44,7 @@ data TlsClientState cnt = TlsClientState {
 	tlssHandle			:: Handle,
 	tlssContentCache		:: [cnt],
 
-	tlssVersion			:: Maybe MS.MSVersion,
+	tlssVersion			:: Maybe CT.MSVersion,
 	tlssClientWriteCipherSuite	:: CipherSuite,
 	tlssServerWriteCipherSuite	:: CipherSuite,
 	tlssCachedCipherSuite		:: CipherSuite,
@@ -155,7 +156,7 @@ write dat = liftIO . flip BS.hPut dat =<< gets tlssHandle
 setVersion :: Version -> TlsIo cnt ()
 setVersion v = do
 	tlss <- get
-	case MS.versionToVersion v of
+	case CT.versionToVersion v of
 		Just v' -> put tlss { tlssVersion = Just v' }
 		_ -> throwError "setVersion: Not implemented"
 
@@ -192,12 +193,12 @@ encryptRSA pub pln = do
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do
 	mv <- gets tlssVersion
-	mcr <- gets $ (MS.ClientRandom <$>) . tlssClientRandom
-	msr <- gets $ (MS.ServerRandom <$>) . tlssServerRandom
+	mcr <- gets $ (CT.ClientRandom <$>) . tlssClientRandom
+	msr <- gets $ (CT.ServerRandom <$>) . tlssServerRandom
 	case (mv, mcr, msr) of
 		(Just v, Just cr, Just sr) -> do
-			let	ms = MS.generateMasterSecret v pms cr sr
-				ems = MS.generateKeyBlock v cr sr ms 72
+			let	ms = CT.generateMasterSecret v pms cr sr
+				ems = CT.generateKeyBlock v cr sr ms 72
 				[cwmk, swmk, cwk, swk] =
 					divide [ 20, 20, 16, 16 ] ems
 			tlss <- get
@@ -225,9 +226,9 @@ finishedHash partner = do
 	sha256 <- SHA256.finalize <$> gets tlssSha256Ctx
 	mv <- gets tlssVersion
 	case (mv, mms) of
-		(Just MS.TLS12, Just ms) -> return $ case partner of
-			Client -> MS.generateFinished MS.TLS12 True ms sha256
-			Server -> MS.generateFinished MS.TLS12 False ms sha256
+		(Just CT.TLS12, Just ms) -> return $ case partner of
+			Client -> CT.generateFinished CT.TLS12 True ms sha256
+			Server -> CT.generateFinished CT.TLS12 False ms sha256
 		_ -> throwError "finishedHash: No version / No master secrets"
 
 clientVerifySign :: RSA.PrivateKey -> TlsIo cnt BS.ByteString
@@ -238,15 +239,39 @@ clientVerifySign pkys = do
 		(RSA.digestToASN1 RSA.hashDescrSHA256 sha256)
 	return $ RSA.dp Nothing pkys hashed
 
+encryptMessage :: Partner ->
+	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+encryptMessage partner ct v msg = do
+	version <- gets tlssVersion
+	cs <- cipherSuite partner
+	mwk <- writeKey partner
+	sn <- sequenceNumber partner
+	mmk <- macKey partner
+	gen <- gets tlssRandomGen
+	case (version, cs, mwk, mmk) of
+		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just wk, Just mk)
+			-> do	let (ret, gen') =
+					CT.encryptMessage gen wk sn mk ct v msg
+				tlss <- get
+				put tlss{ tlssRandomGen = gen' }
+				return ret
+		(_, TLS_NULL_WITH_NULL_NULL, _, _) -> return msg
+		_ -> throwError $ "encrypt:\n" ++
+			"\tNo keys or not implemented cipher suite"
+
+
 encrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
 encrypt partner d = do
 	version <- gets tlssVersion
 	cs <- cipherSuite partner
 	wk <- writeKey partner
+	gen <- gets tlssRandomGen
+	tlss <- get
 	case (version, cs, wk) of
-		(Just MS.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) -> do
-			iv <- randomByteString 16
-			return $ iv `BS.append` encryptCBC (initAES key) iv d
+		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) -> do
+			let (ret, gen') = CT.encrypt gen key d
+			put tlss{ tlssRandomGen = gen' }
+			return ret
 		(_, TLS_NULL_WITH_NULL_NULL, _) -> return d
 		_ -> throwError $ "encrypt:\n" ++
 			"\tNo keys or not implemented cipher suite"
@@ -257,9 +282,8 @@ decrypt partner e = do
 	cs <- cipherSuite partner
 	wk <- writeKey partner
 	case (version, cs, wk) of
-		(Just MS.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) ->
-			return $ let (iv, eb) = BS.splitAt 16 e in
-				decryptCBC (initAES key) iv eb
+		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) ->
+			return $ CT.decrypt key e
 		(_, TLS_NULL_WITH_NULL_NULL, _) -> return e
 		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
@@ -271,8 +295,7 @@ bodyMac partner bmp = do
 		TLS_NULL_WITH_NULL_NULL -> return (bmp, "")
 		_ -> throwError "takeBodyMac: Bad cipher suite"
 	where
-	paddLen = fromIntegral (BS.last bmp) + 1
-	bm = BS.take (BS.length bmp - paddLen) bmp
+	bm = CT.unpadd bmp
 	tbm = BS.splitAt (BS.length bm - 20) bm
 
 calcMac :: Partner ->
@@ -285,14 +308,12 @@ calcMacCs :: CipherSuite -> Partner ->
 calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 	sn <- sequenceNumber partner
 	let inp = BS.concat [
-		word64ToByteString sn ,
 		contentTypeToByteString ct,
 		versionToByteString v,
 		lenBodyToByteString 2 body ]
 	mvmmk <- (,) <$> gets tlssVersion <*> macKey partner
 	case mvmmk of
-		(Just MS.TLS12, Just mk) ->
-			return $ MS.hmac SHA1.hash 64 mk inp
+		(Just CT.TLS12, Just mk) -> return $ CT.calcMac sn mk inp
 		_ -> throwError "calcMacCs: not supported version"
 calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
 calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"

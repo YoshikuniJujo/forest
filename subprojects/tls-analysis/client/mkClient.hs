@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE PackageImports, OverloadedStrings, ScopedTypeVariables #-}
 
 import System.Environment
 import Control.Applicative
@@ -11,19 +11,17 @@ import "crypto-random" Crypto.Random
 import Crypto.PubKey.RSA
 
 import Fragment
-import Content hiding (serverHelloDone)
+import Content
 import Basic
 
 main :: IO ()
 main = do
-	svpn : _ <- getArgs
+	(svpn :: Int) : _ <- mapM readIO =<< getArgs
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
 	ep <- createEntropyPool
-	sv <- connectTo "localhost"
-		(PortNumber $ fromIntegral (read svpn :: Int))
+	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
 	evalTlsIo (run pkys certChain) ep sv
-	return ()
 
 run :: PrivateKey -> CertificateChain -> TlsIo Content ()
 run pkys certChain = handshake pkys certChain >> getHttp
