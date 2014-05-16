@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetWhole, 
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet,
 ) where
 
 import Prelude hiding (read)
