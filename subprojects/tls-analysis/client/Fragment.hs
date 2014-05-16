@@ -1,23 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Fragment (
-	Fragment(..), RawFragment(..), ContentType(..), Version,
-	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
+	readFragment, writeFragment, fragmentUpdateHash,
+
+	TlsIo, evalTlsIo, liftIO, throwError, readCached, randomByteString,
+	Partner(..),
 
 	setVersion, setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
-	generateKeys,
 
-	finishedHash,
-	encryptRSA,
-
-	Partner(..),
-	TlsIo, evalTlsIo, liftIO, throwError,
+	encryptRSA, generateKeys, finishedHash, clientVerifySign,
 
 	updateSequenceNumberSmart,
-	randomByteString,
-	readCached,
-	clientVerifySign,
 ) where
 
 import Prelude hiding (read)
@@ -28,32 +22,18 @@ import qualified Data.ByteString as BS
 
 import TlsIo
 import Basic
-
+	
 readFragment :: TlsIo cnt Fragment
 readFragment = do
-	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody Server ct v ebody
-	case ct of
-		ContentTypeHandshake -> updateHash body
-		_ -> return ()
+	(ct, v, ebody) <- (,,) <$> readContentType <*> readVersion <*> readLen 2
+	body <- decryptBody ct v ebody
 	return $ Fragment ct v body
 
-readFragmentNoHash :: TlsIo cnt Fragment
-readFragmentNoHash = do
-	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody Server ct v ebody
-	return $ Fragment ct v body
-
-fragmentUpdateHash :: Fragment -> TlsIo cnt ()
-fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
-fragmentUpdateHash _ = return ()
-
-decryptBody :: Partner ->
-	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-decryptBody p ct v ebody = do
-	bm <- decrypt p ebody
-	(body, mac) <- bodyMac p bm
-	cmac <- calcMac p ct v body
+decryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+decryptBody ct v ebody = do
+	bm <- decrypt Server ebody
+	(body, mac) <- bodyMac Server bm
+	cmac <- calcMac Server ct v body
 	when (mac /= cmac) . throwError $
 		"decryptBody: Bad MAC value\n\t" ++
 		"ebody         : " ++ show ebody ++ "\n\t" ++
@@ -63,36 +43,24 @@ decryptBody p ct v ebody = do
 		"caluculate MAC: " ++ show cmac
 	return body
 
-encryptBody :: Partner ->
-	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-encryptBody p ct v body = do
-	mac <- calcMac p ct v body
-	updateSequenceNumber p
-	let	bm = body `BS.append` mac
-		padd = mkPadd 16 $ BS.length bm
-	encrypt p (bm `BS.append` padd)
-
-mkPadd :: Int -> Int -> BS.ByteString
-mkPadd bs len = let
-	plen = bs - ((len + 1) `mod` bs) in
-	BS.replicate (plen + 1) $ fromIntegral plen
-
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) = do
 	cs <- isCiphered Client
 	case cs of
 		True -> do
-			eb <- encryptBody Client ct v bs
-			writeRawFragment (RawFragment ct v eb)
-		False -> writeRawFragment (RawFragment ct v bs)
+			eb <- encryptBody ct v bs
+			writeContentType ct >> writeVersion v >> writeLen 2 eb
+		False -> writeContentType ct >> writeVersion v >> writeLen 2 bs
 
-readRawFragment :: TlsIo cnt RawFragment
-readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2
+encryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+encryptBody ct v body = do
+	mac <- calcMac Client ct v body
+	updateSequenceNumber Client
+	let	bm = body `BS.append` mac
+		plen = 16 - (BS.length bm + 1) `mod` 16
+		padd = BS.replicate (plen + 1) $ fromIntegral plen
+	encrypt Client (bm `BS.append` padd)
 
-writeRawFragment :: RawFragment -> TlsIo cnt ()
-writeRawFragment (RawFragment ct v bs) =
-	writeContentType ct >> writeVersion v >> writeLen 2 bs
-	
-data RawFragment
-	= RawFragment ContentType Version BS.ByteString
-	deriving Show
+fragmentUpdateHash :: Fragment -> TlsIo cnt ()
+fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
+fragmentUpdateHash _ = return ()

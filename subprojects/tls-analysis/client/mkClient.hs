@@ -172,7 +172,7 @@ readContent = do
 
 readContentList :: TlsIo Content [Content]
 readContentList =
-	(\(Right c) -> c) . fragmentToContent <$> readFragmentNoHash
+	(\(Right c) -> c) . fragmentToContent <$> readFragment
 
 writeContentList :: Partner -> [Content] -> TlsIo Content ()
 writeContentList partner cs = do
