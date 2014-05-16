@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetWhole, 
+	TlsServer, runOpen, tPut, tGetByte, tGet, tGetWhole, 
 ) where
 
 import Prelude hiding (read)
@@ -415,8 +415,19 @@ tGetByte ts = do
 				writeTVar (tlsBuffer ts) bs
 				return b
 			_ -> error "tGetByte: empty data"
-	else do	atomically $ case BS.uncons bfr of
+	else atomically $ case BS.uncons bfr of
 			Just (b, bs) -> do
 				writeTVar (tlsBuffer ts) bs
 				return b
 			_ -> error "tGetByte: never occur"
+
+tGet :: TlsServer -> Int -> IO BS.ByteString
+tGet ts n = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	if n <= BS.length bfr then atomically $ do
+		let (ret, bfr') = BS.splitAt n bfr
+		writeTVar (tlsBuffer ts) bfr'
+		return ret
+	else do	msg <- tGetWhole ts
+		atomically $ writeTVar (tlsBuffer ts) msg
+		(bfr `BS.append`) <$> tGet ts (n - BS.length bfr)

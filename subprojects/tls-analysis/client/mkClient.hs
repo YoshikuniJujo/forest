@@ -29,8 +29,12 @@ main = do
 		"Accept-Encoding: gzip, deflate\r\n" +++
 		"Connection: keep-alive\r\n" +++
 		"Cache-Control: max-age=0\r\n\r\n"
+	tGet tls 10 >>= print
+	tGet tls 10 >>= print
+	{-
 	tGetByte tls >>= print
 	tGetByte tls >>= print
 	tGetByte tls >>= print
 	tGetByte tls >>= print
+	-}
 --	tGetWhole tls >>= print
