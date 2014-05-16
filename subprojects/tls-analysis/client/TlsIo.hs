@@ -178,8 +178,8 @@ read n = do
 	r <- liftIO . flip BS.hGet n =<< gets tlssHandle
 	if BS.length r == n then return r else throwError $
 		"Basic.read:\n" ++
-			"\tactual  : " ++ show n ++ "byte\n" ++
-			"\texpected: " ++ show (BS.length r) ++ "byte\n"
+			"\texpected: " ++ show n ++ "byte\n" ++
+			"\tactural : " ++ show (BS.length r) ++ "byte\n"
 
 write :: BS.ByteString -> TlsIo cnt ()
 write dat = liftIO . flip BS.hPut dat =<< gets tlssHandle
