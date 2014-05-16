@@ -25,8 +25,18 @@ main = do
 	replicateM_ 12 . toTagEnd $ hGetChar h
 	tls <- openTlsServer [(undefined, undefined)] h
 	tPut tls $ beginDoc +++ stream
-	tGetContent tls >>= print
+	ioSource (tGetContent tls)
+		=$= parseBytes def
+		=$= runIO print
+		$$ sinkNull
+--	tGetContent tls >>= print
 --	sourceHandle h {- =$= parseBytes def -} =$= runIO BSC.putStrLn $$ sinkNull
+
+ioSource :: MonadIO m => IO a -> Source m a
+ioSource io = do
+	x <- liftIO io
+	yield x
+	ioSource io
 
 toTagEnd :: IO Char -> IO ()
 toTagEnd io = do

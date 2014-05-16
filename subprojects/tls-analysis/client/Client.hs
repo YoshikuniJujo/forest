@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
-module Client (openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent) where
+module Client (
+	TlsServer,
+	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent
+) where
 
 import System.IO
 import Control.Applicative
