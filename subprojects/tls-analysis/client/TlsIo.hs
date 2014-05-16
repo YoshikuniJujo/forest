@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetWhole, 
+	TlsServer, runOpen, tPut, tGetByte, tGetWhole, 
 ) where
 
 import Prelude hiding (read)
@@ -95,11 +95,12 @@ runOpen opn sv = do
 	tvgen <- atomically . newTVar $ tlssRandomGen tlss
 	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
 	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
+	tvbfr <- atomically $ newTVar ""
 	return TlsServer {
 		tlsVersion = fromJust $ tlssVersion tlss,
 		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
 		tlsHandle = tlssHandle tlss,
-		_tlsBuffer = undefined,
+		tlsBuffer = tvbfr,
 		tlsRandomGen = tvgen,
 		tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
 		tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
@@ -343,7 +344,7 @@ data TlsServer = TlsServer {
 	tlsVersion :: CT.MSVersion,
 	tlsCipherSuite :: CipherSuite,
 	tlsHandle :: Handle,
-	_tlsBuffer :: TVar BS.ByteString,
+	tlsBuffer :: TVar BS.ByteString,
 	tlsRandomGen :: TVar SystemRNG,
 	tlsClientWriteMacKey :: BS.ByteString,
 	tlsServerWriteMacKey :: BS.ByteString,
@@ -403,3 +404,19 @@ tGetWhole ts = case (vr, cs) of
 	mk = tlsServerWriteMacKey ts
 	tvsn = tlsServerSequenceNumber ts
 	dec sn = CT.decryptMessage key sn mk
+
+tGetByte :: TlsServer -> IO Word8
+tGetByte ts = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	if BS.null bfr then do
+		msg <- tGetWhole ts
+		atomically $ case BS.uncons msg of
+			Just (b, bs) -> do
+				writeTVar (tlsBuffer ts) bs
+				return b
+			_ -> error "tGetByte: empty data"
+	else do	atomically $ case BS.uncons bfr of
+			Just (b, bs) -> do
+				writeTVar (tlsBuffer ts) bs
+				return b
+			_ -> error "tGetByte: never occur"
