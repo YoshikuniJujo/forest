@@ -1,8 +1,7 @@
 {-# LANGUAGE PackageImports #-}
 
 module CryptoTools (
-	encryptMessage,
-	encrypt, decrypt, calcMac, padd, unpadd,
+	encryptMessage, decryptMessage,
 
 	MS.MSVersion(..), MS.versionToVersion,
 	MS.ClientRandom(..), MS.ServerRandom(..),
@@ -27,6 +26,18 @@ encryptMessage gen key sn mk ct v msg =
 		contentTypeToByteString ct,
 		versionToByteString v,
 		lenBodyToByteString 2 msg]
+
+decryptMessage :: BS.ByteString -> Word64 -> BS.ByteString ->
+	ContentType -> Version -> BS.ByteString -> Either String BS.ByteString
+decryptMessage key sn mk ct v enc = if mac == cmac then Right body else
+	Left "decryptMessage: bad MAC"
+	where
+	bm = unpadd $ decrypt key enc
+	(body, mac) = BS.splitAt (BS.length bm - 20) bm
+	cmac = calcMac sn mk $ BS.concat [
+		contentTypeToByteString ct,
+		versionToByteString v,
+		lenBodyToByteString 2 body]
 
 calcMac :: Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
 calcMac sn mk inp =

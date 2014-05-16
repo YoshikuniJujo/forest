@@ -13,11 +13,8 @@ module TlsIo (
 	
 	encryptRSA, generateKeys, updateHash, finishedHash, clientVerifySign,
 
-	encryptMessage,
-	encrypt, decrypt, bodyMac, calcMac,
+	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
-
-	CT.padd,
 ) where
 
 import Prelude hiding (read)
@@ -259,64 +256,22 @@ encryptMessage partner ct v msg = do
 		_ -> throwError $ "encrypt:\n" ++
 			"\tNo keys or not implemented cipher suite"
 
-
-encrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
-encrypt partner d = do
+decryptMessage :: Partner ->
+	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+decryptMessage partner ct v enc = do
 	version <- gets tlssVersion
 	cs <- cipherSuite partner
-	wk <- writeKey partner
-	gen <- gets tlssRandomGen
-	tlss <- get
-	case (version, cs, wk) of
-		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) -> do
-			let (ret, gen') = CT.encrypt gen key d
-			put tlss{ tlssRandomGen = gen' }
-			return ret
-		(_, TLS_NULL_WITH_NULL_NULL, _) -> return d
-		_ -> throwError $ "encrypt:\n" ++
-			"\tNo keys or not implemented cipher suite"
-
-decrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
-decrypt partner e = do
-	version <- gets tlssVersion
-	cs <- cipherSuite partner
-	wk <- writeKey partner
-	case (version, cs, wk) of
-		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) ->
-			return $ CT.decrypt key e
-		(_, TLS_NULL_WITH_NULL_NULL, _) -> return e
-		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
-
-bodyMac :: Partner -> BS.ByteString -> TlsIo cnt (BS.ByteString, BS.ByteString)
-bodyMac partner bmp = do
-	cs <- cipherSuite partner
-	case cs of
-		TLS_RSA_WITH_AES_128_CBC_SHA -> return tbm
-		TLS_NULL_WITH_NULL_NULL -> return (bmp, "")
-		_ -> throwError "takeBodyMac: Bad cipher suite"
-	where
-	bm = CT.unpadd bmp
-	tbm = BS.splitAt (BS.length bm - 20) bm
-
-calcMac :: Partner ->
-	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-calcMac partner ct v body =
-	(\cs -> calcMacCs cs partner ct v body) =<< cipherSuite partner
-
-calcMacCs :: CipherSuite -> Partner ->
-	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
+	mwk <- writeKey partner
 	sn <- sequenceNumber partner
-	let inp = BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
-		lenBodyToByteString 2 body ]
-	mvmmk <- (,) <$> gets tlssVersion <*> macKey partner
-	case mvmmk of
-		(Just CT.TLS12, Just mk) -> return $ CT.calcMac sn mk inp
-		_ -> throwError "calcMacCs: not supported version"
-calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
-calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"
+	mmk <- macKey partner
+	case (version, cs, mwk, mmk) of
+		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just mk)
+			-> do	let emsg = CT.decryptMessage key sn mk ct v enc
+				case emsg of
+					Right msg -> return msg
+					Left err -> throwError err
+		(_, TLS_NULL_WITH_NULL_NULL, _, _) -> return enc
+		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
 cipherSuite :: Partner -> TlsIo cnt CipherSuite
 cipherSuite partner = gets $ case partner of

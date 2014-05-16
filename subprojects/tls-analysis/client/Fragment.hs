@@ -17,7 +17,6 @@ module Fragment (
 import Prelude hiding (read)
 
 import Control.Applicative
-import Control.Monad
 import qualified Data.ByteString as BS
 
 import TlsIo
@@ -30,18 +29,7 @@ readFragment = do
 	return $ Fragment ct v body
 
 decryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-decryptBody ct v ebody = do
-	bm <- decrypt Server ebody
-	(body, mac) <- bodyMac Server bm
-	cmac <- calcMac Server ct v body
-	when (mac /= cmac) . throwError $
-		"decryptBody: Bad MAC value\n\t" ++
-		"ebody         : " ++ show ebody ++ "\n\t" ++
-		"bm            : " ++ show bm ++ "\n\t" ++
-		"body          : " ++ show body ++ "\n\t" ++
-		"given MAC     : " ++ show mac ++ "\n\t" ++
-		"caluculate MAC: " ++ show cmac
-	return body
+decryptBody = decryptMessage Server
 
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) = do
