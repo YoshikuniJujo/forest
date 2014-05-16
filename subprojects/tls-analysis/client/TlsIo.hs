@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet,
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
 ) where
 
 import Prelude hiding (read)
@@ -456,3 +456,10 @@ tGetLine ts = do
 		_ -> do	msg <- tGetWhole ts
 			atomically $ writeTVar (tlsBuffer ts) msg
 			(bfr `BS.append`) <$> tGetLine ts
+
+tGetContent :: TlsServer -> IO BS.ByteString
+tGetContent ts = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	if BS.null bfr then tGetWhole ts else atomically $ do
+		writeTVar (tlsBuffer ts) BS.empty
+		return bfr

@@ -13,7 +13,7 @@ module Fragment (
 
 	updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet,
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
 ) where
 
 import Prelude hiding (read)

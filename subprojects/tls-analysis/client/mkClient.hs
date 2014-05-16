@@ -30,16 +30,10 @@ main = do
 		"Connection: keep-alive\r\n" +++
 		"Cache-Control: max-age=0\r\n\r\n"
 	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
-	tGetLine tls >>= print
+--	tGetLine tls >>= print
+--	tGetLine tls >>= print
+--	tGetLine tls >>= print
+	tGetContent tls >>= print
 --	tGet tls 10 >>= print
 --	tGet tls 10 >>= print
 	{-
