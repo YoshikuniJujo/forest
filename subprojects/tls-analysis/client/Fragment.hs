@@ -14,6 +14,8 @@ module Fragment (
 	updateSequenceNumberSmart,
 
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
+
+	debugPrintKeys,
 ) where
 
 import Prelude hiding (read)

@@ -5,6 +5,7 @@ module Client (openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent) where
 import System.IO
 import Control.Applicative
 import Control.Monad
+import qualified Data.ByteString as BS
 import Data.X509
 import Crypto.PubKey.RSA
 
@@ -67,13 +68,17 @@ handshake pkys certChain = do
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
-	pms <- randomByteString 48
+	pms <- ("\x03\x03" `BS.append`) <$> randomByteString 46
 	epms' <- encryptRSA pub pms
+	liftIO $ putStrLn $ "Encrypted Pre Master Secret: " ++ show epms'
 	generateKeys pms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
 	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''
+	liftIO $ putStrLn $ "KEY EXCHANGE: " ++ show (contentToFragment cke'')
 	liftIO $ putStrLn "GENERATE KEYS"
+
+	debugPrintKeys
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --

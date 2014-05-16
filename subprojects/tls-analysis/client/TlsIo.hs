@@ -17,6 +17,8 @@ module TlsIo (
 	updateSequenceNumber, updateSequenceNumberSmart,
 
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
+
+	debugPrintKeys,
 ) where
 
 import Prelude hiding (read)
@@ -223,6 +225,7 @@ encryptRSA pub pln = do
 
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do
+	liftIO $ putStrLn $ "Pre Master Secret: " ++ show pms
 	mv <- gets tlssVersion
 	mcr <- gets $ (CT.ClientRandom <$>) . tlssClientRandom
 	msr <- gets $ (CT.ServerRandom <$>) . tlssServerRandom
@@ -276,6 +279,7 @@ encryptMessage partner ct v msg = do
 	version <- gets tlssVersion
 	cs <- cipherSuite partner
 	mwk <- writeKey partner
+	liftIO $ print mwk
 	sn <- sequenceNumber partner
 	mmk <- macKey partner
 	gen <- gets tlssRandomGen
@@ -463,3 +467,22 @@ tGetContent ts = do
 	if BS.null bfr then tGetWhole ts else atomically $ do
 		writeTVar (tlsBuffer ts) BS.empty
 		return bfr
+
+debugPrintKeys :: TlsIo cnt ()
+debugPrintKeys = do
+	Just ms <- gets tlssMasterSecret
+	Just cwmk <- gets tlssClientWriteMacKey
+	Just swmk <- gets tlssServerWriteMacKey
+	Just cwk <- gets tlssClientWriteKey
+	Just swk <- gets tlssServerWriteKey
+--	Just cwi <- gets tlssClientWriteIv
+--	Just swi <- gets tlssServerWriteIv
+	liftIO $ do
+		putStrLn "### GENERATED KEYS ###"
+		putStrLn $ "\tMaster Secret : " ++ show ms
+		putStrLn $ "\tClntWr MAC Key: " ++ showKeySingle cwmk
+		putStrLn $ "\tSrvrWr MAC Key: " ++ showKeySingle swmk
+		putStrLn $ "\tClntWr Key    : " ++ showKeySingle cwk
+		putStrLn $ "\tSrvrWr Key    : " ++ showKeySingle swk
+--		putStrLn $ "\tClntWr IV     : " ++ showKeySingle cwi
+--		putStrLn $ "\tSrvrWr IV     : " ++ showKeySingle swi

@@ -187,8 +187,11 @@ readContent partner = do
 	return c
 
 readContentList :: Partner -> TlsIO Content [Content]
-readContentList partner =
-	(\(Right c) -> c) . fragmentToContent <$> readFragmentNoHash partner
+readContentList partner = do
+	ret <- fragmentToContent <$> readFragmentNoHash partner
+	case ret of
+		Right r -> return r
+		Left err -> error err
 
 writeContentList :: Partner -> [Content] -> TlsIO Content ()
 writeContentList partner cs = do

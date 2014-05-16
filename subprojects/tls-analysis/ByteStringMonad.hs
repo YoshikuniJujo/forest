@@ -70,7 +70,11 @@ headBS = do
 take :: Int -> ByteStringM ByteString
 take len = do
 	(t, d) <- lift $ gets (BS.splitAt len)
-	if BS.length t /= len then throwError "ByteStringMonad.take" else do
+	if BS.length t /= len
+	then throwError $ "ByteStringMonad.take:\n" ++
+		"expected: " ++ show len ++ "bytes\n" ++
+		"actual  : " ++ show (BS.length t) ++ "bytes\n"
+	else do
 		lift $ put d
 		return t
 
