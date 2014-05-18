@@ -3,7 +3,8 @@ import System.Environment
 import Control.Concurrent
 import Control.Applicative
 import Control.Monad
--- import Data.List
+import Data.Maybe
+import Data.List
 import Data.Char
 import Network
 
@@ -16,7 +17,11 @@ main = do
 		(client, _, _) <- accept socket
 		_ <- forkIO $ do
 			h <- hGetHeader client
+			mapM putStrLn h
+			putStrLn ""
 			print $ parse h
+			putStrLn ""
+			mapM putStrLn . catMaybes . showRequest $ parse h
 			hPutStrLn client answer
 		return ()
 
@@ -42,18 +47,26 @@ answer = crlf [
  ]
 
 data Request
-	= Request Uri Version Get
+	= RequestGet Uri Version Get
 	| RequestRaw RequestType Uri Version [(String, String)]
 	deriving Show
+
+showRequest :: Request -> [Maybe String]
+showRequest (RequestGet uri vsn g) = [
+	Just $ "GET " ++ showUri uri ++ " HTTP/" ++ showVersion vsn,
+	("Host: " ++) . showHost <$> getHost g,
+	("User-Agent: " ++) . unwords . map showProduct <$> getUserAgent g,
+	("Accept: " ++) . intercalate "," . map showAccept <$> getAccept g
+ ]
 
 data Get = Get {
 	getHost :: Maybe Host,
 	getUserAgent :: Maybe [Product],
-	getAccept :: Maybe String,
-	getAcceptLanguage :: Maybe String,
-	getAcceptEncoding :: Maybe String,
-	getConnection :: Maybe String,
-	getCacheControl :: Maybe String,
+	getAccept :: Maybe [Accept],
+	getAcceptLanguage :: Maybe [AcceptLanguage],
+	getAcceptEncoding :: Maybe [AcceptEncoding],
+	getConnection :: Maybe [Connection],
+	getCacheControl :: Maybe [CacheControl],
 	getOthers :: [(String, String)]
  } deriving Show
 
@@ -64,7 +77,13 @@ data RequestType
 
 data Uri = Uri String deriving Show
 
+showUri :: Uri -> String
+showUri (Uri uri) = uri
+
 data Version = Version Int Int deriving Show
+
+showVersion :: Version -> String
+showVersion (Version vmjr vmnr) = show vmjr ++ "." ++ show vmnr
 
 parse :: [String] -> Request
 parse (h : t) = let
@@ -74,7 +93,7 @@ parse (h : t) = let
 	separate i = let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
 
 parseSep :: RequestType -> Uri -> Version -> [(String, String)] -> Request
-parseSep RequestTypeGet uri v kvs = Request uri v $ parseGet kvs
+parseSep RequestTypeGet uri v kvs = RequestGet uri v $ parseGet kvs
 parseSep rt uri v kvs = RequestRaw rt uri v kvs
 
 parseRequestLine :: String -> (RequestType, Uri, Version)
@@ -94,11 +113,14 @@ parseGet :: [(String, String)] -> Get
 parseGet kvs = Get {
 	getHost = parseHost <$> lookup "Host" kvs,
 	getUserAgent = map parseProduct . sepTkn <$> lookup "User-Agent" kvs,
-	getAccept = lookup "Accept" kvs,
-	getAcceptLanguage = lookup "Accept-Language" kvs,
-	getAcceptEncoding = lookup "Accept-Encoding" kvs,
-	getConnection = lookup "Connection" kvs,
-	getCacheControl = lookup "Cache-Control" kvs,
+	getAccept = map parseAccept . unlist <$> lookup "Accept" kvs,
+	getAcceptLanguage =
+		map parseAcceptLanguage . unlist <$> lookup "Accept-Language" kvs,
+	getAcceptEncoding =
+		map parseAcceptEncoding . unlist <$> lookup "Accept-Encoding" kvs,
+	getConnection = map parseConnection . unlist <$> lookup "Connection" kvs,
+	getCacheControl =
+		map parseCacheControl . unlist <$> lookup "Cache-Control" kvs,
 	getOthers = filter ((`notElem` getKeys) . fst) kvs
  }
 
@@ -124,10 +146,19 @@ parseHost src = case span (/= ':') src of
 	(h, ':' : p) -> Host h (Just $ read p)
 	(h, _) -> Host h Nothing
 
+showHost :: Host -> String
+showHost (Host h p) = h ++ (maybe "" ((':' :) . show) p)
+
 data Product
 	= Product String (Maybe String)
 	| ProductComment String
 	deriving Show
+
+showProduct :: Product -> String
+showProduct (Product pn mpv) = pn ++ case mpv of
+	Just v -> '/' : v
+	_ -> ""
+showProduct (ProductComment cm) = "(" ++ cm ++ ")"
 
 parseProduct :: String -> Product
 parseProduct ('(' : cm) = case last cm of
@@ -136,3 +167,73 @@ parseProduct ('(' : cm) = case last cm of
 parseProduct pnv = case span (/= '/') pnv of
 	(pn, '/' : v) -> Product pn $ Just v
 	_ -> Product pnv Nothing
+
+data Accept
+	= Accept (String, String) Qvalue
+	deriving Show
+
+showAccept :: Accept -> String
+showAccept (Accept (t, st) qv) = ((t ++ "/" ++ st) ++) $ case showQvalue qv of
+	"" -> ""
+	s -> ';' : s
+
+parseAccept :: String -> Accept
+parseAccept src = case span (/= ';') src of
+	(mr, ';' : qv) -> Accept (parseMediaRange mr) $ parseQvalue qv
+	(mr, "") -> Accept (parseMediaRange mr) $ Qvalue 1
+
+parseMediaRange :: String -> (String, String)
+parseMediaRange src = case span (/= '/') src of
+	(t, '/' : st) -> (t, st)
+	_ -> error "parseMediaRange: bad media range"
+
+unlist :: String -> [String]
+unlist "" = []
+unlist src = case span (/= ',') src of
+	(h, ',' : t) -> h : unlist (dropWhile isSpace t)
+	(h, "") -> [h]
+
+data Qvalue
+	= Qvalue Double
+	deriving Show
+
+showQvalue :: Qvalue -> String
+showQvalue (Qvalue 1.0) = ""
+showQvalue (Qvalue qv) = "q=" ++ show qv
+
+parseQvalue :: String -> Qvalue
+parseQvalue ('q' : '=' : qv) = Qvalue $ read qv
+
+data AcceptLanguage
+	= AcceptLanguage String Qvalue
+	deriving Show
+
+parseAcceptLanguage :: String -> AcceptLanguage
+parseAcceptLanguage src = case span (/= ';') src of
+	(al, ';' : qv) -> AcceptLanguage al $ parseQvalue qv
+	(al, "") -> AcceptLanguage al $ Qvalue 1
+
+data AcceptEncoding
+	= AcceptEncoding String Qvalue
+	deriving Show
+
+parseAcceptEncoding :: String -> AcceptEncoding
+parseAcceptEncoding src = case span (/= ';') src of
+	(ae, ';' : qv) -> AcceptEncoding ae $ parseQvalue qv
+	(ae, "") -> AcceptEncoding ae $ Qvalue 1
+
+data Connection
+	= Connection String
+	deriving Show
+
+parseConnection :: String -> Connection
+parseConnection src = Connection src
+
+data CacheControl
+	= MaxAge Int
+	| CacheControlRaw String
+	deriving Show
+
+parseCacheControl :: String -> CacheControl
+parseCacheControl ('m' : 'a' : 'x' : '-' : 'a' : 'g' : 'e' : '=' : ma) =
+	MaxAge $ read ma
