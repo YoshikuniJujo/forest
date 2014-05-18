@@ -1,9 +1,11 @@
 module HttpTypes (
 	Version(..),
---	Request(..), RequestType(..), Uri(..), Get(..), CacheControl(..),
+	Request(..), RequestType(..), Uri(..), Get(..), CacheControl(..),
+	Accept(..), AcceptLanguage(..), Qvalue(..),
+	Host(..), Product(..), Connection(..),
 	Response(..), StatusCode(..), ContentLength(..), ContentType(..),
 
-	parse, showRequest, showResponse,
+	parse, showRequest, showResponse
 ) where
 
 import Control.Applicative
@@ -30,7 +32,8 @@ showRequest (RequestGet uri vsn g) = [
 	("Connection: " ++) . intercalate "," .
 		map showConnection <$> getConnection g,
 	("Cache-Control: " ++) . intercalate "," .
-		map showCacheControl <$> getCacheControl g
+		map showCacheControl <$> getCacheControl g,
+	Just ""
  ]
 showRequest (RequestRaw _ _ _ _) = error "showRequest: not implemented"
 
