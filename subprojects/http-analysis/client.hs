@@ -9,15 +9,19 @@ import Network
 
 import HttpTypes
 
+import qualified Data.ByteString as BS
+
 main :: IO ()
 main = do
 	(pn :: Int) : _ <- mapM readIO =<< getArgs
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral pn
 	putStr $ request
 	hPutStrLn sv request
-	res <- hGetHeader sv
-	mapM_ putStrLn res
-	print $ parseResponse res
+	src <- hGetHeader sv
+	mapM_ putStrLn src
+	let res = parseResponse src
+	print res
+	BS.hGet sv (contentLength $ responseContentLength res) >>= print
 	putStrLn ""
 --	replicateM_ 15 $ hGetLine sv >>= print
 

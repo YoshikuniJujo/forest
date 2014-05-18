@@ -43,13 +43,18 @@ crlf :: [String] -> String
 crlf = concatMap (++ "\r\n")
 
 answer' :: String
-answer' = crlf . showResponse $ Response {
+answer' = crlf . catMaybes . showResponse $ Response {
 	responseVersion = Version 1 1,
 	responseStatusCode = OK,
 	responseDate = readTime defaultTimeLocale
 		"%a, %d %b %Y %H:%M:%S" "Wed, 07 May 2014 02:27:34",
 	responseContentLength = ContentLength 13,
 	responseContentType = ContentType ("text", "plain"),
+	responseServer = Nothing,
+	responseLastModified = Nothing,
+	responseETag = Nothing,
+	responseAcceptRanges = Nothing,
+	responseConnection = Nothing,
 	responseOthers = [],
 	responseBody = "Hello, world!"
  }

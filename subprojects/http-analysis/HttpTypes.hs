@@ -3,7 +3,8 @@ module HttpTypes (
 	Request(..), RequestType(..), Uri(..), Get(..), CacheControl(..),
 	Accept(..), AcceptLanguage(..), Qvalue(..),
 	Host(..), Product(..), Connection(..),
-	Response(..), StatusCode(..), ContentLength(..), ContentType(..),
+	Response(..), StatusCode(..), ContentLength(..), contentLength,
+	ContentType(..),
 
 	parse, parseResponse, showRequest, showResponse
 ) where
@@ -242,6 +243,11 @@ data Response = Response {
 	responseDate :: UTCTime,
 	responseContentLength :: ContentLength,
 	responseContentType :: ContentType,
+	responseServer :: Maybe [Product],
+	responseLastModified :: Maybe UTCTime,
+	responseETag :: Maybe String,
+	responseAcceptRanges :: Maybe String,
+	responseConnection :: Maybe String,
 	responseOthers :: [(String, String)],
 	responseBody :: String
  } deriving Show
@@ -251,6 +257,7 @@ parseResponse (h : t) = let (v, sc) = parseResponseLine h in
 	parseResponseSep v sc $ map separate t
 	where
 	separate i = let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
+parseResponse _ = error "parseResponse: bad response"
 
 parseResponseSep :: Version -> StatusCode -> [(String, String)] -> Response
 parseResponseSep v sc kvs = Response {
@@ -262,12 +269,20 @@ parseResponseSep v sc kvs = Response {
 		lookup "Content-Length" kvs,
 	responseContentType = parseContentType . fromJust $
 		lookup "Content-Type" kvs,
+	responseServer = map parseProduct . sepTkn <$> lookup "Server" kvs,
+	responseLastModified = readTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S" .
+		initN 4 <$> lookup "Last-Modified" kvs,
+	responseETag = lookup "ETag" kvs,
+	responseAcceptRanges = lookup "Accept-Ranges" kvs,
+	responseConnection = lookup "Connection" kvs,
 	responseOthers = filter ((`notElem` responseKeys) . fst) kvs,
 	responseBody = ""
  }
 
 responseKeys :: [String]
-responseKeys = ["Date", "Content-Length", "Content-Type"]
+responseKeys = [
+	"Date", "Content-Length", "Content-Type", "Server", "Last-Modified",
+	"ETag", "Accept-Ranges", "Connection" ]
 
 initN :: Int -> [a] -> [a]
 initN n lst = take (length lst - n) lst
@@ -281,19 +296,24 @@ parseStatusCode :: String -> StatusCode
 parseStatusCode ('2' : '0' : '0' : _) = OK
 parseStatusCode _ = error "parseStatusCode: bad status code"
 
-showResponse :: Response -> [String]
+showResponse :: Response -> [Maybe String]
 showResponse r =
-	[	showVersion (responseVersion r) ++ " " ++
+	[	Just $ showVersion (responseVersion r) ++ " " ++
 			showStatusCode (responseStatusCode r),
-		"Date: " ++ showTime (responseDate r),
-		"Content-Length: " ++
+		Just $ "Date: " ++ showTime (responseDate r),
+		Just $ "Content-Length: " ++
 			showContentLength (responseContentLength r),
-		"Content-Type: " ++
-			showContentType (responseContentType r)
+		Just $ "Content-Type: " ++
+			showContentType (responseContentType r),
+		("Server: " ++) . unwords . map showProduct <$> responseServer r,
+		("Last-Modified: " ++) . showTime <$> responseLastModified r,
+		("ETag: " ++) <$> responseETag r,
+		("Accept-Ranges: " ++) <$> responseAcceptRanges r,
+		("Connection: " ++) <$> responseConnection r
 	 ] ++
-	map (\(k, v) -> k ++ ": " ++ v) (responseOthers r) ++
-	[	"",
-		responseBody r
+	map (\(k, v) -> Just $ k ++ ": " ++ v) (responseOthers r) ++
+	[	Just "",
+		Just $ responseBody r
 	 ]
 
 data StatusCode = Continue | SwitchingProtocols | OK deriving Show
@@ -307,6 +327,9 @@ data ContentLength = ContentLength Int deriving Show
 
 showContentLength :: ContentLength -> String
 showContentLength (ContentLength n) = show n
+
+contentLength :: ContentLength -> Int
+contentLength (ContentLength n) = n
 
 data ContentType = ContentType (String, String) deriving Show
 
