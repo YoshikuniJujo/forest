@@ -1,11 +1,13 @@
-import System.IO
-import System.Environment
 import Control.Concurrent
 import Control.Applicative
 import Control.Monad
 import Data.Maybe
 import Data.List
 import Data.Char
+import Data.Time
+import System.IO
+import System.Environment
+import System.Locale
 import Network
 
 main :: IO ()
@@ -22,7 +24,7 @@ main = do
 			print $ parse h
 			putStrLn ""
 			mapM putStrLn . catMaybes . showRequest $ parse h
-			hPutStrLn client answer
+			hPutStrLn client answer'
 		return ()
 
 hGetHeader :: Handle -> IO [String]
@@ -36,16 +38,6 @@ dropCR s = if last s == '\r' then init s else s
 crlf :: [String] -> String
 crlf = concatMap (++ "\r\n")
 
-answer :: String
-answer = crlf [
-	"HTTP/1.1 200 OK",
-	"Date: Wed, 07 May 2014 02:27:34 GMT",
-	"Content-Length: 13",
-	"Content-Type: text/plain",
-	"",
-	"Hello, world!"
- ]
-
 data Request
 	= RequestGet Uri Version Get
 	| RequestRaw RequestType Uri Version [(String, String)]
@@ -53,10 +45,18 @@ data Request
 
 showRequest :: Request -> [Maybe String]
 showRequest (RequestGet uri vsn g) = [
-	Just $ "GET " ++ showUri uri ++ " HTTP/" ++ showVersion vsn,
+	Just $ "GET " ++ showUri uri ++ " " ++ showVersion vsn,
 	("Host: " ++) . showHost <$> getHost g,
 	("User-Agent: " ++) . unwords . map showProduct <$> getUserAgent g,
-	("Accept: " ++) . intercalate "," . map showAccept <$> getAccept g
+	("Accept: " ++) . intercalate "," . map showAccept <$> getAccept g,
+	("Accept-Language: " ++) . intercalate "," .
+		map showAcceptLanguage <$> getAcceptLanguage g,
+	("Accept-Encoding: " ++) . intercalate "," .
+		map showAcceptEncoding <$> getAcceptEncoding g,
+	("Connection: " ++) . intercalate "," .
+		map showConnection <$> getConnection g,
+	("Cache-Control: " ++) . intercalate "," .
+		map showCacheControl <$> getCacheControl g
  ]
 
 data Get = Get {
@@ -83,7 +83,7 @@ showUri (Uri uri) = uri
 data Version = Version Int Int deriving Show
 
 showVersion :: Version -> String
-showVersion (Version vmjr vmnr) = show vmjr ++ "." ++ show vmnr
+showVersion (Version vmjr vmnr) = "HTTP/" ++ show vmjr ++ "." ++ show vmnr
 
 parse :: [String] -> Request
 parse (h : t) = let
@@ -173,9 +173,7 @@ data Accept
 	deriving Show
 
 showAccept :: Accept -> String
-showAccept (Accept (t, st) qv) = ((t ++ "/" ++ st) ++) $ case showQvalue qv of
-	"" -> ""
-	s -> ';' : s
+showAccept (Accept (t, st) qv) = ((t ++ "/" ++ st) ++) $ showQvalue qv
 
 parseAccept :: String -> Accept
 parseAccept src = case span (/= ';') src of
@@ -199,7 +197,7 @@ data Qvalue
 
 showQvalue :: Qvalue -> String
 showQvalue (Qvalue 1.0) = ""
-showQvalue (Qvalue qv) = "q=" ++ show qv
+showQvalue (Qvalue qv) = ";q=" ++ show qv
 
 parseQvalue :: String -> Qvalue
 parseQvalue ('q' : '=' : qv) = Qvalue $ read qv
@@ -207,6 +205,9 @@ parseQvalue ('q' : '=' : qv) = Qvalue $ read qv
 data AcceptLanguage
 	= AcceptLanguage String Qvalue
 	deriving Show
+
+showAcceptLanguage :: AcceptLanguage -> String
+showAcceptLanguage (AcceptLanguage al qv) = al ++ showQvalue qv
 
 parseAcceptLanguage :: String -> AcceptLanguage
 parseAcceptLanguage src = case span (/= ';') src of
@@ -217,6 +218,9 @@ data AcceptEncoding
 	= AcceptEncoding String Qvalue
 	deriving Show
 
+showAcceptEncoding :: AcceptEncoding -> String
+showAcceptEncoding (AcceptEncoding ae qv) = ae ++ showQvalue qv
+
 parseAcceptEncoding :: String -> AcceptEncoding
 parseAcceptEncoding src = case span (/= ';') src of
 	(ae, ';' : qv) -> AcceptEncoding ae $ parseQvalue qv
@@ -226,6 +230,9 @@ data Connection
 	= Connection String
 	deriving Show
 
+showConnection :: Connection -> String
+showConnection (Connection c) = c
+
 parseConnection :: String -> Connection
 parseConnection src = Connection src
 
@@ -234,6 +241,78 @@ data CacheControl
 	| CacheControlRaw String
 	deriving Show
 
+showCacheControl :: CacheControl -> String
+showCacheControl (MaxAge ma) = "max-age=" ++ show ma
+showCacheControl (CacheControlRaw cc) = cc
+
 parseCacheControl :: String -> CacheControl
 parseCacheControl ('m' : 'a' : 'x' : '-' : 'a' : 'g' : 'e' : '=' : ma) =
 	MaxAge $ read ma
+parseCacheControl cc = CacheControlRaw cc
+
+answer :: String
+answer = crlf [
+	"HTTP/1.1 200 OK",
+	"Date: Wed, 07 May 2014 02:27:34 GMT",
+	"Content-Length: 13",
+	"Content-Type: text/plain",
+	"",
+	"Hello, world!"
+ ]
+
+answer' :: String
+answer' = crlf . showResponse $ Response {
+	responseVersion = Version 1 1,
+	responseStatusCode = OK,
+	responseDate = readTime defaultTimeLocale
+		"%a, %d %b %Y %H:%M:%S" "Wed, 07 May 2014 02:27:34",
+	responseContentLength = ContentLength 13,
+	responseContentType = ContentType ("text", "plain"),
+	responseOthers = [],
+	responseBody = "Hello, world!"
+ }
+
+data Response = Response {
+	responseVersion :: Version,
+	responseStatusCode :: StatusCode,
+	responseDate :: UTCTime,
+	responseContentLength :: ContentLength,
+	responseContentType :: ContentType,
+	responseOthers :: [(String, String)],
+	responseBody :: String
+ }
+
+showResponse :: Response -> [String]
+showResponse r =
+	[	showVersion (responseVersion r) ++ " " ++
+			showStatusCode (responseStatusCode r),
+		"Date: " ++ showTime (responseDate r),
+		"Content-Length: " ++
+			showContentLength (responseContentLength r),
+		"Content-Type: " ++
+			showContentType (responseContentType r)
+	 ] ++
+	map (\(k, v) -> k ++ ": " ++ v) (responseOthers r) ++
+	[	"",
+		responseBody r
+	 ]
+
+data StatusCode = Continue | SwitchingProtocols | OK deriving Show
+
+showStatusCode :: StatusCode -> String
+showStatusCode Continue = "100 Continue"
+showStatusCode SwitchingProtocols = "101 SwitchingProtocols"
+showStatusCode OK = "200 OK"
+
+data ContentLength = ContentLength Int deriving Show
+
+showContentLength :: ContentLength -> String
+showContentLength (ContentLength n) = show n
+
+data ContentType = ContentType (String, String) deriving Show
+
+showContentType :: ContentType -> String
+showContentType (ContentType (t, st)) = t ++ "/" ++ st
+
+showTime :: UTCTime -> String
+showTime = formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT"
