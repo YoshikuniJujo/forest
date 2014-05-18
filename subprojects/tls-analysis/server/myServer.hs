@@ -56,10 +56,9 @@ main = do
 		cid <- readIORef cidRef
 		modifyIORef cidRef succ
 		client <- ClientHandle . fst3 <$> accept scl
-		let server = ServerHandle undefined
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIO act ep cid client server pk) $
+			(\act -> evalTlsIO act ep cid client pk) $
 				run doClientCert certStore certChain pkys cid
 		return ()
 			
@@ -85,7 +84,7 @@ run dcc certStore certChain pkys cid = do
 		serverHello sr,
 		certificate certChain ] ++ if not dcc then [] else [
 			certificateRequest $ getDistinguishedNames certStore ]
-	writeContent Client serverHelloDone
+	writeContent serverHelloDone
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite cipherSuite
@@ -130,7 +129,7 @@ run dcc certStore certChain pkys cid = do
 	------------------------------------------
 	--      SERVER CHANGE CIPHER SPEC       --
 	------------------------------------------
-	writeFragment Client $ contentToFragment changeCipherSpec
+	writeFragment $ contentToFragment changeCipherSpec
 	flushCipherSuite Server
 	output Server cid "Change Cipher Spec" [show changeCipherSpec]
 
@@ -138,7 +137,7 @@ run dcc certStore certChain pkys cid = do
 	--      SERVER FINISHED                 --
 	------------------------------------------
 	sf <- finishedHash Server
-	writeFragment Client . contentToFragment $ finished sf
+	writeFragment . contentToFragment $ finished sf
 	output Server cid "Finished" [showHandshake $ finished sf]
 
 	------------------------------------------
@@ -151,7 +150,7 @@ run dcc certStore certChain pkys cid = do
 	------------------------------------------
 	--      SERVER CONTENT                  --
 	------------------------------------------
-	writeContent Client $ applicationData answer
+	writeContent $ applicationData answer
 	output Server cid "Contents"
 		[take 60 (show $ applicationData answer) ++ "..."]
 
@@ -201,13 +200,13 @@ writeContentList :: [Content] -> TlsIO Content ()
 writeContentList cs = do
 	let f = contentListToFragment cs
 	updateSequenceNumberSmart Client
-	writeFragment Client f
+	writeFragment f
 	fragmentUpdateHash f
 
-writeContent :: Partner -> Content -> TlsIO Content ()
-writeContent partner c = do
+writeContent :: Content -> TlsIO Content ()
+writeContent c = do
 	let f = contentToFragment c
-	writeFragment partner f
+	writeFragment f
 	fragmentUpdateHash f
 
 answer :: BS.ByteString

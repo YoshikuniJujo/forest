@@ -19,10 +19,11 @@ module Fragment (
 --	debugPrintKeys,
 	debugShowKeys,
 
-	ClientHandle(..), ServerHandle(..), Partner(..),
+	ClientHandle(..),
+	Partner(..),
 	TlsIO, evalTlsIO, liftIO,
 
-	throwError, opponent, showRandom,
+	throwError, showRandom,
 	handshakeMessages,
 	updateSequenceNumberSmart,
 	randomByteString,
@@ -40,7 +41,7 @@ import Basic
 
 readFragment :: Partner -> TlsIO cnt Fragment
 readFragment p = do
-	RawFragment ct v ebody <- readRawFragment p
+	RawFragment ct v ebody <- readRawFragment
 	body <- decryptBody p ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
@@ -53,7 +54,7 @@ readFragment p = do
 
 readFragmentNoHash :: Partner -> TlsIO cnt Fragment
 readFragmentNoHash p = do
-	RawFragment ct v ebody <- readRawFragment p
+	RawFragment ct v ebody <- readRawFragment
 	body <- decryptBody p ct v ebody
 	return $ Fragment ct v body
 
@@ -88,23 +89,22 @@ mkPadd bs len = let
 	plen = bs - ((len + 1) `mod` bs) in
 	BS.replicate (plen + 1) $ fromIntegral plen
 
-writeFragment :: Partner -> Fragment -> TlsIO cnt ()
-writeFragment p (Fragment ct v bs) = do
-	cs <- getCipherSuite (opponent p)
+writeFragment :: Fragment -> TlsIO cnt ()
+writeFragment (Fragment ct v bs) = do
+	cs <- getCipherSuite Server
 	case cs of
 		TLS_RSA_WITH_AES_128_CBC_SHA -> do
-			eb <- encryptBody (opponent p) ct v bs
-			writeRawFragment p (RawFragment ct v eb)
-		TLS_NULL_WITH_NULL_NULL -> writeRawFragment p (RawFragment ct v bs)
+			eb <- encryptBody Server ct v bs
+			writeRawFragment (RawFragment ct v eb)
+		TLS_NULL_WITH_NULL_NULL -> writeRawFragment (RawFragment ct v bs)
 		_ -> throwError "writeFragment: not implemented"
 
-readRawFragment :: Partner -> TlsIO cnt RawFragment
-readRawFragment p =
-	RawFragment <$> readContentType p <*> readVersion p <*> readLen p 2
+readRawFragment :: TlsIO cnt RawFragment
+readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2
 
-writeRawFragment :: Partner -> RawFragment -> TlsIO cnt ()
-writeRawFragment p (RawFragment ct v bs) =
-	writeContentType p ct >> writeVersion p v >> writeLen p 2 bs
+writeRawFragment :: RawFragment -> TlsIO cnt ()
+writeRawFragment (RawFragment ct v bs) =
+	writeContentType ct >> writeVersion v >> writeLen 2 bs
 	
 data RawFragment
 	= RawFragment ContentType Version ByteString

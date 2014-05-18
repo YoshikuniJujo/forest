@@ -3,7 +3,8 @@
 
 module TlsIO (
 	TlsIO, runTlsIO, evalTlsIO, initTlsState, liftIO,
-	Partner(..), opponent, ServerHandle(..), ClientHandle(..),
+	Partner(..),
+	ClientHandle(..),
 	read, write, readLen, writeLen,
 
 	readCached,
@@ -77,7 +78,6 @@ type TlsIO cnt = ErrorT String (StateT (TlsState cnt) IO)
 data TlsState cnt = TlsState {
 	tlssVersion :: Maybe MS.MSVersion,
 	tlssClientId :: Int,
-	tlssServerHandle :: Handle,
 	tlssClientHandle :: Handle,
 	tlssPrivateKey :: PrivateKey,
 	tlssClientWriteCipherSuite :: CipherSuite,
@@ -150,14 +150,12 @@ instance Show SHA1.Ctx where
 instance Show SHA256.Ctx where
 	show = show . SHA256.finalize
 
-data ServerHandle = ServerHandle Handle deriving Show
 data ClientHandle = ClientHandle Handle deriving Show
 
-initTlsState :: EntropyPool -> Int -> ClientHandle -> ServerHandle -> PrivateKey -> TlsState cnt
-initTlsState ep cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
+initTlsState :: EntropyPool -> Int -> ClientHandle -> PrivateKey -> TlsState cnt
+initTlsState ep cid (ClientHandle cl) pk = TlsState {
 	tlssVersion = Nothing,
 	tlssClientId = cid,
-	tlssServerHandle = sv,
 	tlssClientHandle = cl,
 	tlssPrivateKey = pk,
 	tlssClientWriteCipherSuite = TLS_NULL_WITH_NULL_NULL,
@@ -187,47 +185,39 @@ initTlsState ep cid (ClientHandle cl) (ServerHandle sv) pk = TlsState {
 
 data Partner = Server | Client deriving (Show, Eq)
 
-opponent :: Partner -> Partner
-opponent Server = Client
-opponent Client = Server
-
-handle :: Partner -> TlsState cnt -> Handle
-handle Server = tlssServerHandle
-handle Client = tlssClientHandle
-
 runTlsIO :: TlsIO cnt a -> TlsState cnt -> IO (Either String a, TlsState cnt)
 runTlsIO io ts = runErrorT io `runStateT` ts
 
-evalTlsIO :: TlsIO cnt a -> EntropyPool -> Int -> ClientHandle -> ServerHandle -> PrivateKey -> IO a
-evalTlsIO io ep cid cl sv pk = do
-	ret <- runErrorT io `evalStateT` initTlsState ep cid cl sv pk
+evalTlsIO :: TlsIO cnt a -> EntropyPool -> Int -> ClientHandle -> PrivateKey -> IO a
+evalTlsIO io ep cid cl pk = do
+	ret <- runErrorT io `evalStateT` initTlsState ep cid cl pk
 	case ret of
 		Right r -> return r
 		Left err -> error err
 
-read :: Partner -> Int -> TlsIO cnt ByteString
-read partner n = do
-	h <- gets $ handle partner
+read :: Int -> TlsIO cnt ByteString
+read n = do
+	h <- gets tlssClientHandle
 	r <- liftIO $ BS.hGet h n
 	if BS.length r == n
 		then return r
 		else throwError $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
-write :: Partner -> ByteString -> TlsIO cnt ()
-write partner dat = do
-	h <- gets $ handle partner
+write :: ByteString -> TlsIO cnt ()
+write dat = do
+	h <- gets tlssClientHandle
 	liftIO $ BS.hPut h dat
 
-readLen :: Partner -> Int -> TlsIO cnt ByteString
-readLen partner n = do
-	len <- read partner n
-	read partner $ byteStringToInt len
+readLen :: Int -> TlsIO cnt ByteString
+readLen n = do
+	len <- read n
+	read $ byteStringToInt len
 
-writeLen :: Partner -> Int -> ByteString -> TlsIO cnt ()
-writeLen partner n bs = do
-	write partner . intToByteString n $ BS.length bs
-	write partner bs
+writeLen :: Int -> ByteString -> TlsIO cnt ()
+writeLen n bs = do
+	write . intToByteString n $ BS.length bs
+	write bs
 
 decryptRSA :: ByteString -> TlsIO cnt ByteString
 decryptRSA e = do
@@ -509,17 +499,17 @@ calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
 calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"
 
-readVersion :: Partner -> TlsIO cnt Version
-readVersion partner = byteStringToVersion <$> read partner 2
+readVersion :: TlsIO cnt Version
+readVersion = byteStringToVersion <$> read 2
 
-writeVersion :: Partner -> Version -> TlsIO cnt ()
-writeVersion partner v = write partner $ versionToByteString v
+writeVersion :: Version -> TlsIO cnt ()
+writeVersion v = write $ versionToByteString v
 
-readContentType :: Partner -> TlsIO cnt ContentType
-readContentType partner = byteStringToContentType <$> read partner 1
+readContentType :: TlsIO cnt ContentType
+readContentType = byteStringToContentType <$> read 1
 
-writeContentType :: Partner -> ContentType -> TlsIO cnt ()
-writeContentType partner ct = write partner $ contentTypeToByteString ct
+writeContentType :: ContentType -> TlsIO cnt ()
+writeContentType ct = write $ contentTypeToByteString ct
 
 getCipherSuite :: Partner -> TlsIO cnt CipherSuite
 getCipherSuite partner = gets $ case partner of
