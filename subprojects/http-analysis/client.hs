@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
+import Control.Applicative
 import Control.Monad
 import Data.Maybe
 import System.IO
@@ -14,7 +15,19 @@ main = do
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral pn
 	putStr $ request
 	hPutStrLn sv request
-	replicateM_ 15 $ hGetLine sv >>= print
+	res <- hGetHeader sv
+	mapM_ putStrLn res
+	print $ parseResponse res
+	putStrLn ""
+--	replicateM_ 15 $ hGetLine sv >>= print
+
+hGetHeader :: Handle -> IO [String]
+hGetHeader h = do
+	l <- dropCR <$> hGetLine h
+	if (null l) then return [] else (l :) <$> hGetHeader h
+
+dropCR :: String -> String
+dropCR s = if last s == '\r' then init s else s
 
 crlf :: [String] -> String
 crlf = concatMap (++ "\r\n")

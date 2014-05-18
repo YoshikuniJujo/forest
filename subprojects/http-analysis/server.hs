@@ -26,13 +26,15 @@ main = do
 			print $ parse h
 			putStrLn ""
 			mapM_ putStrLn . catMaybes . showRequest $ parse h
+			putStrLn ""
+			putStr answer'
 			hPutStrLn client answer'
 		return ()
 
 hGetHeader :: Handle -> IO [String]
 hGetHeader h = do
 	l <- dropCR <$> hGetLine h
-	if (null l ) then return [] else (l :) <$> hGetHeader h
+	if (null l) then return [] else (l :) <$> hGetHeader h
 
 dropCR :: String -> String
 dropCR s = if last s == '\r' then init s else s

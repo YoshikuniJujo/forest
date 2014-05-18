@@ -5,10 +5,11 @@ module HttpTypes (
 	Host(..), Product(..), Connection(..),
 	Response(..), StatusCode(..), ContentLength(..), ContentType(..),
 
-	parse, showRequest, showResponse
+	parse, parseResponse, showRequest, showResponse
 ) where
 
 import Control.Applicative
+import Data.Maybe
 import Data.List
 import Data.Char
 import Data.Time
@@ -243,7 +244,42 @@ data Response = Response {
 	responseContentType :: ContentType,
 	responseOthers :: [(String, String)],
 	responseBody :: String
+ } deriving Show
+
+parseResponse :: [String] -> Response
+parseResponse (h : t) = let (v, sc) = parseResponseLine h in
+	parseResponseSep v sc $ map separate t
+	where
+	separate i = let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
+
+parseResponseSep :: Version -> StatusCode -> [(String, String)] -> Response
+parseResponseSep v sc kvs = Response {
+	responseVersion = v,
+	responseStatusCode = sc,
+	responseDate = readTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S" .
+		initN 4 . fromJust $ lookup "Date" kvs,
+	responseContentLength = ContentLength . read . fromJust $
+		lookup "Content-Length" kvs,
+	responseContentType = parseContentType . fromJust $
+		lookup "Content-Type" kvs,
+	responseOthers = filter ((`notElem` responseKeys) . fst) kvs,
+	responseBody = ""
  }
+
+responseKeys :: [String]
+responseKeys = ["Date", "Content-Length", "Content-Type"]
+
+initN :: Int -> [a] -> [a]
+initN n lst = take (length lst - n) lst
+
+parseResponseLine :: String -> (Version, StatusCode)
+parseResponseLine src = case span (/= ' ') src of
+	(vs, ' ' : scs) -> (parseVersion vs, parseStatusCode scs)
+	_ -> error "parseResponseLine: bad response line"
+
+parseStatusCode :: String -> StatusCode
+parseStatusCode ('2' : '0' : '0' : _) = OK
+parseStatusCode _ = error "parseStatusCode: bad status code"
 
 showResponse :: Response -> [String]
 showResponse r =
@@ -273,6 +309,11 @@ showContentLength :: ContentLength -> String
 showContentLength (ContentLength n) = show n
 
 data ContentType = ContentType (String, String) deriving Show
+
+parseContentType :: String -> ContentType
+parseContentType ct = case span (/= '/') ct of
+	(t, '/' : st) -> ContentType (t, st)
+	_ -> error "parseContentType: bad Content-Type"
 
 showContentType :: ContentType -> String
 showContentType (ContentType (t, st)) = t ++ "/" ++ st
