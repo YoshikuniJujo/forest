@@ -19,7 +19,6 @@ module Fragment (
 --	debugPrintKeys,
 --	debugShowKeys,
 
-	ClientHandle(..),
 	Partner(..),
 	TlsIo, evalTlsIo, liftIO,
 
@@ -59,7 +58,7 @@ fragmentUpdateHash _ = return ()
 
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) =
-	writeRawFragment . RawFragment ct v =<< encryptBody Server ct v bs
+	writeRawFragment . RawFragment ct v =<< encryptBody ct v bs
 
 readRawFragment :: TlsIo cnt RawFragment
 readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2

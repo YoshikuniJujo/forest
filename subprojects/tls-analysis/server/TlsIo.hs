@@ -3,7 +3,7 @@
 
 module TlsIo (
 	TlsIo, evalTlsIo, liftIO, throwError, readCached, randomByteString,
-	Partner(..), ClientHandle(..),
+	Partner(..),
 
 	readContentType, writeContentType, readVersion, writeVersion,
 	readLen, writeLen,
@@ -62,8 +62,8 @@ data TlsState cnt = TlsState {
 	tlssServerSequenceNumber :: Word64
  }
 
-initTlsState :: EntropyPool -> ClientHandle -> RSA.PrivateKey -> TlsState cnt
-initTlsState ep (ClientHandle cl) pk = TlsState {
+initTlsState :: EntropyPool -> Handle -> RSA.PrivateKey -> TlsState cnt
+initTlsState ep cl pk = TlsState {
 	tlssClientHandle = cl,
 	tlssContentCache = [],
 
@@ -87,9 +87,7 @@ initTlsState ep (ClientHandle cl) pk = TlsState {
 	tlssServerSequenceNumber = 0
  }
 
-data Partner = Server | Client deriving (Show, Eq)
-
-evalTlsIo :: TlsIo cnt a -> EntropyPool -> ClientHandle -> RSA.PrivateKey -> IO a
+evalTlsIo :: TlsIo cnt a -> EntropyPool -> Handle -> RSA.PrivateKey -> IO a
 evalTlsIo io ep cl pk = do
 	ret <- runErrorT io `evalStateT` initTlsState ep cl pk
 	case ret of
@@ -108,48 +106,50 @@ readCached rd = do
 			put tlss { tlssContentCache = cch' }
 			return r
 
-setVersion :: MS.Version -> TlsIo cnt ()
-setVersion v = do
-	tlss <- get
-	case MS.versionToVersion v of
-		Just v' -> put tlss { tlssVersion = Just v' }
-		_ -> throwError "setVersion: Not implemented"
+randomByteString :: Int -> TlsIo cnt BS.ByteString
+randomByteString len = do
+	tlss@TlsState{ tlssRandomGen = gen } <- get
+	let (r, gen') = cprgGenerate len gen
+	put tlss { tlssRandomGen = gen' }
+	return r
 
-instance Show SHA256.Ctx where
-	show = show . SHA256.finalize
+data Partner = Server | Client deriving (Show, Eq)
 
-data ClientHandle = ClientHandle Handle deriving Show
+readContentType :: TlsIo cnt ContentType
+readContentType = byteStringToContentType <$> read 1
+
+writeContentType :: ContentType -> TlsIo cnt ()
+writeContentType = write . contentTypeToByteString
+
+readVersion :: TlsIo cnt Version
+readVersion = byteStringToVersion <$> read 2
+
+writeVersion :: Version -> TlsIo cnt ()
+writeVersion = write . versionToByteString
+
+readLen :: Int -> TlsIo cnt BS.ByteString
+readLen n = read . byteStringToInt =<< read n
+
+writeLen :: Int -> BS.ByteString -> TlsIo cnt ()
+writeLen n bs = write (intToByteString n $ BS.length bs) >> write bs
 
 read :: Int -> TlsIo cnt BS.ByteString
 read n = do
-	h <- gets tlssClientHandle
-	r <- liftIO $ BS.hGet h n
+	r <- liftIO . flip BS.hGet n =<< gets tlssClientHandle
 	if BS.length r == n
 		then return r
 		else throwError $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
 write :: BS.ByteString -> TlsIo cnt ()
-write dat = do
-	h <- gets tlssClientHandle
-	liftIO $ BS.hPut h dat
+write dat = liftIO . flip BS.hPut dat =<< gets tlssClientHandle
 
-readLen :: Int -> TlsIo cnt BS.ByteString
-readLen n = do
-	len <- read n
-	read $ byteStringToInt len
-
-writeLen :: Int -> BS.ByteString -> TlsIo cnt ()
-writeLen n bs = do
-	write . intToByteString n $ BS.length bs
-	write bs
-
-decryptRSA :: BS.ByteString -> TlsIo cnt BS.ByteString
-decryptRSA e = do
-	pk <- gets tlssPrivateKey
-	case RSA.decrypt Nothing pk e of
-		Right d -> return d
-		Left err -> throwError $ show err
+setVersion :: MS.Version -> TlsIo cnt ()
+setVersion v = do
+	tlss <- get
+	case MS.versionToVersion v of
+		Just v' -> put tlss { tlssVersion = Just v' }
+		_ -> throwError "setVersion: Not implemented"
 
 setClientRandom, setServerRandom :: Random -> TlsIo cnt ()
 setClientRandom (Random cr) = do
@@ -173,32 +173,76 @@ flushCipherSuite p = do
 			Server -> put tlss { tlssServerWriteCipherSuite = cs }
 		_ -> throwError "No cached cipher suites"
 
+decryptRSA :: BS.ByteString -> TlsIo cnt BS.ByteString
+decryptRSA e = do
+	pk <- gets tlssPrivateKey
+	case RSA.decrypt Nothing pk e of
+		Right d -> return d
+		Left err -> throwError $ show err
+
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do
-	mv <- gets tlssVersion
-	mcr <- gets $ (MS.ClientRandom <$>) . tlssClientRandom
-	msr <- gets $ (MS.ServerRandom <$>) . tlssServerRandom
-	case (mv, mcr, msr) of
+	tlss@TlsState{
+		tlssVersion = mv,
+		tlssClientRandom = mcr,
+		tlssServerRandom = msr } <- get
+	case (mv, MS.ClientRandom <$> mcr, MS.ServerRandom <$> msr) of
 		(Just v, Just cr, Just sr) -> do
 			let	ms = MS.generateMasterSecret v pms cr sr
-				ems = MS.generateKeyBlock v cr sr ms 104
-				[cwmk, swmk, cwk, swk] =
-					divide [20, 20, 16, 16] ems
-			tlss <- get
+				ems = MS.generateKeyBlock v cr sr ms 72
+				[cwmk, swmk, cwk, swk] = divide [20, 20, 16, 16] ems
 			put $ tlss {
 				tlssMasterSecret = Just ms,
 				tlssClientWriteMacKey = Just cwmk,
 				tlssServerWriteMacKey = Just swmk,
 				tlssClientWriteKey = Just cwk,
-				tlssServerWriteKey = Just swk
-			 }
+				tlssServerWriteKey = Just swk }
 		_ -> throwError "No client random / No server random"
+	where
+	divide [] _ = []
+	divide (n : ns) bs
+		| bs == BS.empty = []
+		| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
 
-divide :: [Int] -> BS.ByteString -> [BS.ByteString]
-divide [] _ = []
-divide (n : ns) bs
-	| bs == BS.empty = []
-	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
+updateHash :: BS.ByteString -> TlsIo cnt ()
+updateHash bs = do
+	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
+	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
+
+finishedHash :: Partner -> TlsIo cnt BS.ByteString
+finishedHash partner = do
+	mms <- gets tlssMasterSecret
+	sha256 <- SHA256.finalize <$> gets tlssSha256Ctx
+	mv <- gets tlssVersion
+	case (mv, mms) of
+		(Just MS.TLS12, Just ms) -> return $
+			MS.generateFinished MS.TLS12 (partner == Client) ms sha256
+		_ -> throwError "No master secrets"
+
+clientVerifyHash :: RSA.PublicKey -> TlsIo cnt BS.ByteString
+clientVerifyHash pub = do
+	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
+	let Right hashed = RSA.padSignature (RSA.public_size pub) $
+		RSA.digestToASN1 RSA.hashDescrSHA256 sha256
+	return hashed
+
+encryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+encryptBody ct v body = do
+	cs <- getCipherSuite Server
+	case cs of
+		TLS_RSA_WITH_AES_128_CBC_SHA -> do
+			mac <- calcMac Server ct v body
+			_ <- updateSequenceNumber Server
+			let	bm = body `BS.append` mac
+				padd = mkPadd 16 $ BS.length bm
+			encrypt Server (bm `BS.append` padd)
+		TLS_NULL_WITH_NULL_NULL -> return body
+		_ -> throwError "writeFragment: not implemented"
+
+mkPadd :: Int -> Int -> BS.ByteString
+mkPadd bs len = let
+	plen = bs - ((len + 1) `mod` bs) in
+	BS.replicate (plen + 1) $ fromIntegral plen
 
 decrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
 decrypt partner e = do
@@ -249,30 +293,6 @@ bodyMac :: BS.ByteString -> (BS.ByteString, BS.ByteString)
 bodyMac bs = let
 	(bm, _) = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs in
 	BS.splitAt (BS.length bm - 20) bm
-
-updateHash :: BS.ByteString -> TlsIo cnt ()
-updateHash bs = do
-	sha256 <- gets tlssSha256Ctx
---	messages <- gets tlssHandshakeMessages
-	tlss <- get
-	put tlss {
-		tlssSha256Ctx = SHA256.update sha256 bs
---		tlssHandshakeMessages = messages `BS.append` bs
-	 }
-
-finishedHash :: Partner -> TlsIo cnt BS.ByteString
-finishedHash partner = do
-	mms <- gets tlssMasterSecret
-	sha256 <- SHA256.finalize <$> gets tlssSha256Ctx
-	version <- do
-		mv <- gets tlssVersion
-		case mv of
-			Just v -> return v
-			_ -> throwError "finishedHash: no version"
-	case (version, mms) of
-		(MS.TLS12, Just ms) -> return $
-			MS.generateFinished version (partner == Client) ms sha256
-		_ -> throwError "No master secrets"
 
 getSequenceNumber :: Partner -> TlsIo cnt Word64
 getSequenceNumber partner = gets $ case partner of
@@ -328,55 +348,10 @@ calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
 calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"
 
-readVersion :: TlsIo cnt Version
-readVersion = byteStringToVersion <$> read 2
-
-writeVersion :: Version -> TlsIo cnt ()
-writeVersion v = write $ versionToByteString v
-
-readContentType :: TlsIo cnt ContentType
-readContentType = byteStringToContentType <$> read 1
-
-writeContentType :: ContentType -> TlsIo cnt ()
-writeContentType ct = write $ contentTypeToByteString ct
-
 getCipherSuite :: Partner -> TlsIo cnt CipherSuite
 getCipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
-
-randomByteString :: Int -> TlsIo cnt BS.ByteString
-randomByteString len = do
-	gen <- gets tlssRandomGen
-	let (r, gen') = cprgGenerate len gen
-	tlss <- get
-	put tlss { tlssRandomGen = gen' }
-	return r
-
-clientVerifyHash :: RSA.PublicKey -> TlsIo cnt BS.ByteString
-clientVerifyHash pub = do
-	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
-	let Right hashed = RSA.padSignature (RSA.public_size pub) $
-		RSA.digestToASN1 RSA.hashDescrSHA256 sha256
-	return hashed
-
-encryptBody :: Partner -> ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-encryptBody p ct v body = do
-	cs <- getCipherSuite Server
-	case cs of
-		TLS_RSA_WITH_AES_128_CBC_SHA -> do
-			mac <- calcMac p ct v body
-			_ <- updateSequenceNumber p
-			let	bm = body `BS.append` mac
-				padd = mkPadd 16 $ BS.length bm
-			encrypt p (bm `BS.append` padd)
-		TLS_NULL_WITH_NULL_NULL -> return body
-		_ -> throwError "writeFragment: not implemented"
-
-mkPadd :: Int -> Int -> BS.ByteString
-mkPadd bs len = let
-	plen = bs - ((len + 1) `mod` bs) in
-	BS.replicate (plen + 1) $ fromIntegral plen
 
 decryptBody :: Partner -> ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptBody p ct v ebody = do

@@ -53,7 +53,7 @@ main = do
 	forever $ do
 		cid <- readIORef cidRef
 		modifyIORef cidRef succ
-		client <- ClientHandle . fst3 <$> accept scl
+		client <- fst3 <$> accept scl
 		_ <- forkIO $ do
 			ep <- createEntropyPool
 			(\act -> evalTlsIo act ep client pk) $
