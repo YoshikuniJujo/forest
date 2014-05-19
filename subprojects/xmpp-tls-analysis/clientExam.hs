@@ -4,15 +4,11 @@ import Prelude hiding (drop, filter)
 
 import System.IO
 import System.Exit
-import Control.Concurrent (forkIO)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Conduit
 import Data.Conduit.List
 import qualified Data.Conduit.List as Cd
-import Data.Conduit.Binary hiding (drop, isolate)
-import Data.Conduit.Network
-import Data.Streaming.Network
 import Text.XML.Stream.Parse
 import Network
 
@@ -25,7 +21,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import qualified Data.ByteString.Base64 as B64
 
-import Client
+import TlsClient
 
 main :: IO ()
 main = do
@@ -40,10 +36,17 @@ main = do
 		=$= checkEnd h
 		=$= eventToElementAll
 		=$= Cd.map elementToStanza
-		=$= runIO (responseToServer tls)
+		=$= runIO (responseToServer tls "hello")
 		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
 		$$ sinkNull
 	putStrLn "Finished"
+
+{-
+connectSendMsg :: HandleLike h => h -> T.Text -> IO ()
+connectSendMsg sv msg = do
+	hlPut sv $ beginDoc +++ stream
+	ioSource (hlGetContent
+	-}
 
 starttls :: String
 starttls = "<starttls xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"/>"
@@ -75,12 +78,12 @@ checkEnd h = do
 			checkEnd h
 		_ -> return ()
 
-responseToServer :: TlsServer -> Stanza -> IO ()
-responseToServer sv (StanzaMechanismList ms)
+responseToServer :: TlsServer -> T.Text -> Stanza -> IO ()
+responseToServer sv _ (StanzaMechanismList ms)
 	| DigestMd5 `elem` ms = tPut sv . showElement . stanzaToElement $
 		StanzaMechanism DigestMd5
 	| otherwise = error "responseToServer: Server has no DIGEST-MD5"
-responseToServer sv (StanzaChallenge ch@(Challenge {})) = let
+responseToServer sv _ (StanzaChallenge ch@(Challenge {})) = let
 	rlm = realm ch
 	nnc = nonce ch
 	qp = qop ch
@@ -99,10 +102,10 @@ responseToServer sv (StanzaChallenge ch@(Challenge {})) = let
 				rCharset = cs
 			 }
 		_ -> error "responseToServer: not implemented"
-responseToServer sv (StanzaChallenge (ChallengeRspauth _)) =
+responseToServer sv _ (StanzaChallenge (ChallengeRspauth _)) =
 	tPut sv . showElement . stanzaToElement $ StanzaResponse ResponseNull
-responseToServer sv StanzaSuccess = tPut sv $ beginDoc +++ stream
-responseToServer sv (StanzaFeatureList fl)
+responseToServer sv _ StanzaSuccess = tPut sv $ beginDoc +++ stream
+responseToServer sv _ (StanzaFeatureList fl)
 	| FeatureBind Required `elem` fl = tPut sv . showElement . stanzaToElement $
 		StanzaIq {
 			iqId = "_xmpp_bind1",
@@ -110,14 +113,14 @@ responseToServer sv (StanzaFeatureList fl)
 			iqTo = Nothing,
 			iqBody = IqBodyBind [Required, BindResource "profanity"]
 		 }
-responseToServer sv (StanzaIq { iqId = "_xmpp_bind1" }) =
+responseToServer sv _ (StanzaIq { iqId = "_xmpp_bind1" }) =
 	tPut sv . showElement . stanzaToElement $ StanzaIq {
 		iqId = "_xmpp_session1",
 		iqType = IqSet,
 		iqTo = Nothing,
 		iqBody = IqBodySession
 	 }
-responseToServer sv (StanzaIq { iqId = "_xmpp_session1" }) = do
+responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
 	tPut sv . showElement . stanzaToElement $ StanzaMessage {
 		messageType = "chat",
 		messageId = "yoshikuni1",
@@ -125,12 +128,12 @@ responseToServer sv (StanzaIq { iqId = "_xmpp_session1" }) = do
 		messageTo = Just "yoshio@localhost",
 		messageBody = [NodeElement $
 			Element (Name "body" (Just "jabber:client") Nothing) [] [
-				NodeContent $ ContentText "yoshio"
+				NodeContent $ ContentText msg
 			 ]
 		 ]
 	 }
 	tPut sv "</stream:stream>"
-responseToServer _ _ = return ()
+responseToServer _ _ _ = return ()
 
 beginDoc, stream, streamServer :: BS.ByteString
 beginDoc = "<?xml version=\"1.0\"?>"

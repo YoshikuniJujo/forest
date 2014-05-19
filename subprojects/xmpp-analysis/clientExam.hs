@@ -4,14 +4,11 @@ import Prelude hiding (drop, filter)
 
 import System.IO
 import System.Exit
-import Control.Concurrent (forkIO)
 import Control.Monad.IO.Class
 import Data.Conduit
 import Data.Conduit.List
 import qualified Data.Conduit.List as Cd
 import Data.Conduit.Binary hiding (drop, isolate)
-import Data.Conduit.Network
-import Data.Streaming.Network
 import Text.XML.Stream.Parse
 import Network
 
