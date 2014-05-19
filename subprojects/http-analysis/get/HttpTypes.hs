@@ -9,7 +9,7 @@ module HttpTypes (
 	ContentType(..),
 
 	parse, parseResponse, showRequest, showResponse, (+++),
-	myLast,
+	myLast, requestBodyLength, postAddBody,
 ) where
 
 import Control.Applicative
@@ -28,8 +28,17 @@ import System.Locale
 
 data Request
 	= RequestGet Uri Version Get
+	| RequestPost Uri Version Post
 	| RequestRaw RequestType Uri Version [(BS.ByteString, BS.ByteString)]
 	deriving Show
+
+requestBodyLength :: Request -> Int
+requestBodyLength (RequestPost _ _ p) = contentLength . fromJust $ postContentLength p
+requestBodyLength _ = 0
+
+postAddBody :: Request -> BS.ByteString -> Request
+postAddBody (RequestPost u v p) b = RequestPost u v $ p { postBody = b }
+postAddBody r _ = r
 
 showRequest :: Request -> [Maybe BS.ByteString]
 showRequest (RequestGet uri vsn g) = [
@@ -47,7 +56,28 @@ showRequest (RequestGet uri vsn g) = [
 		map showCacheControl <$> getCacheControl g,
 	Just ""
  ]
-showRequest (RequestRaw _ _ _ _) = error "showRequest: not implemented"
+showRequest (RequestPost uri vsn p) = [
+	Just $ "POST " +++ showUri uri +++ " " +++ showVersion vsn,
+	("Host: " +++) . showHost <$> postHost p,
+	("User-Agent: " +++) . BSC.unwords . map showProduct <$> postUserAgent p,
+	("Accept: " +++) . BSC.intercalate "," . map showAccept <$> postAccept p,
+	("Accept-Language: " +++) . BSC.intercalate "," .
+		map showAcceptLanguage <$> postAcceptLanguage p,
+	("Accept-Encoding: " +++) . BSC.intercalate "," .
+		map showAcceptEncoding <$> postAcceptEncoding p,
+	("Connection: " +++) . BSC.intercalate "," .
+		map showConnection <$> postConnection p,
+	("Cache-Control: " +++) . BSC.intercalate "," .
+		map showCacheControl <$> postCacheControl p,
+	("Content-Type: " +++) .  showContentType <$> postContentType p,
+	("Content-Length: " +++) .  showContentLength <$> postContentLength p
+ ] ++ map (\(k, v) -> Just $ k +++ ": " +++ v) (postOthers p) ++ [
+ 	Just "",
+	Just $ postBody p
+ ]
+showRequest (RequestRaw rt uri v kvs) = [
+	Just $ showRequestType rt +++ " " +++ showUri uri +++ " " +++ showVersion v
+ ] ++ map (\(k, v) -> Just $ k +++ ": " +++ v) kvs ++ [ Just "" ]
 
 data Get = Get {
 	getHost :: Maybe Host,
@@ -60,10 +90,30 @@ data Get = Get {
 	getOthers :: [(BS.ByteString, BS.ByteString)]
  } deriving Show
 
+data Post = Post {
+	postHost :: Maybe Host,
+	postUserAgent :: Maybe [Product],
+	postAccept :: Maybe [Accept],
+	postAcceptLanguage :: Maybe [AcceptLanguage],
+	postAcceptEncoding :: Maybe [AcceptEncoding],
+	postConnection :: Maybe [Connection],
+	postCacheControl :: Maybe [CacheControl],
+	postContentType :: Maybe ContentType,
+	postContentLength :: Maybe ContentLength,
+	postOthers :: [(BS.ByteString, BS.ByteString)],
+	postBody :: BS.ByteString
+ } deriving Show
+
 data RequestType
 	= RequestTypeGet
+	| RequestTypePost
 	| RequestTypeRaw BS.ByteString
 	deriving Show
+
+showRequestType :: RequestType -> BS.ByteString
+showRequestType RequestTypeGet = "GET"
+showRequestType RequestTypePost = "POST"
+showRequestType (RequestTypeRaw rt) = rt
 
 data Uri = Uri BS.ByteString deriving Show
 
@@ -89,6 +139,7 @@ parse [] = error "parse: bad request"
 
 parseSep :: RequestType -> Uri -> Version -> [(BS.ByteString, BS.ByteString)] -> Request
 parseSep RequestTypeGet uri v kvs = RequestGet uri v $ parseGet kvs
+parseSep RequestTypePost uri v kvs = RequestPost uri v $ parsePost kvs
 parseSep rt uri v kvs = RequestRaw rt uri v kvs
 
 parseRequestLine :: BS.ByteString -> (RequestType, Uri, Version)
@@ -96,6 +147,7 @@ parseRequestLine rl = let
 	[rts, uris, vs] = BSC.words rl
 	rt = case rts of
 		"GET" -> RequestTypeGet
+		"POST" -> RequestTypePost
 		_ -> RequestTypeRaw rts in
 	(rt, Uri uris, parseVersion vs)
 
@@ -122,6 +174,31 @@ parseGet kvs = Get {
 		map parseCacheControl . unlist <$> lookup "Cache-Control" kvs,
 	getOthers = filter ((`notElem` getKeys) . fst) kvs
  }
+
+parsePost :: [(BS.ByteString, BS.ByteString)] -> Post
+parsePost kvs = Post {
+	postHost = parseHost <$> lookup "Host" kvs,
+	postUserAgent = map parseProduct . sepTkn <$> lookup "User-Agent" kvs,
+	postAccept = map parseAccept . unlist <$> lookup "Accept" kvs,
+	postAcceptLanguage =
+		map parseAcceptLanguage . unlist <$> lookup "Accept-Language" kvs,
+	postAcceptEncoding =
+		map parseAcceptEncoding . unlist <$> lookup "Accept-Encoding" kvs,
+	postConnection = map parseConnection . unlist <$> lookup "Connection" kvs,
+	postCacheControl =
+		map parseCacheControl . unlist <$> lookup "Cache-Control" kvs,
+	postContentType = parseContentType <$> lookup "Content-Type" kvs,
+	postContentLength = ContentLength . read . BSC.unpack <$>
+		lookup "Content-Length" kvs,
+	postOthers = filter ((`notElem` postKeys) . fst) kvs,
+	postBody = ""
+ }
+
+postKeys :: [BS.ByteString]
+postKeys = [
+	"Host", "User-Agent", "Accept", "Accept-Language", "Accept-Encoding",
+	"Connection", "Cache-Control", "Content-Type", "Content-Length"
+ ]
 
 sepTkn :: BS.ByteString -> [BS.ByteString]
 sepTkn "" = []

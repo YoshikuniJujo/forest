@@ -4,7 +4,9 @@ module HandleLike (
 	HandleLike(..), hlPutStrLn
 ) where
 
+import Control.Applicative
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import System.IO
 
 class HandleLike h where
@@ -15,7 +17,13 @@ class HandleLike h where
 instance HandleLike Handle where
 	hlPut = BS.hPut
 	hlGet = BS.hGet
-	hlGetLine = BS.hGetLine
+	hlGetLine = (chopCR <$>) . BS.hGetLine
 
 hlPutStrLn :: HandleLike h => h -> BS.ByteString -> IO ()
 hlPutStrLn h = hlPut h . (`BS.append` "\n")
+
+chopCR :: BS.ByteString -> BS.ByteString
+chopCR bs
+	| BS.null bs = ""
+	| BSC.last bs == '\r' = BSC.init bs
+	| otherwise = bs

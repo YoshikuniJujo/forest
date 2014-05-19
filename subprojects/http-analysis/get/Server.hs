@@ -15,7 +15,11 @@ import HandleLike
 httpServer :: HandleLike h => h -> BS.ByteString -> IO ()
 httpServer cl cnt = do
 	h <- hlGetHeader cl
-	mapM_ BSC.putStrLn . catMaybes . showRequest $ parse h
+	let req = parse h
+	b <- hlGet cl $ requestBodyLength req
+	let req' = postAddBody req b
+	print req'
+	mapM_ BSC.putStrLn . catMaybes . showRequest $ req'
 	hlPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
 
 mkContents :: BS.ByteString -> Response
@@ -35,17 +39,9 @@ mkContents cnt = Response {
 	responseBody = cnt
  }
 
-hlGetHeader' :: HandleLike h => Int -> h -> IO [BS.ByteString]
-hlGetHeader' 0 _ = return []
-hlGetHeader' n h = do
-	l <- hlGetLine h
-	print l
-	(l :) <$> hlGetHeader' (n - 1) h
-
 hlGetHeader :: HandleLike h => h -> IO [BS.ByteString]
 hlGetHeader h = do
 	l <- hlGetLine h
-	print l
 	if (BS.null l) then return [] else (l :) <$> hlGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString
