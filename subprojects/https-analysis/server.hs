@@ -26,7 +26,7 @@ main = do
 		(cl, _, _) <- accept scl
 		_ <- forkIO $ do
 			tls <- openTlsClient True certStore certChain pk cl
-			httpServer tls "Hello, world!\n"
+			httpServer tls "Hello, world!\n" >>= print
 --			hlGetLine tls >>= print
 --			hlPut tls answer
 		return ()

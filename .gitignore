@@ -1,6 +1,6 @@
 *.hi
 *.o
-*.html
+.html/
 *.swp
 tmp/
 *.pem
