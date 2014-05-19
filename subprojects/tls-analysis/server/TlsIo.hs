@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen, tPut, tGetWhole,
+	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent,
 ) where
 
 import Prelude hiding (read)
@@ -28,6 +28,7 @@ import "monads-tf" Control.Monad.State
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import System.IO
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
@@ -392,3 +393,61 @@ tGetWhole ts = case (vr, cs) of
 	mk = tlsClientWriteMacKey ts
 	tvsn = tlsClientSequenceNumber ts
 	dec sn = CT.decryptMessage key sn mk
+
+tGetByte :: TlsClient -> IO Word8
+tGetByte ts = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	if BS.null bfr then do
+		msg <- tGetWhole ts
+		atomically $ case BS.uncons msg of
+			Just (b, bs) -> do
+				writeTVar (tlsBuffer ts) bs
+				return b
+			_ -> error "tGetByte: empty data"
+	else atomically $ case BS.uncons bfr of
+		Just (b, bs) -> do
+			writeTVar (tlsBuffer ts) bs
+			return b
+		_ -> error "tGetByte: never occur"
+
+tGet :: TlsClient -> Int -> IO BS.ByteString
+tGet tc n = do
+	bfr <- atomically . readTVar $ tlsBuffer tc
+	if n <= BS.length bfr then atomically $ do
+		let (ret, bfr') = BS.splitAt n bfr
+		writeTVar (tlsBuffer tc) bfr'
+		return ret
+	else do	msg <- tGetWhole tc
+		atomically $ writeTVar (tlsBuffer tc) msg
+		(bfr `BS.append`) <$> tGet tc (n - BS.length bfr)
+
+tGetLine :: TlsClient -> IO BS.ByteString
+tGetLine tc = do
+	bfr <- atomically . readTVar $ tlsBuffer tc
+	case splitOneLine bfr of
+		Just (l, ls) -> atomically $ do
+			writeTVar (tlsBuffer tc) ls
+			return l
+		_ -> do	msg <- tGetWhole tc
+			atomically $ writeTVar (tlsBuffer tc) msg
+			(bfr `BS.append`) <$> tGetLine tc
+
+tGetContent :: TlsClient -> IO BS.ByteString
+tGetContent ts = do
+	bfr <- atomically . readTVar $ tlsBuffer ts
+	if BS.null bfr then tGetWhole ts else atomically $ do
+		writeTVar (tlsBuffer ts) BS.empty
+		return bfr
+
+splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
+splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
+	(True, _) -> let
+		(l, ls) = BSC.span (/= '\r') bs
+		Just ('\r', ls') = BSC.uncons ls in
+		case BSC.uncons ls' of
+			Just ('\n', ls'') -> Just (l, ls'')
+			_ -> Just (l, ls')
+	(_, True) -> let
+		(l, ls) = BSC.span (/= '\n') bs
+		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
+	_ -> Nothing

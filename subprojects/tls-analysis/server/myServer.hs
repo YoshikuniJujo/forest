@@ -52,7 +52,10 @@ run' :: Bool -> CertificateStore -> CertificateChain ->
 	PrivateKey -> Handle -> IO ()
 run' dcc certStore certChain pk cl = do
 	tls <- openTlsClient dcc certStore certChain pk cl
-	tGetWhole tls >>= print
+	tGetByte tls >>= print
+	tGet tls 5 >>= print
+	tGetLine tls >>= print
+	tGetContent tls >>= print
 	tPut tls answer
 			
 answer :: BS.ByteString
