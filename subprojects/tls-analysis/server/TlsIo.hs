@@ -15,13 +15,17 @@ module TlsIo (
 
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
+
+	TlsClient, runOpen,
 ) where
 
 import Prelude hiding (read)
 
 import Control.Applicative
+import Control.Concurrent.STM
 import "monads-tf" Control.Monad.Error
 import "monads-tf" Control.Monad.State
+import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
 import System.IO
@@ -31,7 +35,6 @@ import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
--- import qualified MasterSecret as MS
 import qualified CryptoTools as CT
 import Basic
 
@@ -296,3 +299,46 @@ macKey :: Partner -> TlsIo cnt (Maybe BS.ByteString)
 macKey partner = gets $ case partner of
 	Client -> tlssClientWriteMacKey
 	Server -> tlssServerWriteMacKey
+
+data TlsClient = TlsClient {
+	tlsVersion :: CT.MSVersion,
+	tlsCipherSuite :: CipherSuite,
+	tlsHandle :: Handle,
+	tlsBuffer :: TVar BS.ByteString,
+	tlsRandomGen :: TVar SystemRNG,
+	tlsClientWriteMacKey :: BS.ByteString,
+	tlsServerWriteMacKey :: BS.ByteString,
+	tlsClientWriteKey :: BS.ByteString,
+	tlsServerWriteKey :: BS.ByteString,
+	tlsClientSequenceNumber :: TVar Word64,
+	tlsServerSequenceNumber :: TVar Word64
+ }
+
+runOpen :: TlsIo cnt () -> RSA.PrivateKey -> Handle -> IO TlsClient
+runOpen opn pk cl = do
+	ep <- createEntropyPool
+	(_, tlss) <- opn `runTlsIo` initTlsState ep cl pk
+	tvgen <- atomically . newTVar $ tlssRandomGen tlss
+	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
+	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
+	tvbfr <- atomically $ newTVar ""
+	return TlsClient {
+		tlsVersion = fromJust $ tlssVersion tlss,
+		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
+		tlsHandle = tlssClientHandle tlss,
+		tlsBuffer = tvbfr,
+		tlsRandomGen = tvgen,
+		tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
+		tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
+		tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
+		tlsServerWriteKey = fromJust $ tlssServerWriteKey tlss,
+		tlsClientSequenceNumber = tvcsn,
+		tlsServerSequenceNumber = tvssn
+	 }
+
+runTlsIo :: TlsIo cnt a -> TlsState cnt -> IO (a, TlsState cnt)
+runTlsIo io st = do
+	(ret, st') <- runErrorT io `runStateT` st
+	case ret of
+		Right r -> return (r, st')
+		Left err -> error err
