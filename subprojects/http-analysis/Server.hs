@@ -35,14 +35,21 @@ mkContents cnt = Response {
 	responseBody = cnt
  }
 
+hlGetHeader' :: HandleLike h => Int -> h -> IO [BS.ByteString]
+hlGetHeader' 0 _ = return []
+hlGetHeader' n h = do
+	l <- hlGetLine h
+	print l
+	(l :) <$> hlGetHeader' (n - 1) h
+
 hlGetHeader :: HandleLike h => h -> IO [BS.ByteString]
 hlGetHeader h = do
-	l <- dropCR <$> hlGetLine h
+	l <- hlGetLine h
 	print l
 	if (BS.null l) then return [] else (l :) <$> hlGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString
-dropCR s = if BSC.last s == '\r' then BS.init s else s
+dropCR s = if myLast "dropCR" s == '\r' then BS.init s else s
 
 crlf :: [BS.ByteString] -> BS.ByteString
 crlf = BS.concat . map (+++ "\r\n")

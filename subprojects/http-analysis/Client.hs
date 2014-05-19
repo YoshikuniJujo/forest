@@ -23,7 +23,7 @@ httpClient sv = do
 
 hGetHeader :: HandleLike h => h -> IO [BS.ByteString]
 hGetHeader h = do
-	l <- dropCR <$> hlGetLine h
+	l <- hlGetLine h
 	if (BS.null l) then return [] else (l :) <$> hGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString

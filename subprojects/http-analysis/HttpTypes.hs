@@ -9,6 +9,7 @@ module HttpTypes (
 	ContentType(..),
 
 	parse, parseResponse, showRequest, showResponse, (+++),
+	myLast,
 ) where
 
 import Control.Applicative
@@ -169,13 +170,18 @@ showProduct (ProductComment cm) = "(" +++ cm +++ ")"
 
 parseProduct :: BS.ByteString -> Product
 parseProduct pcm
-	| Just ('(', cm) <- BSC.uncons pcm = case BSC.last cm of
+	| Just ('(', cm) <- BSC.uncons pcm = case myLast "here" cm of
 		')' -> ProductComment $ BS.init cm
 		_ -> error "parseProduct: bad comment"
 parseProduct pnv = case BSC.span (/= '/') pnv of
 	(pn, sv) -> case BSC.uncons sv of
 		Just ('/', v) -> Product pn $ Just v
 		_ -> Product pnv Nothing
+
+myLast :: String -> BS.ByteString -> Char
+myLast err bs
+	| BS.null bs = error err
+	| otherwise = BSC.last bs
 
 data Accept
 	= Accept (BS.ByteString, BS.ByteString) Qvalue
