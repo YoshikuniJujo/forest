@@ -58,12 +58,12 @@ main = do
 		client <- ClientHandle . fst3 <$> accept scl
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIO act ep cid client pk) $
+			(\act -> evalTlsIo act ep cid client pk) $
 				run doClientCert certStore certChain pkys cid
 		return ()
 			
 run :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
-	Int -> TlsIO Content ()
+	Int -> TlsIo Content ()
 run dcc certStore certChain pkys cid = do
 
 	------------------------------------------
@@ -154,7 +154,7 @@ run dcc certStore certChain pkys cid = do
 	output Server cid "Contents"
 		[take 60 (show $ applicationData answer) ++ "..."]
 
-clientCertification :: Int -> CertificateStore -> TlsIO Content PublicKey
+clientCertification :: Int -> CertificateStore -> TlsIo Content PublicKey
 clientCertification cid certStore = do
 	------------------------------------------
 	--          CLIENT CERTIFICATION        --
@@ -169,7 +169,7 @@ clientCertification cid certStore = do
 		if null v then "Validate Success" else "Validate Failure" ]
 	return pub
 
-certificateVerify :: Int -> PrivateKey -> PublicKey -> TlsIO Content ()
+certificateVerify :: Int -> PrivateKey -> PublicKey -> TlsIo Content ()
 certificateVerify cid pkys pub = do
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
@@ -185,25 +185,25 @@ certificateVerify cid pkys pub = do
 			"local sign   : " ++ take 50 (show signed'') ++ " ...",
 			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
 
-readContent :: TlsIO Content Content
+readContent :: TlsIo Content Content
 readContent = do
-	c <- readCached Client (readContentList Client)
+	c <- readCached (readContentList Client)
 		<* updateSequenceNumberSmart Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
-readContentList :: Partner -> TlsIO Content [Content]
+readContentList :: Partner -> TlsIo Content [Content]
 readContentList partner =
 	(\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash partner
 
-writeContentList :: [Content] -> TlsIO Content ()
+writeContentList :: [Content] -> TlsIo Content ()
 writeContentList cs = do
 	let f = contentListToFragment cs
 	updateSequenceNumberSmart Client
 	writeFragment f
 	fragmentUpdateHash f
 
-writeContent :: Content -> TlsIO Content ()
+writeContent :: Content -> TlsIo Content ()
 writeContent c = do
 	let f = contentToFragment c
 	writeFragment f
@@ -229,7 +229,7 @@ query _ _ _ = return ValidationCacheUnknown
 add :: ValidationCacheAddCallback
 add _ _ _ = return ()
 
-output :: Partner -> Int -> String -> [String] -> TlsIO Content ()
+output :: Partner -> Int -> String -> [String] -> TlsIo Content ()
 output partner cid msg strs = do
 	begin
 	liftIO . mapM_ putStr $ map (unlines . map ("\t" ++) . lines) strs
