@@ -26,16 +26,14 @@ import Data.X509.CertificateStore
 import Data.X509.Validation
 
 import Crypto.PubKey.RSA
-import Crypto.PubKey.RSA.PKCS15
-import Crypto.PubKey.HashDescr
+import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import System.Console.GetOpt
 
 options :: [OptDescr Option]
 options = [
 	Option "d" ["disable-client-cert"] (NoArg OptDisableClientCert)
-		"disable client certification"
- ]
+		"disable client certification" ]
 
 data Option
 	= OptDisableClientCert
@@ -47,7 +45,7 @@ main = do
 	certChain <- CertificateChain <$> readSignedObject "localhost.crt"
 	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
-	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
+--	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	(opts, args, _errs) <- getOpt Permute options <$> getArgs
 	let doClientCert = OptDisableClientCert `notElem` opts
 	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) args
@@ -58,13 +56,12 @@ main = do
 		client <- ClientHandle . fst3 <$> accept scl
 		_ <- forkIO $ do
 			ep <- createEntropyPool
-			(\act -> evalTlsIo act ep cid client pk) $
-				run doClientCert certStore certChain pkys cid
+			(\act -> evalTlsIo act ep client pk) $
+				run doClientCert certStore certChain cid
 		return ()
 			
-run :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
-	Int -> TlsIo Content ()
-run dcc certStore certChain pkys cid = do
+run :: Bool -> CertificateStore -> CertificateChain -> Int -> TlsIo Content ()
+run dcc certStore certChain cid = do
 
 	------------------------------------------
 	--           CLIENT HELLO               --
@@ -110,7 +107,7 @@ run dcc certStore certChain pkys cid = do
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
 	------------------------------------------
-	maybe (return ()) (certificateVerify cid pkys) pub
+	maybe (return ()) (certificateVerify cid) pub
 
 	------------------------------------------
 	--      CLIENT CHANGE CIPHER SPEC       --
@@ -169,21 +166,31 @@ clientCertification cid certStore = do
 		if null v then "Validate Success" else "Validate Failure" ]
 	return pub
 
-certificateVerify :: Int -> PrivateKey -> PublicKey -> TlsIo Content ()
-certificateVerify cid pkys pub = do
+certificateVerify :: Int -> PublicKey -> TlsIo Content ()
+certificateVerify cid pub = do
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
 	------------------------------------------
-	hms <- handshakeMessages
-	c3 <- readContent
-	let	Right signed'' = sign Nothing hashDescrSHA256 pkys hms
+	hash <- clientVerifyHash pub
+	c3 <- readContentNoHash
 	let	Just ds = digitalSign c3
-	unless (verify hashDescrSHA256 pub hms ds) $
+		encHash = RSA.ep pub ds
+	liftIO $ putStrLn "VERIFY"
+	liftIO $ putStrLn $ "calculate hash: \"..." ++ drop 400 (show hash)
+	liftIO $ putStrLn $ "encrypted hash: \"..." ++ drop 400 (show encHash)
+	unless (hash == encHash) $
 		throwError "client authentification failed"
+	fragmentUpdateHash $ contentToFragment c3
 	output Client cid "Certificate Verify" [
 			take 60 (show c3) ++ " ...",
-			"local sign   : " ++ take 50 (show signed'') ++ " ...",
-			"recieved sign: " ++ take 50 (show ds) ++ " ..." ]
+			"local hash   : \"..." ++ drop 400 (show hash),
+			"recieved hash: \"..." ++ drop 400 (show encHash) ]
+
+readContentNoHash :: TlsIo Content Content
+readContentNoHash = do
+	c <- readCached (readContentList Client)
+		<* updateSequenceNumberSmart Client
+	return c
 
 readContent :: TlsIo Content Content
 readContent = do

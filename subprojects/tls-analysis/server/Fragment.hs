@@ -5,7 +5,7 @@ module Fragment (
 	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
-	clientId, clientWriteMacKey,
+	clientWriteMacKey,
 
 	setClientRandom, setServerRandom, setVersion,
 	cacheCipherSuite, flushCipherSuite,
@@ -24,10 +24,10 @@ module Fragment (
 	TlsIo, evalTlsIo, liftIO,
 
 	throwError, showRandom,
-	handshakeMessages,
 	updateSequenceNumberSmart,
 	randomByteString,
 	readCached,
+	clientVerifyHash,
 ) where
 
 import Prelude hiding (read)
