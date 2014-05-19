@@ -40,7 +40,8 @@ import Basic
 readFragment :: TlsIo cnt Fragment
 readFragment = do
 	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody ct v ebody
+--	body <- decryptBody ct v ebody
+	body <- decryptMessage ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
@@ -49,7 +50,8 @@ readFragment = do
 readFragmentNoHash :: TlsIo cnt Fragment
 readFragmentNoHash = do
 	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody ct v ebody
+--	body <- decryptBody ct v ebody
+	body <- decryptMessage ct v ebody
 	return $ Fragment ct v body
 
 fragmentUpdateHash :: Fragment -> TlsIo cnt ()
@@ -58,7 +60,7 @@ fragmentUpdateHash _ = return ()
 
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) =
-	writeRawFragment . RawFragment ct v =<< encryptBody ct v bs
+	writeRawFragment . RawFragment ct v =<< encryptMessage ct v bs
 
 readRawFragment :: TlsIo cnt RawFragment
 readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2
