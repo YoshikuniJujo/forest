@@ -4,26 +4,26 @@ module Client (httpClient) where
 
 import Control.Applicative
 import Data.Maybe
-import System.IO
 
 import HttpTypes
+import MyHandle
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-httpClient :: Handle -> IO BS.ByteString
+httpClient :: MyHandle -> IO BS.ByteString
 httpClient sv = do
-	BSC.hPutStrLn sv request
+	mPutStrLn sv request
 	src <- hGetHeader sv
 	let res = parseResponse src
-	cnt <- BS.hGet sv (contentLength $ responseContentLength res)
+	cnt <- mGet sv (contentLength $ responseContentLength res)
 	let res' = res { responseBody = cnt }
 	mapM_ BSC.putStrLn . catMaybes $ showResponse res'
 	return cnt
 
-hGetHeader :: Handle -> IO [BS.ByteString]
+hGetHeader :: MyHandle -> IO [BS.ByteString]
 hGetHeader h = do
-	l <- dropCR <$> BSC.hGetLine h
+	l <- dropCR <$> mGetLine h
 	if (BS.null l) then return [] else (l :) <$> hGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString

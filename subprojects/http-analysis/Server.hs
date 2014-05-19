@@ -11,12 +11,13 @@ import System.IO
 import System.Locale
 
 import HttpTypes
+import MyHandle
 
-httpServer :: Handle -> BS.ByteString -> IO ()
+httpServer :: MyHandle -> BS.ByteString -> IO ()
 httpServer cl cnt = do
-	h <- hGetHeader cl
+	h <- mGetHeader cl
 	mapM_ BSC.putStrLn . catMaybes . showRequest $ parse h
-	BSC.hPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
+	mPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
 
 mkContents :: BS.ByteString -> Response
 mkContents cnt = Response {
@@ -35,11 +36,11 @@ mkContents cnt = Response {
 	responseBody = cnt
  }
 
-hGetHeader :: Handle -> IO [BS.ByteString]
-hGetHeader h = do
-	l <- dropCR <$> BS.hGetLine h
+mGetHeader :: MyHandle -> IO [BS.ByteString]
+mGetHeader h = do
+	l <- dropCR <$> mGetLine h
 	print l
-	if (BS.null l) then return [] else (l :) <$> hGetHeader h
+	if (BS.null l) then return [] else (l :) <$> mGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString
 dropCR s = if BSC.last s == '\r' then BS.init s else s
