@@ -70,8 +70,7 @@ run dcc certStore certChain cid = do
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 	output Client cid "Hello" [
 		take 60 (show ch) ++ "...",
-		maybe "No Version" show $ clientVersion ch,
-		maybe "No Random" showRandom $ clientRandom ch ]
+		maybe "No Version" show $ clientVersion ch ]
 
 	------------------------------------------
 	--           SERVER HELLO               --
@@ -85,7 +84,7 @@ run dcc certStore certChain cid = do
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite cipherSuite
-	output Server cid "Hello" [show version, show cipherSuite, showRandom sr]
+	output Server cid "Hello" [show version, show cipherSuite]
 
 	------------------------------------------
 	--          CLIENT CERTIFICATION        --
@@ -100,9 +99,7 @@ run dcc certStore certChain cid = do
 	let	Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
 	pms <- decryptRSA epms
 	generateMasterSecret pms
-	debugKeysStr <- debugShowKeys
-	output Client cid "Key Exchange" $ (take 60 (show c2) ++ " ...") :
-		debugKeysStr
+	output Client cid "Key Exchange" [take 60 (show c2) ++ " ..."]
 
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
@@ -175,16 +172,13 @@ certificateVerify cid pub = do
 	c3 <- readContentNoHash
 	let	Just ds = digitalSign c3
 		encHash = RSA.ep pub ds
-	liftIO $ putStrLn "VERIFY"
-	liftIO $ putStrLn $ "calculate hash: \"..." ++ drop 400 (show hash)
-	liftIO $ putStrLn $ "encrypted hash: \"..." ++ drop 400 (show encHash)
 	unless (hash == encHash) $
 		throwError "client authentification failed"
 	fragmentUpdateHash $ contentToFragment c3
 	output Client cid "Certificate Verify" [
 			take 60 (show c3) ++ " ...",
-			"local hash   : \"..." ++ drop 400 (show hash),
-			"recieved hash: \"..." ++ drop 400 (show encHash) ]
+			"local hash   : \"..." ++ drop 410 (show hash),
+			"recieved hash: \"..." ++ drop 410 (show encHash) ]
 
 readContentNoHash :: TlsIo Content Content
 readContentNoHash = do

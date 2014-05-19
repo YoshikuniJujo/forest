@@ -5,25 +5,25 @@ module Fragment (
 	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
-	clientWriteMacKey,
+--	clientWriteMacKey,
 
 	setClientRandom, setServerRandom, setVersion,
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
 	decryptRSA, finishedHash,
-	encryptRSA,
+--	encryptRSA,
 	
-	masterSecret,
+--	masterSecret,
 
 --	debugPrintKeys,
-	debugShowKeys,
+--	debugShowKeys,
 
 	ClientHandle(..),
 	Partner(..),
 	TlsIo, evalTlsIo, liftIO,
 
-	throwError, showRandom,
+	throwError,
 	updateSequenceNumberSmart,
 	randomByteString,
 	readCached,
@@ -45,10 +45,6 @@ readFragment p = do
 	body <- decryptBody p ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
---		ContentTypeRaw 23 ->  liftIO $ print r
-		_ -> return ()
-	case p of
-		Client -> return () -- updateSequenceNumberSmart Client
 		_ -> return ()
 	return $ Fragment ct v body
 
@@ -62,7 +58,7 @@ fragmentUpdateHash :: Fragment -> TlsIo cnt ()
 fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
 fragmentUpdateHash _ = return ()
 
-decryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIo cnt ByteString
+decryptBody :: Partner -> ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptBody p ct v ebody = do
 	bm <- decrypt p ebody
 	(body, mac) <- takeBodyMac p bm
@@ -76,7 +72,7 @@ decryptBody p ct v ebody = do
 		"caluculate MAC: " ++ show cmac
 	return body
 
-encryptBody :: Partner -> ContentType -> Version -> ByteString -> TlsIo cnt ByteString
+encryptBody :: Partner -> ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptBody p ct v body = do
 	mac <- calcMac p ct v body
 	_ <- updateSequenceNumber p
@@ -84,7 +80,7 @@ encryptBody p ct v body = do
 		padd = mkPadd 16 $ BS.length bm
 	encrypt p (bm `BS.append` padd)
 
-mkPadd :: Int -> Int -> ByteString
+mkPadd :: Int -> Int -> BS.ByteString
 mkPadd bs len = let
 	plen = bs - ((len + 1) `mod` bs) in
 	BS.replicate (plen + 1) $ fromIntegral plen
@@ -107,5 +103,5 @@ writeRawFragment (RawFragment ct v bs) =
 	writeContentType ct >> writeVersion v >> writeLen 2 bs
 	
 data RawFragment
-	= RawFragment ContentType Version ByteString
+	= RawFragment ContentType Version BS.ByteString
 	deriving Show

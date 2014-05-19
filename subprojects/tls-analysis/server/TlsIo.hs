@@ -2,27 +2,19 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsIo (
-	TlsIo, runTlsIo, evalTlsIo, initTlsState, liftIO,
+	TlsIo, evalTlsIo, liftIO, throwError,
+
 	Partner(..),
 	ClientHandle(..),
-	read, write, readLen, writeLen,
+	readLen, writeLen,
 
 	readCached,
 
-	clientWriteMacKey,
-
-	setClientRandom, setServerRandom, setVersion,
+	setVersion, setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
 	generateMasterSecret,
 
 	decryptRSA, decrypt, encrypt, takeBodyMac,
-	encryptRSA,
-
-	masterSecret,
-
-	debugShowKeys,
-
-	Handle, Word8, ByteString, BS.unpack, BS.pack, throwError,
 
 	updateHash, finishedHash, calcMac, updateSequenceNumber,
 	updateSequenceNumberSmart,
@@ -30,7 +22,7 @@ module TlsIo (
 	ContentType(..), readContentType, writeContentType,
 	Version, readVersion, writeVersion,
 
-	getCipherSuite, CipherSuite(..), showRandom,
+	getCipherSuite,
 
 	randomByteString, clientVerifyHash,
 ) where
@@ -82,13 +74,10 @@ data TlsState cnt = TlsState {
 	tlssClientWriteKey :: Maybe ByteString,
 	tlssServerWriteKey :: Maybe ByteString,
 
-	tlssClientSequenceNumber :: Word64,
-	tlssServerSequenceNumber :: Word64,
+	tlssRandomGen :: SystemRNG,
 	tlssSha256Ctx :: SHA256.Ctx,
---	tlssHandshakeMessages :: ByteString,
-
-	tlssDecryptIv :: Maybe ByteString,
-	tlssRandomGen :: SystemRNG
+	tlssClientSequenceNumber :: Word64,
+	tlssServerSequenceNumber :: Word64
  } deriving Show
 
 instance Show SystemRNG where
@@ -127,12 +116,15 @@ data ClientHandle = ClientHandle Handle deriving Show
 
 initTlsState :: EntropyPool -> ClientHandle -> PrivateKey -> TlsState cnt
 initTlsState ep (ClientHandle cl) pk = TlsState {
-	tlssVersion = Nothing,
 	tlssClientHandle = cl,
+	tlssContentCache = [],
+
+	tlssVersion = Nothing,
 	tlssPrivateKey = pk,
 	tlssClientWriteCipherSuite = TLS_NULL_WITH_NULL_NULL,
 	tlssServerWriteCipherSuite = TLS_NULL_WITH_NULL_NULL,
 	tlssCachedCipherSuite = Nothing,
+
 	tlssClientRandom = Nothing,
 	tlssServerRandom = Nothing,
 	tlssMasterSecret = Nothing,
@@ -140,19 +132,14 @@ initTlsState ep (ClientHandle cl) pk = TlsState {
 	tlssServerWriteMacKey = Nothing,
 	tlssClientWriteKey = Nothing,
 	tlssServerWriteKey = Nothing,
+
+	tlssRandomGen = cprgCreate ep,
 	tlssSha256Ctx = SHA256.init,
 	tlssClientSequenceNumber = 0,
-	tlssServerSequenceNumber = 0,
-	tlssDecryptIv = Nothing,
-	tlssRandomGen = cprgCreate ep,
---	tlssHandshakeMessages = "",
-	tlssContentCache = []
+	tlssServerSequenceNumber = 0
  }
 
 data Partner = Server | Client deriving (Show, Eq)
-
-runTlsIo :: TlsIo cnt a -> TlsState cnt -> IO (Either String a, TlsState cnt)
-runTlsIo io ts = runErrorT io `runStateT` ts
 
 evalTlsIo :: TlsIo cnt a -> EntropyPool -> ClientHandle -> PrivateKey -> IO a
 evalTlsIo io ep cl pk = do
@@ -191,14 +178,6 @@ decryptRSA e = do
 	case RSA.decrypt Nothing pk e of
 		Right d -> return d
 		Left err -> throwError $ show err
-
-encryptRSA :: PublicKey -> ByteString -> TlsIo cnt ByteString
-encryptRSA pub pln = do
-	g <- gets tlssRandomGen
-	tlss <- get
-	let (Right e, g') = RSA.encrypt g pub pln
-	put tlss { tlssRandomGen = g' }
-	return e
 
 setClientRandom, setServerRandom :: Random -> TlsIo cnt ()
 setClientRandom (Random cr) = do
@@ -243,27 +222,11 @@ generateMasterSecret pms = do
 			 }
 		_ -> throwError "No client random / No server random"
 
-masterSecret :: TlsIo cnt (Maybe ByteString)
-masterSecret = gets tlssMasterSecret
-
 divide :: [Int] -> BS.ByteString -> [BS.ByteString]
 divide [] _ = []
 divide (n : ns) bs
 	| bs == BS.empty = []
 	| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
-
-debugShowKeys :: TlsIo cnt [String]
-debugShowKeys = do
-	Just cwmk <- gets tlssClientWriteMacKey
-	Just swmk <- gets tlssServerWriteMacKey
-	Just cwk <- gets tlssClientWriteKey
-	Just swk <- gets tlssServerWriteKey
-	return [
-		"### GENERATED KEYS ###",
-		"ClntWr MAC Key: " ++ showKeySingle cwmk,
-		"SrvrWr MAC Key: " ++ showKeySingle swmk,
-		"ClntWr Key    : " ++ showKeySingle cwk,
-		"SrvrWr Key    : " ++ showKeySingle swk ]
 
 decrypt :: Partner -> ByteString -> TlsIo cnt ByteString
 decrypt partner e = do
@@ -273,11 +236,8 @@ decrypt partner e = do
 		(Just MS.TLS10, (TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv)) ->
 			return $ decryptCBC (initAES key) iv e
 		(Just MS.TLS12, (TLS_RSA_WITH_AES_128_CBC_SHA, Just key, _)) -> do
-			tlss <- get
-			put tlss { tlssDecryptIv = Just $ BS.take 16 e }
-			let d = decryptCBC (initAES key)
-				(BS.take 16 e) (BS.drop 16 e)
-			return d
+			let (iv, enc) = BS.splitAt 16 e
+			return $ decryptCBC (initAES key) iv enc
 		(_, (TLS_NULL_WITH_NULL_NULL, _, _)) -> return e
 		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
@@ -317,9 +277,6 @@ bodyMac :: ByteString -> (ByteString, ByteString)
 bodyMac bs = let
 	(bm, _) = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs in
 	BS.splitAt (BS.length bm - 20) bm
-
-clientWriteMacKey :: TlsIo cnt (Maybe ByteString)
-clientWriteMacKey = gets tlssClientWriteMacKey
 
 updateHash :: ByteString -> TlsIo cnt ()
 updateHash bs = do
@@ -415,9 +372,6 @@ getCipherSuite :: Partner -> TlsIo cnt CipherSuite
 getCipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
-
-showRandom :: Random -> String
-showRandom (Random r) = showKey r
 
 randomByteString :: Int -> TlsIo cnt ByteString
 randomByteString len = do
