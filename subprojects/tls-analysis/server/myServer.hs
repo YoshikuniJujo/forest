@@ -98,7 +98,7 @@ run dcc certStore certChain cid = do
 	c2 <- readContent
 	let	Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
 	pms <- decryptRSA epms
-	generateMasterSecret pms
+	generateKeys pms
 	output Client cid "Key Exchange" [take 60 (show c2) ++ " ..."]
 
 	------------------------------------------
