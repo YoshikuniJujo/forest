@@ -5,19 +5,11 @@ module Fragment (
 	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
---	clientWriteMacKey,
-
 	setClientRandom, setServerRandom, setVersion,
 	cacheCipherSuite, flushCipherSuite,
 	generateKeys,
 
 	decryptRSA, finishedHash,
---	encryptRSA,
-	
---	masterSecret,
-
---	debugPrintKeys,
---	debugShowKeys,
 
 	Partner(..),
 	TlsIo, evalTlsIo, liftIO,
@@ -34,6 +26,7 @@ module Fragment (
 import Prelude hiding (read)
 
 import Control.Applicative
+import Control.Monad
 import qualified Data.ByteString as BS
 
 import TlsIo
@@ -42,7 +35,7 @@ import Basic
 readFragment :: TlsIo cnt Fragment
 readFragment = do
 	RawFragment ct v ebody <- readRawFragment
---	body <- decryptBody ct v ebody
+	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- decryptMessage ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
@@ -52,7 +45,6 @@ readFragment = do
 readFragmentNoHash :: TlsIo cnt Fragment
 readFragmentNoHash = do
 	RawFragment ct v ebody <- readRawFragment
---	body <- decryptBody ct v ebody
 	body <- decryptMessage ct v ebody
 	return $ Fragment ct v body
 
