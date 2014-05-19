@@ -2,20 +2,22 @@
 
 module MyHandle (
 	MyHandle, mPut, mPutStrLn, mGet, mGetLine,
-	handleToMyHandle, tlsClientToMyHandle,
+	handleToMyHandle -- , tlsClientToMyHandle,
 ) where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import System.IO
-import qualified TlsServer as SV
+-- import qualified TlsServer as SV
 
+{-
 tlsClientToMyHandle :: SV.TlsClient -> MyHandle
 tlsClientToMyHandle tc = MyHandle {
 	mPut = SV.tPut tc,
 	mGetLine = SV.tGetLine tc,
 	mGet = SV.tGet tc
  }
+ -}
 
 handleToMyHandle :: Handle -> MyHandle
 handleToMyHandle h = MyHandle {

@@ -6,24 +6,24 @@ import Control.Applicative
 import Data.Maybe
 
 import HttpTypes
-import MyHandle
+import HandleLike
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-httpClient :: MyHandle -> IO BS.ByteString
+httpClient :: HandleLike h => h -> IO BS.ByteString
 httpClient sv = do
-	mPutStrLn sv request
+	hlPutStrLn sv request
 	src <- hGetHeader sv
 	let res = parseResponse src
-	cnt <- mGet sv (contentLength $ responseContentLength res)
+	cnt <- hlGet sv (contentLength $ responseContentLength res)
 	let res' = res { responseBody = cnt }
 	mapM_ BSC.putStrLn . catMaybes $ showResponse res'
 	return cnt
 
-hGetHeader :: MyHandle -> IO [BS.ByteString]
+hGetHeader :: HandleLike h => h -> IO [BS.ByteString]
 hGetHeader h = do
-	l <- dropCR <$> mGetLine h
+	l <- dropCR <$> hlGetLine h
 	if (BS.null l) then return [] else (l :) <$> hGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString

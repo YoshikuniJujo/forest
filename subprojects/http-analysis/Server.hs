@@ -7,17 +7,16 @@ import Data.Maybe
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Time
-import System.IO
 import System.Locale
 
 import HttpTypes
-import MyHandle
+import HandleLike
 
-httpServer :: MyHandle -> BS.ByteString -> IO ()
+httpServer :: HandleLike h => h -> BS.ByteString -> IO ()
 httpServer cl cnt = do
-	h <- mGetHeader cl
+	h <- hlGetHeader cl
 	mapM_ BSC.putStrLn . catMaybes . showRequest $ parse h
-	mPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
+	hlPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
 
 mkContents :: BS.ByteString -> Response
 mkContents cnt = Response {
@@ -36,11 +35,11 @@ mkContents cnt = Response {
 	responseBody = cnt
  }
 
-mGetHeader :: MyHandle -> IO [BS.ByteString]
-mGetHeader h = do
-	l <- dropCR <$> mGetLine h
+hlGetHeader :: HandleLike h => h -> IO [BS.ByteString]
+hlGetHeader h = do
+	l <- dropCR <$> hlGetLine h
 	print l
-	if (BS.null l) then return [] else (l :) <$> mGetHeader h
+	if (BS.null l) then return [] else (l :) <$> hlGetHeader h
 
 dropCR :: BS.ByteString -> BS.ByteString
 dropCR s = if BSC.last s == '\r' then BS.init s else s
