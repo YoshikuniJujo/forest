@@ -23,7 +23,7 @@ module Fragment (
 	TlsIo, evalTlsIo, liftIO,
 
 	throwError,
-	updateSequenceNumberSmart,
+	updateSequenceNumber,
 	randomByteString,
 	readCached,
 	clientVerifyHash,
@@ -37,19 +37,19 @@ import qualified Data.ByteString as BS
 import TlsIo
 import Basic
 
-readFragment :: Partner -> TlsIo cnt Fragment
-readFragment p = do
+readFragment :: TlsIo cnt Fragment
+readFragment = do
 	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody p ct v ebody
+	body <- decryptBody ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
 	return $ Fragment ct v body
 
-readFragmentNoHash :: Partner -> TlsIo cnt Fragment
-readFragmentNoHash p = do
+readFragmentNoHash :: TlsIo cnt Fragment
+readFragmentNoHash = do
 	RawFragment ct v ebody <- readRawFragment
-	body <- decryptBody p ct v ebody
+	body <- decryptBody ct v ebody
 	return $ Fragment ct v body
 
 fragmentUpdateHash :: Fragment -> TlsIo cnt ()

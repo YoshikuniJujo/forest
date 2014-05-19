@@ -182,25 +182,24 @@ certificateVerify cid pub = do
 
 readContentNoHash :: TlsIo Content Content
 readContentNoHash = do
-	c <- readCached (readContentList Client)
-		<* updateSequenceNumberSmart Client
+	c <- readCached readContentList
+		<* updateSequenceNumber Client
 	return c
 
 readContent :: TlsIo Content Content
 readContent = do
-	c <- readCached (readContentList Client)
-		<* updateSequenceNumberSmart Client
+	c <- readCached readContentList
+		<* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
-readContentList :: Partner -> TlsIo Content [Content]
-readContentList partner =
-	(\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash partner
+readContentList :: TlsIo Content [Content]
+readContentList = (\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash
 
 writeContentList :: [Content] -> TlsIo Content ()
 writeContentList cs = do
 	let f = contentListToFragment cs
-	updateSequenceNumberSmart Client
+	updateSequenceNumber Client
 	writeFragment f
 	fragmentUpdateHash f
 

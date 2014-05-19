@@ -14,7 +14,7 @@ module TlsIo (
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
 
 	encryptBody, decryptBody,
-	updateSequenceNumber, updateSequenceNumberSmart,
+	updateSequenceNumber,
 ) where
 
 import Prelude hiding (read)
@@ -228,96 +228,82 @@ clientVerifyHash pub = do
 
 encryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptBody ct v body = do
-	cs <- getCipherSuite Server
+	cs <- writeCipherSuite Server
 	case cs of
 		TLS_RSA_WITH_AES_128_CBC_SHA -> do
 			mac <- calcMac Server ct v body
-			_ <- updateSequenceNumber Server
+			updateSequenceNumber Server
 			let	bm = body `BS.append` mac
-				padd = mkPadd 16 $ BS.length bm
-			encrypt Server (bm `BS.append` padd)
+				plen = 16 - ((BS.length bm + 1) `mod` 16)
+				padd = BS.replicate (plen + 1) $ fromIntegral plen
+			encrypt $ bm `BS.append` padd
 		TLS_NULL_WITH_NULL_NULL -> return body
 		_ -> throwError "writeFragment: not implemented"
 
-mkPadd :: Int -> Int -> BS.ByteString
-mkPadd bs len = let
-	plen = bs - ((len + 1) `mod` bs) in
-	BS.replicate (plen + 1) $ fromIntegral plen
-
-decrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
-decrypt partner e = do
+encrypt :: BS.ByteString -> TlsIo cnt BS.ByteString
+encrypt d = do
 	version <- gets tlssVersion
-	set <- getCipherSet partner
-	case (version, set) of
-		(Just MS.TLS10, (TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just iv)) ->
-			return $ AES.decryptCBC (AES.initAES key) iv e
-		(Just MS.TLS12, (TLS_RSA_WITH_AES_128_CBC_SHA, Just key, _)) -> do
-			let (iv, enc) = BS.splitAt 16 e
-			return $ AES.decryptCBC (AES.initAES key) iv enc
-		(_, (TLS_NULL_WITH_NULL_NULL, _, _)) -> return e
-		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
-
-encrypt :: Partner -> BS.ByteString -> TlsIo cnt BS.ByteString
-encrypt partner d = do
-	version <- gets tlssVersion
-	set <- getCipherSet partner
-	case (version, set) of
-		(Just MS.TLS12, (TLS_RSA_WITH_AES_128_CBC_SHA, Just key, _)) -> do
+	cs <- writeCipherSuite Server
+	mk <- writeKey Server
+	case (version, cs, mk) of
+		(Just MS.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) -> do
 			iv <- randomByteString 16
 			let e = AES.encryptCBC (AES.initAES key) iv d
 			return $ iv `BS.append` e
-		(_, (TLS_NULL_WITH_NULL_NULL, _, _)) -> return d
+		(_, TLS_NULL_WITH_NULL_NULL, _) -> return d
 		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
-getCipherSet :: Partner -> TlsIo cnt (CipherSuite, Maybe BS.ByteString, Maybe BS.ByteString)
-getCipherSet partner = do
-	cs <- gets $ case partner of
-		Client -> tlssClientWriteCipherSuite
-		Server -> tlssServerWriteCipherSuite
-	mkey <- gets $ case partner of
-		Client -> tlssClientWriteKey
-		Server -> tlssServerWriteKey
-	return (cs, mkey, Nothing)
-
-takeBodyMac :: Partner -> BS.ByteString -> TlsIo cnt (BS.ByteString, BS.ByteString)
-takeBodyMac partner bmp = do
-	cs <- gets $ case partner of
-		Client -> tlssClientWriteCipherSuite
-		Server -> tlssServerWriteCipherSuite
-	case cs of
-		TLS_RSA_WITH_AES_128_CBC_SHA -> return $ bodyMac bmp
+decryptBody :: ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+decryptBody ct v ebody = do
+	bmp <- decrypt ebody
+	cs <- gets $ tlssClientWriteCipherSuite
+	(body, mac) <- case cs of
+		TLS_RSA_WITH_AES_128_CBC_SHA -> do
+			let	plen = fromIntegral (BS.last bmp) + 1
+				bm = BS.take (BS.length bmp - plen) bmp
+			return $ BS.splitAt (BS.length bm - 20) bm
 		TLS_NULL_WITH_NULL_NULL -> return (bmp, "")
 		_ -> throwError "takeBodyMac: Bad cipher suite"
+	cmac <- calcMac Client ct v body
+	when (mac /= cmac) . throwError $
+		"decryptBody: Bad MAC value\n\t" ++
+		"ebody         : " ++ show ebody ++ "\n\t" ++
+		"bmp           : " ++ show bmp ++ "\n\t" ++
+		"body          : " ++ show body ++ "\n\t" ++
+		"given MAC     : " ++ show mac ++ "\n\t" ++
+		"caluculate MAC: " ++ show cmac
+	return body
 
-bodyMac :: BS.ByteString -> (BS.ByteString, BS.ByteString)
-bodyMac bs = let
-	(bm, _) = BS.splitAt (BS.length bs - fromIntegral (BS.last bs) - 1) bs in
-	BS.splitAt (BS.length bm - 20) bm
+decrypt :: BS.ByteString -> TlsIo cnt BS.ByteString
+decrypt e = do
+	version <- gets tlssVersion
+	cs <- writeCipherSuite Client
+	mk <- writeKey Client
+	case (version, cs, mk) of
+		(Just MS.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key) -> do
+			let (iv, enc) = BS.splitAt 16 e
+			return $ AES.decryptCBC (AES.initAES key) iv enc
+		(_, TLS_NULL_WITH_NULL_NULL, _) -> return e
+		_ -> throwError "clientWriteDecrypt: No keys or Bad cipher suite"
 
 getSequenceNumber :: Partner -> TlsIo cnt Word64
 getSequenceNumber partner = gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
 
-updateSequenceNumber :: Partner -> TlsIo cnt Word64
+updateSequenceNumber :: Partner -> TlsIo cnt ()
 updateSequenceNumber partner = do
+	cs <- gets $ case partner of
+		Client -> tlssClientWriteCipherSuite
+		Server -> tlssServerWriteCipherSuite
 	sn <- gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
 	tlss <- get
-	put $ case partner of
-		Client -> tlss { tlssClientSequenceNumber = succ sn }
-		Server -> tlss { tlssServerSequenceNumber = succ sn }
-	return sn
-
-updateSequenceNumberSmart :: Partner -> TlsIo cnt ()
-updateSequenceNumberSmart partner = do
-	cs <- gets $ case partner of
-		Client -> tlssClientWriteCipherSuite
-		Server -> tlssServerWriteCipherSuite
 	case cs of
-		TLS_RSA_WITH_AES_128_CBC_SHA ->
-			void $ updateSequenceNumber partner
+		TLS_RSA_WITH_AES_128_CBC_SHA -> put $ case partner of
+			Client -> tlss { tlssClientSequenceNumber = succ sn }
+			Server -> tlss { tlssServerSequenceNumber = succ sn }
 		TLS_NULL_WITH_NULL_NULL -> return ()
 		_ -> throwError "not implemented"
 
@@ -326,43 +312,27 @@ calcMac partner ct v body = do
 	cs <- gets $ case partner of
 		Client -> tlssClientWriteCipherSuite
 		Server -> tlssServerWriteCipherSuite
-	calcMacCs cs partner ct v body
-
-calcMacCs :: CipherSuite -> Partner -> ContentType -> Version -> BS.ByteString ->
-	TlsIo cnt BS.ByteString
-calcMacCs TLS_RSA_WITH_AES_128_CBC_SHA partner ct v body = do
 	sn <- getSequenceNumber partner
-	let hashInput = BS.concat [
-		word64ToByteString sn ,
-		contentTypeToByteString ct,
-		versionToByteString v,
-		lenBodyToByteString 2 body ]
-	Just macKey <- case partner of
+	mmacKey <- case partner of
 		Client -> gets tlssClientWriteMacKey
 		Server -> gets tlssServerWriteMacKey
 	mv <- gets tlssVersion
-	case mv of
---		Just MS.TLS10 -> return $ MS.hmac SHA1.hash 64 macKey hashInput
-		Just MS.TLS12 -> return $ MS.hmac SHA1.hash 64 macKey hashInput
-		_ -> throwError "calcMacCs: not supported version"
-calcMacCs TLS_NULL_WITH_NULL_NULL _ _ _ _ = return ""
-calcMacCs _ _ _ _ _ = throwError "calcMac: not supported"
+	case (mv, cs, mmacKey) of
+		(Just MS.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just macKey) ->
+			return $ MS.hmac SHA1.hash 64 macKey $ BS.concat [
+				word64ToByteString sn ,
+				contentTypeToByteString ct,
+				versionToByteString v,
+				lenBodyToByteString 2 body ]
+		(_, TLS_NULL_WITH_NULL_NULL, _) -> return ""
+		_ -> throwError "calcMac: not supported"
 
-getCipherSuite :: Partner -> TlsIo cnt CipherSuite
-getCipherSuite partner = gets $ case partner of
+writeCipherSuite :: Partner -> TlsIo cnt CipherSuite
+writeCipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
 
-decryptBody :: Partner -> ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
-decryptBody p ct v ebody = do
-	bm <- decrypt p ebody
-	(body, mac) <- takeBodyMac p bm
-	cmac <- calcMac p ct v body
-	when (mac /= cmac) . throwError $
-		"decryptBody: Bad MAC value\n\t" ++
-		"ebody         : " ++ show ebody ++ "\n\t" ++
-		"bm            : " ++ show bm ++ "\n\t" ++
-		"body          : " ++ show body ++ "\n\t" ++
-		"given MAC     : " ++ show mac ++ "\n\t" ++
-		"caluculate MAC: " ++ show cmac
-	return body
+writeKey :: Partner -> TlsIo cnt (Maybe BS.ByteString)
+writeKey partner = gets $ case partner of
+	Client -> tlssClientWriteKey
+	Server -> tlssServerWriteKey
