@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen,
+	TlsClient, runOpen, tPut, tGetWhole,
 ) where
 
 import Prelude hiding (read)
@@ -342,3 +342,53 @@ runTlsIo io st = do
 	case ret of
 		Right r -> return (r, st')
 		Left err -> error err
+
+tPut :: TlsClient -> BS.ByteString -> IO ()
+tPut ts msg = case (vr, cs) of
+	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
+		ebody <- atomically $ do
+			gen <- readTVar tvgen
+			sn <- readTVar tvsn
+			let (e, gen') = enc gen sn
+			writeTVar tvgen gen'
+			writeTVar tvsn $ succ sn
+			return e
+		BS.hPut h $ BS.concat [
+			contentTypeToByteString ct,
+			versionToByteString v,
+			lenBodyToByteString 2 ebody ]
+	_ -> error "tPut: not implemented"
+	where
+	vr = tlsVersion ts
+	cs = tlsCipherSuite ts
+	h = tlsHandle ts
+	key = tlsServerWriteKey ts
+	mk = tlsServerWriteMacKey ts
+	ct = ContentTypeApplicationData
+	v = Version 3 3
+	tvsn = tlsServerSequenceNumber ts
+	tvgen = tlsRandomGen ts
+	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
+
+tGetWhole :: TlsClient -> IO BS.ByteString
+tGetWhole ts = case (vr, cs) of
+	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
+		ct <- byteStringToContentType <$> BS.hGet h 1
+		v <- byteStringToVersion <$> BS.hGet h 2
+		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
+		sn <- atomically $ do
+			n <- readTVar tvsn
+			writeTVar tvsn $ succ n
+			return n
+		case dec sn ct v enc of
+			Right r -> return r
+			Left err -> error err
+	_ -> error "tGetWhole: not implemented"
+	where
+	vr = tlsVersion ts
+	cs = tlsCipherSuite ts
+	h = tlsHandle ts
+	key = tlsClientWriteKey ts
+	mk = tlsClientWriteMacKey ts
+	tvsn = tlsClientSequenceNumber ts
+	dec sn = CT.decryptMessage key sn mk

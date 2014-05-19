@@ -8,6 +8,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Concurrent
 import System.Environment
+import System.IO
 import System.IO.Unsafe
 import Data.IORef
 import Data.X509.File
@@ -56,12 +57,26 @@ main = do
 		client <- fst3 <$> accept scl
 		_ <- forkIO $ do
 			ep <- createEntropyPool
+			run' doClientCert certStore certChain cid pk client
+			{-
 			(\act -> evalTlsIo act ep client pk) $
 				run doClientCert certStore certChain cid
+				-}
 		return ()
 			
 run :: Bool -> CertificateStore -> CertificateChain -> Int -> TlsIo Content ()
-run dcc certStore certChain cid = do
+run dcc certStore certChain cid =
+	handshake dcc certStore certChain cid >> content cid
+
+run' :: Bool -> CertificateStore -> CertificateChain -> Int ->
+	PrivateKey -> Handle -> IO ()
+run' dcc certStore certChain cid pk cl = do
+	tls <- runOpen (handshake dcc certStore certChain cid) pk cl
+	tGetWhole tls >>= print
+	tPut tls answer
+
+handshake :: Bool -> CertificateStore -> CertificateChain -> Int -> TlsIo Content ()
+handshake dcc certStore certChain cid = do
 
 	------------------------------------------
 	--           CLIENT HELLO               --
@@ -133,6 +148,9 @@ run dcc certStore certChain cid = do
 	sf <- finishedHash Server
 	writeFragment . contentToFragment $ finished sf
 	output Server cid "Finished" [showHandshake $ finished sf]
+
+content :: Int -> TlsIo Content ()
+content cid = do
 
 	------------------------------------------
 	--      CLIENT GET                      --

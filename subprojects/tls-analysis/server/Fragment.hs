@@ -27,6 +27,8 @@ module Fragment (
 	randomByteString,
 	readCached,
 	clientVerifyHash,
+
+	runOpen, tPut, tGetWhole,
 ) where
 
 import Prelude hiding (read)
