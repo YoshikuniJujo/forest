@@ -1,2 +1,2 @@
-runhaskell -i../http-analysis -i../tls-analysis/server server.hs 4492
-runhaskell -i../http-analysis -i../tls-analysis/client client.hs 443
+runhaskell -i../http-analysis/get/ -i../tls-analysis/server server.hs 4492
+runhaskell -i../http-analysis/get/ -i../tls-analysis/client client.hs 443
