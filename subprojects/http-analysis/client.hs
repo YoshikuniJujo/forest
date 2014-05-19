@@ -1,7 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 
 import Control.Applicative
-import Control.Monad
 import Data.Maybe
 import System.IO
 import System.Environment
@@ -10,33 +9,34 @@ import Network
 import HttpTypes
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 
 main :: IO ()
 main = do
 	(pn :: Int) : _ <- mapM readIO =<< getArgs
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral pn
-	putStr $ request
-	hPutStrLn sv request
+	BS.putStr $ request
+	BSC.hPutStrLn sv request
 	src <- hGetHeader sv
-	mapM_ putStrLn src
+	mapM_ BSC.putStrLn src
 	let res = parseResponse src
 	print res
 	BS.hGet sv (contentLength $ responseContentLength res) >>= print
 	putStrLn ""
 --	replicateM_ 15 $ hGetLine sv >>= print
 
-hGetHeader :: Handle -> IO [String]
+hGetHeader :: Handle -> IO [BS.ByteString]
 hGetHeader h = do
-	l <- dropCR <$> hGetLine h
-	if (null l) then return [] else (l :) <$> hGetHeader h
+	l <- dropCR <$> BSC.hGetLine h
+	if (BS.null l) then return [] else (l :) <$> hGetHeader h
 
-dropCR :: String -> String
-dropCR s = if last s == '\r' then init s else s
+dropCR :: BS.ByteString -> BS.ByteString
+dropCR s = if BSC.last s == '\r' then BS.init s else s
 
-crlf :: [String] -> String
-crlf = concatMap (++ "\r\n")
+crlf :: [BS.ByteString] -> BS.ByteString
+crlf = BS.concat . map (+++ "\r\n")
 
-request :: String
+request :: BS.ByteString
 request = crlf . catMaybes . showRequest . RequestGet (Uri "/") (Version 1 1) $
 	Get {
 		getHost = Just . Host "localhost" $ Just 8080,

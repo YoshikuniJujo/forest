@@ -1,9 +1,11 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 
 import Control.Concurrent
 import Control.Applicative
 import Control.Monad
 import Data.Maybe
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Data.Time
 import System.IO
 import System.Environment
@@ -21,28 +23,29 @@ main = do
 		(client, _, _) <- accept socket
 		_ <- forkIO $ do
 			h <- hGetHeader client
-			mapM_ putStrLn h
-			putStrLn ""
+			mapM_ BSC.putStrLn h
+			BSC.putStrLn ""
 			print $ parse h
-			putStrLn ""
-			mapM_ putStrLn . catMaybes . showRequest $ parse h
-			putStrLn ""
-			putStr answer'
-			hPutStrLn client answer'
+			BSC.putStrLn ""
+			mapM_ BSC.putStrLn . catMaybes . showRequest $ parse h
+			BSC.putStrLn ""
+			BS.putStr answer'
+			BSC.hPutStrLn client answer'
 		return ()
 
-hGetHeader :: Handle -> IO [String]
+hGetHeader :: Handle -> IO [BS.ByteString]
 hGetHeader h = do
-	l <- dropCR <$> hGetLine h
-	if (null l) then return [] else (l :) <$> hGetHeader h
+	l <- dropCR <$> BS.hGetLine h
+	print l
+	if (BS.null l) then return [] else (l :) <$> hGetHeader h
 
-dropCR :: String -> String
-dropCR s = if last s == '\r' then init s else s
+dropCR :: BS.ByteString -> BS.ByteString
+dropCR s = if BSC.last s == '\r' then BS.init s else s
 
-crlf :: [String] -> String
-crlf = concatMap (++ "\r\n")
+crlf :: [BS.ByteString] -> BS.ByteString
+crlf = BS.concat . map (+++ "\r\n")
 
-answer' :: String
+answer' :: BS.ByteString
 answer' = crlf . catMaybes . showResponse $ Response {
 	responseVersion = Version 1 1,
 	responseStatusCode = OK,

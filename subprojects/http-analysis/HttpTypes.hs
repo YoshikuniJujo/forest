@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module HttpTypes (
 	Version(..),
 	Request(..), RequestType(..), Uri(..), Get(..), CacheControl(..),
@@ -6,34 +8,41 @@ module HttpTypes (
 	Response(..), StatusCode(..), ContentLength(..), contentLength,
 	ContentType(..),
 
-	parse, parseResponse, showRequest, showResponse
+	parse, parseResponse, showRequest, showResponse, (+++),
 ) where
 
 import Control.Applicative
 import Data.Maybe
-import Data.List
 import Data.Char
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Data.Time
 import System.Locale
 
+(+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
+(+++) = BS.append
+
+(-:-) :: Char -> BS.ByteString -> BS.ByteString
+(-:-) = BSC.cons
+
 data Request
 	= RequestGet Uri Version Get
-	| RequestRaw RequestType Uri Version [(String, String)]
+	| RequestRaw RequestType Uri Version [(BS.ByteString, BS.ByteString)]
 	deriving Show
 
-showRequest :: Request -> [Maybe String]
+showRequest :: Request -> [Maybe BS.ByteString]
 showRequest (RequestGet uri vsn g) = [
-	Just $ "GET " ++ showUri uri ++ " " ++ showVersion vsn,
-	("Host: " ++) . showHost <$> getHost g,
-	("User-Agent: " ++) . unwords . map showProduct <$> getUserAgent g,
-	("Accept: " ++) . intercalate "," . map showAccept <$> getAccept g,
-	("Accept-Language: " ++) . intercalate "," .
+	Just $ "GET " +++ showUri uri +++ " " +++ showVersion vsn,
+	("Host: " +++) . showHost <$> getHost g,
+	("User-Agent: " +++) . BSC.unwords . map showProduct <$> getUserAgent g,
+	("Accept: " +++) . BSC.intercalate "," . map showAccept <$> getAccept g,
+	("Accept-Language: " +++) . BSC.intercalate "," .
 		map showAcceptLanguage <$> getAcceptLanguage g,
-	("Accept-Encoding: " ++) . intercalate "," .
+	("Accept-Encoding: " +++) . BSC.intercalate "," .
 		map showAcceptEncoding <$> getAcceptEncoding g,
-	("Connection: " ++) . intercalate "," .
+	("Connection: " +++) . BSC.intercalate "," .
 		map showConnection <$> getConnection g,
-	("Cache-Control: " ++) . intercalate "," .
+	("Cache-Control: " +++) . BSC.intercalate "," .
 		map showCacheControl <$> getCacheControl g,
 	Just ""
  ]
@@ -47,51 +56,58 @@ data Get = Get {
 	getAcceptEncoding :: Maybe [AcceptEncoding],
 	getConnection :: Maybe [Connection],
 	getCacheControl :: Maybe [CacheControl],
-	getOthers :: [(String, String)]
+	getOthers :: [(BS.ByteString, BS.ByteString)]
  } deriving Show
 
 data RequestType
 	= RequestTypeGet
-	| RequestTypeRaw String
+	| RequestTypeRaw BS.ByteString
 	deriving Show
 
-data Uri = Uri String deriving Show
+data Uri = Uri BS.ByteString deriving Show
 
-showUri :: Uri -> String
+showUri :: Uri -> BS.ByteString
 showUri (Uri uri) = uri
 
 data Version = Version Int Int deriving Show
 
-showVersion :: Version -> String
-showVersion (Version vmjr vmnr) = "HTTP/" ++ show vmjr ++ "." ++ show vmnr
+showVersion :: Version -> BS.ByteString
+showVersion (Version vmjr vmnr) =
+	"HTTP/" +++ BSC.pack (show vmjr) +++ "." +++ BSC.pack (show vmnr)
 
-parse :: [String] -> Request
+parse :: [BS.ByteString] -> Request
 parse (h : t) = let
 	(rt, uri, v) = parseRequestLine h in
 	parseSep rt uri v $ map separate t
 	where
-	separate i = let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
+	separate i = let (k, csv) = BSC.span (/= ':') i in
+		case BS.splitAt 2 csv of
+			(": ", v) -> (k, v)
+			_ -> error "parse: bad"
 parse [] = error "parse: bad request"
 
-parseSep :: RequestType -> Uri -> Version -> [(String, String)] -> Request
+parseSep :: RequestType -> Uri -> Version -> [(BS.ByteString, BS.ByteString)] -> Request
 parseSep RequestTypeGet uri v kvs = RequestGet uri v $ parseGet kvs
 parseSep rt uri v kvs = RequestRaw rt uri v kvs
 
-parseRequestLine :: String -> (RequestType, Uri, Version)
+parseRequestLine :: BS.ByteString -> (RequestType, Uri, Version)
 parseRequestLine rl = let
-	[rts, uris, vs] = words rl
+	[rts, uris, vs] = BSC.words rl
 	rt = case rts of
 		"GET" -> RequestTypeGet
 		_ -> RequestTypeRaw rts in
 	(rt, Uri uris, parseVersion vs)
 
-parseVersion :: String -> Version
-parseVersion ('H' : 'T' : 'T' : 'P' : '/' : vns) = let
-	(vmjrs, '.' : vmnrs) = span (/= '.') vns in
-	Version (read vmjrs) (read vmnrs)
+parseVersion :: BS.ByteString -> Version
+parseVersion httpVns
+	| ("HTTP/", vns) <- BS.splitAt 5 httpVns = let
+		(vmjrs, dvmnrs) = BSC.span (/= '.') vns in case BSC.uncons dvmnrs of
+			Just ('.', vmnrs) -> Version
+				(read $ BSC.unpack vmjrs) (read $ BSC.unpack vmnrs)
+			_ -> error "parseVersion: bad http version"
 parseVersion _ = error "parseVersion: bad http version"
 
-parseGet :: [(String, String)] -> Get
+parseGet :: [(BS.ByteString, BS.ByteString)] -> Get
 parseGet kvs = Get {
 	getHost = parseHost <$> lookup "Host" kvs,
 	getUserAgent = map parseProduct . sepTkn <$> lookup "User-Agent" kvs,
@@ -106,135 +122,154 @@ parseGet kvs = Get {
 	getOthers = filter ((`notElem` getKeys) . fst) kvs
  }
 
-sepTkn :: String -> [String]
+sepTkn :: BS.ByteString -> [BS.ByteString]
 sepTkn "" = []
-sepTkn ('(' : src) = ('(' : cm ++ ")") : sepTkn (dropWhile isSpace src')
+sepTkn psrc
+	| Just ('(', src) <- BSC.uncons psrc = let
+		(cm, src') = let (c_, s_) = BSC.span (/= ')') src in
+			case BSC.uncons s_ of
+				Just (')', s__) -> (c_, s__)
+				_ -> error "setTkn: bad comment" in
+		('(' -:- cm +++ ")") : sepTkn (BSC.dropWhile isSpace src')
+-- sepTkn ('(' : src) = ('(' : cm ++ ")") : sepTkn (dropWhile isSpace src')
+--	where
+--	(cm, ')' : src') = span (/= ')') src
+sepTkn src = tk : sepTkn (BSC.dropWhile isSpace src')
 	where
-	(cm, ')' : src') = span (/= ')') src
-sepTkn src = tk : sepTkn (dropWhile isSpace src')
-	where
-	(tk, src') = span (not . isSpace) src
+	(tk, src') = BSC.span (not . isSpace) src
 
-getKeys :: [String]
+getKeys :: [BS.ByteString]
 getKeys = [
 	"Host", "User-Agent", "Accept", "Accept-Language", "Accept-Encoding",
 	"Connection", "Cache-Control"
  ]
 
-data Host = Host String (Maybe Int) deriving Show
+data Host = Host BS.ByteString (Maybe Int) deriving Show
 
-parseHost :: String -> Host
-parseHost src = case span (/= ':') src of
-	(h, ':' : p) -> Host h (Just $ read p)
-	(h, _) -> Host h Nothing
+parseHost :: BS.ByteString -> Host
+parseHost src = case BSC.span (/= ':') src of
+	(h, cp) -> case BSC.uncons cp of
+		Just (':', p) -> Host h (Just . read $ BSC.unpack p)
+		Nothing -> Host h Nothing
+		_ -> error "parseHost: never occur"
 
-showHost :: Host -> String
-showHost (Host h p) = h ++ (maybe "" ((':' :) . show) p)
+showHost :: Host -> BS.ByteString
+showHost (Host h p) = h +++ (maybe "" ((':' -:-) . BSC.pack . show) p)
 
 data Product
-	= Product String (Maybe String)
-	| ProductComment String
+	= Product BS.ByteString (Maybe BS.ByteString)
+	| ProductComment BS.ByteString
 	deriving Show
 
-showProduct :: Product -> String
-showProduct (Product pn mpv) = pn ++ case mpv of
-	Just v -> '/' : v
+showProduct :: Product -> BS.ByteString
+showProduct (Product pn mpv) = pn +++ case mpv of
+	Just v -> '/' -:- v
 	_ -> ""
-showProduct (ProductComment cm) = "(" ++ cm ++ ")"
+showProduct (ProductComment cm) = "(" +++ cm +++ ")"
 
-parseProduct :: String -> Product
-parseProduct ('(' : cm) = case last cm of
-	')' -> ProductComment $ init cm
-	_ -> error "parseProduct: bad comment"
-parseProduct pnv = case span (/= '/') pnv of
-	(pn, '/' : v) -> Product pn $ Just v
-	_ -> Product pnv Nothing
+parseProduct :: BS.ByteString -> Product
+parseProduct pcm
+	| Just ('(', cm) <- BSC.uncons pcm = case BSC.last cm of
+		')' -> ProductComment $ BS.init cm
+		_ -> error "parseProduct: bad comment"
+parseProduct pnv = case BSC.span (/= '/') pnv of
+	(pn, sv) -> case BSC.uncons sv of
+		Just ('/', v) -> Product pn $ Just v
+		_ -> Product pnv Nothing
 
 data Accept
-	= Accept (String, String) Qvalue
+	= Accept (BS.ByteString, BS.ByteString) Qvalue
 	deriving Show
 
-showAccept :: Accept -> String
-showAccept (Accept (t, st) qv) = ((t ++ "/" ++ st) ++) $ showQvalue qv
+showAccept :: Accept -> BS.ByteString
+showAccept (Accept (t, st) qv) = ((t +++ "/" +++ st) +++) $ showQvalue qv
 
-parseAccept :: String -> Accept
-parseAccept src = case span (/= ';') src of
-	(mr, ';' : qv) -> Accept (parseMediaRange mr) $ parseQvalue qv
-	(mr, "") -> Accept (parseMediaRange mr) $ Qvalue 1
-	_ -> error "parseAccept: never occur"
+parseAccept :: BS.ByteString -> Accept
+parseAccept src = case BSC.span (/= ';') src of
+	(mr, sqv) -> case BSC.uncons sqv of
+		Just (';', qv) -> Accept (parseMediaRange mr) $ parseQvalue qv
+		Nothing -> Accept (parseMediaRange mr) $ Qvalue 1
+		_ -> error "parseAccept: never occur"
 
-parseMediaRange :: String -> (String, String)
-parseMediaRange src = case span (/= '/') src of
-	(t, '/' : st) -> (t, st)
-	_ -> error "parseMediaRange: bad media range"
+parseMediaRange :: BS.ByteString -> (BS.ByteString, BS.ByteString)
+parseMediaRange src = case BSC.span (/= '/') src of
+	(t, sst) -> case BSC.uncons sst of
+		Just ('/', st) -> (t, st)
+		_ -> error "parseMediaRange: bad media range"
 
-unlist :: String -> [String]
+unlist :: BS.ByteString -> [BS.ByteString]
 unlist "" = []
-unlist src = case span (/= ',') src of
-	(h, ',' : t) -> h : unlist (dropWhile isSpace t)
+unlist src = case BSC.span (/= ',') src of
 	(h, "") -> [h]
-	_ -> error "unlist: never occur"
+	(h, ct) -> case BSC.uncons ct of
+		Just (',', t) -> h : unlist (BSC.dropWhile isSpace t)
+		_ -> error "unlist: never occur"
 
 data Qvalue
 	= Qvalue Double
 	deriving Show
 
-showQvalue :: Qvalue -> String
+showQvalue :: Qvalue -> BS.ByteString
 showQvalue (Qvalue 1.0) = ""
-showQvalue (Qvalue qv) = ";q=" ++ show qv
+showQvalue (Qvalue qv) = ";q=" +++ BSC.pack (show qv)
 
-parseQvalue :: String -> Qvalue
-parseQvalue ('q' : '=' : qv) = Qvalue $ read qv
+parseQvalue :: BS.ByteString -> Qvalue
+parseQvalue qeqv
+	| ("q=", qv) <- BS.splitAt 2 qeqv = Qvalue . read $ BSC.unpack qv
 parseQvalue _ = error "parseQvalue: bad qvalue"
 
 data AcceptLanguage
-	= AcceptLanguage String Qvalue
+	= AcceptLanguage BS.ByteString Qvalue
 	deriving Show
 
-showAcceptLanguage :: AcceptLanguage -> String
-showAcceptLanguage (AcceptLanguage al qv) = al ++ showQvalue qv
+showAcceptLanguage :: AcceptLanguage -> BS.ByteString
+showAcceptLanguage (AcceptLanguage al qv) = al +++ showQvalue qv
 
-parseAcceptLanguage :: String -> AcceptLanguage
-parseAcceptLanguage src = case span (/= ';') src of
-	(al, ';' : qv) -> AcceptLanguage al $ parseQvalue qv
-	(al, "") -> AcceptLanguage al $ Qvalue 1
-	_ -> error "parseAcceptLanguage: never occur"
+parseAcceptLanguage :: BS.ByteString -> AcceptLanguage
+parseAcceptLanguage src = case BSC.span (/= ';') src of
+	(al, sqv) -> case BSC.uncons sqv of
+		Just (';', qv) -> AcceptLanguage al $ parseQvalue qv
+		Nothing -> AcceptLanguage al $ Qvalue 1
+		_ -> error "parseAcceptLanguage: never occur"
 
 data AcceptEncoding
-	= AcceptEncoding String Qvalue
+	= AcceptEncoding BS.ByteString Qvalue
 	deriving Show
 
-showAcceptEncoding :: AcceptEncoding -> String
-showAcceptEncoding (AcceptEncoding ae qv) = ae ++ showQvalue qv
+showAcceptEncoding :: AcceptEncoding -> BS.ByteString
+showAcceptEncoding (AcceptEncoding ae qv) = ae +++ showQvalue qv
 
-parseAcceptEncoding :: String -> AcceptEncoding
-parseAcceptEncoding src = case span (/= ';') src of
-	(ae, ';' : qv) -> AcceptEncoding ae $ parseQvalue qv
-	(ae, "") -> AcceptEncoding ae $ Qvalue 1
-	_ -> error "parseAcceptEncoding: never occur"
+parseAcceptEncoding :: BS.ByteString -> AcceptEncoding
+parseAcceptEncoding src = case BSC.span (/= ';') src of
+	(ae, sqv) -> case BSC.uncons sqv of
+		Just (';', qv) -> AcceptEncoding ae $ parseQvalue qv
+		Nothing -> AcceptEncoding ae $ Qvalue 1
+		_ -> error "parseAcceptEncoding: never occur"
 
 data Connection
-	= Connection String
+	= Connection BS.ByteString
 	deriving Show
 
-showConnection :: Connection -> String
+showConnection :: Connection -> BS.ByteString
 showConnection (Connection c) = c
 
-parseConnection :: String -> Connection
+parseConnection :: BS.ByteString -> Connection
 parseConnection src = Connection src
 
 data CacheControl
 	= MaxAge Int
-	| CacheControlRaw String
+	| CacheControlRaw BS.ByteString
 	deriving Show
 
-showCacheControl :: CacheControl -> String
-showCacheControl (MaxAge ma) = "max-age=" ++ show ma
+showCacheControl :: CacheControl -> BS.ByteString
+showCacheControl (MaxAge ma) = "max-age=" +++ BSC.pack (show ma)
 showCacheControl (CacheControlRaw cc) = cc
 
-parseCacheControl :: String -> CacheControl
-parseCacheControl ('m' : 'a' : 'x' : '-' : 'a' : 'g' : 'e' : '=' : ma) =
-	MaxAge $ read ma
+parseCacheControl :: BS.ByteString -> CacheControl
+parseCacheControl ccma
+	| ("max-age", ema) <- BSC.span (/= '=') ccma = case BSC.uncons ema of
+		Just ('=', ma) -> MaxAge . read $ BSC.unpack ma
+		_ -> error "parseCacheControl: bad"
 parseCacheControl cc = CacheControlRaw cc
 
 data Response = Response {
@@ -245,33 +280,37 @@ data Response = Response {
 	responseContentType :: ContentType,
 	responseServer :: Maybe [Product],
 	responseLastModified :: Maybe UTCTime,
-	responseETag :: Maybe String,
-	responseAcceptRanges :: Maybe String,
-	responseConnection :: Maybe String,
-	responseOthers :: [(String, String)],
-	responseBody :: String
+	responseETag :: Maybe BS.ByteString,
+	responseAcceptRanges :: Maybe BS.ByteString,
+	responseConnection :: Maybe BS.ByteString,
+	responseOthers :: [(BS.ByteString, BS.ByteString)],
+	responseBody :: BS.ByteString
  } deriving Show
 
-parseResponse :: [String] -> Response
+parseResponse :: [BS.ByteString] -> Response
 parseResponse (h : t) = let (v, sc) = parseResponseLine h in
 	parseResponseSep v sc $ map separate t
 	where
-	separate i = let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
+	separate i = let (k, csv) = BSC.span (/= ':') i in
+		case BS.splitAt 2 csv of
+			(": ", v) -> (k, v)
+			_ -> error "parseResponse: bad response"
+	-- let (k, ':' : ' ' : v) = span (/= ':') i in (k, v)
 parseResponse _ = error "parseResponse: bad response"
 
-parseResponseSep :: Version -> StatusCode -> [(String, String)] -> Response
+parseResponseSep :: Version -> StatusCode -> [(BS.ByteString, BS.ByteString)] -> Response
 parseResponseSep v sc kvs = Response {
 	responseVersion = v,
 	responseStatusCode = sc,
 	responseDate = readTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S" .
-		initN 4 . fromJust $ lookup "Date" kvs,
-	responseContentLength = ContentLength . read . fromJust $
+		BSC.unpack . initN 4 . fromJust $ lookup "Date" kvs,
+	responseContentLength = ContentLength . read . BSC.unpack . fromJust $
 		lookup "Content-Length" kvs,
 	responseContentType = parseContentType . fromJust $
 		lookup "Content-Type" kvs,
 	responseServer = map parseProduct . sepTkn <$> lookup "Server" kvs,
 	responseLastModified = readTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S" .
-		initN 4 <$> lookup "Last-Modified" kvs,
+		BSC.unpack . initN 4 <$> lookup "Last-Modified" kvs,
 	responseETag = lookup "ETag" kvs,
 	responseAcceptRanges = lookup "Accept-Ranges" kvs,
 	responseConnection = lookup "Connection" kvs,
@@ -279,67 +318,70 @@ parseResponseSep v sc kvs = Response {
 	responseBody = ""
  }
 
-responseKeys :: [String]
+responseKeys :: [BS.ByteString]
 responseKeys = [
 	"Date", "Content-Length", "Content-Type", "Server", "Last-Modified",
 	"ETag", "Accept-Ranges", "Connection" ]
 
-initN :: Int -> [a] -> [a]
-initN n lst = take (length lst - n) lst
+initN :: Int -> BS.ByteString -> BS.ByteString
+initN n lst = BS.take (BS.length lst - n) lst
 
-parseResponseLine :: String -> (Version, StatusCode)
-parseResponseLine src = case span (/= ' ') src of
-	(vs, ' ' : scs) -> (parseVersion vs, parseStatusCode scs)
-	_ -> error "parseResponseLine: bad response line"
+parseResponseLine :: BS.ByteString -> (Version, StatusCode)
+parseResponseLine src = case BSC.span (/= ' ') src of
+	(vs, sscs) -> case BSC.uncons sscs of
+		Just (' ', scs) -> (parseVersion vs, parseStatusCode scs)
+		_ -> error "parseResponseLine: bad response line"
 
-parseStatusCode :: String -> StatusCode
-parseStatusCode ('2' : '0' : '0' : _) = OK
+parseStatusCode :: BS.ByteString -> StatusCode
+parseStatusCode sc
+	| ("200", _) <- BSC.span (not . isSpace) sc = OK
 parseStatusCode _ = error "parseStatusCode: bad status code"
 
-showResponse :: Response -> [Maybe String]
+showResponse :: Response -> [Maybe BS.ByteString]
 showResponse r =
-	[	Just $ showVersion (responseVersion r) ++ " " ++
+	[	Just $ showVersion (responseVersion r) +++ " " +++
 			showStatusCode (responseStatusCode r),
-		Just $ "Date: " ++ showTime (responseDate r),
-		Just $ "Content-Length: " ++
+		Just $ "Date: " +++ showTime (responseDate r),
+		Just $ "Content-Length: " +++
 			showContentLength (responseContentLength r),
-		Just $ "Content-Type: " ++
+		Just $ "Content-Type: " +++
 			showContentType (responseContentType r),
-		("Server: " ++) . unwords . map showProduct <$> responseServer r,
-		("Last-Modified: " ++) . showTime <$> responseLastModified r,
-		("ETag: " ++) <$> responseETag r,
-		("Accept-Ranges: " ++) <$> responseAcceptRanges r,
-		("Connection: " ++) <$> responseConnection r
+		("Server: " +++) . BSC.unwords . map showProduct <$> responseServer r,
+		("Last-Modified: " +++) . showTime <$> responseLastModified r,
+		("ETag: " +++) <$> responseETag r,
+		("Accept-Ranges: " +++) <$> responseAcceptRanges r,
+		("Connection: " +++) <$> responseConnection r
 	 ] ++
-	map (\(k, v) -> Just $ k ++ ": " ++ v) (responseOthers r) ++
+	map (\(k, v) -> Just $ k +++ ": " +++ v) (responseOthers r) ++
 	[	Just "",
 		Just $ responseBody r
 	 ]
 
 data StatusCode = Continue | SwitchingProtocols | OK deriving Show
 
-showStatusCode :: StatusCode -> String
+showStatusCode :: StatusCode -> BS.ByteString
 showStatusCode Continue = "100 Continue"
 showStatusCode SwitchingProtocols = "101 SwitchingProtocols"
 showStatusCode OK = "200 OK"
 
 data ContentLength = ContentLength Int deriving Show
 
-showContentLength :: ContentLength -> String
-showContentLength (ContentLength n) = show n
+showContentLength :: ContentLength -> BS.ByteString
+showContentLength (ContentLength n) = BSC.pack $ show n
 
 contentLength :: ContentLength -> Int
 contentLength (ContentLength n) = n
 
-data ContentType = ContentType (String, String) deriving Show
+data ContentType = ContentType (BS.ByteString, BS.ByteString) deriving Show
 
-parseContentType :: String -> ContentType
-parseContentType ct = case span (/= '/') ct of
-	(t, '/' : st) -> ContentType (t, st)
-	_ -> error "parseContentType: bad Content-Type"
+parseContentType :: BS.ByteString -> ContentType
+parseContentType ct = case BSC.span (/= '/') ct of
+	(t, sst) -> case BSC.uncons sst of
+		Just ('/', st) -> ContentType (t, st)
+		_ -> error "parseContentType: bad Content-Type"
 
-showContentType :: ContentType -> String
-showContentType (ContentType (t, st)) = t ++ "/" ++ st
+showContentType :: ContentType -> BS.ByteString
+showContentType (ContentType (t, st)) = t +++ "/" +++ st
 
-showTime :: UTCTime -> String
-showTime = formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT"
+showTime :: UTCTime -> BS.ByteString
+showTime = BSC.pack . formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT"
