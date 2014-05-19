@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
 
-module Server (
+module TlsServer (
 	TlsClient, openTlsClient, tPut, tGet, tGetLine, tGetByte, tGetContent,
 ) where
 
