@@ -21,17 +21,4 @@ main = do
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
 	tls <- openTlsServer [(pkys, certChain)] sv
-	httpGet tls >>= print
-	{-
-	hlPut tls $
-		"GET / HTTP/1.1\r\n" +++
-		"Host: localhost:4492\r\n" +++
-		"User-Agent: Mozilla/5.0\r\n" +++
-		"Accept: text/plain\r\n" +++
-		"Accept-Language: ja\r\n" +++
-		"Accept-Encoding:\r\n" +++
-		"Connection: close\r\n" +++
-		"Cache-Control: max-age=0\r\n\r\n"
-	hlGetLine tls >>= print
-	hlGetLine tls >>= print
-	-}
+	httpPost tls "I am HTTP over TLS client!\n" >>= print
