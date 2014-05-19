@@ -12,7 +12,7 @@ import System.Locale
 import HttpTypes
 import HandleLike
 
-httpServer :: HandleLike h => h -> BS.ByteString -> IO ()
+httpServer :: HandleLike h => h -> BS.ByteString -> IO BS.ByteString
 httpServer cl cnt = do
 	h <- hlGetHeader cl
 	let req = parse h
@@ -21,6 +21,7 @@ httpServer cl cnt = do
 	print req'
 	mapM_ BSC.putStrLn . catMaybes . showRequest $ req'
 	hlPutStrLn cl . crlf . catMaybes . showResponse $ mkContents cnt
+	return $ getPostBody req'
 
 mkContents :: BS.ByteString -> Response
 mkContents cnt = Response {

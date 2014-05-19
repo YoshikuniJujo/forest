@@ -9,7 +9,7 @@ module HttpTypes (
 	ContentType(..),
 
 	parse, parseResponse, showRequest, showResponse, (+++),
-	myLast, requestBodyLength, postAddBody,
+	myLast, requestBodyLength, postAddBody, getPostBody,
 ) where
 
 import Control.Applicative
@@ -39,6 +39,10 @@ requestBodyLength _ = 0
 postAddBody :: Request -> BS.ByteString -> Request
 postAddBody (RequestPost u v p) b = RequestPost u v $ p { postBody = b }
 postAddBody r _ = r
+
+getPostBody :: Request -> BS.ByteString
+getPostBody (RequestPost _ _ p) = postBody p
+getPostBody _ = ""
 
 showRequest :: Request -> [Maybe BS.ByteString]
 showRequest (RequestGet uri vsn g) = [

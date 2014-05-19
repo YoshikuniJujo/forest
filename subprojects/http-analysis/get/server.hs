@@ -14,5 +14,7 @@ main = do
 	socket <- listenOn port
 	forever $ do
 		(client, _, _) <- accept socket
-		_ <- forkIO $ httpServer client "Good afternoon, world!\n"
+		_ <- forkIO $ do
+			ret <- httpServer client "Good afternoon, world!\n"
+			print ret
 		return ()
