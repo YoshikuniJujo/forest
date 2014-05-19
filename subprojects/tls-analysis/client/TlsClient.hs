@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
-module Client (
+module TlsClient (
 	TlsServer,
 	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent
 ) where
