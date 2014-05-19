@@ -9,4 +9,4 @@ main :: IO ()
 main = do
 	(pn :: Int) : _ <- mapM readIO =<< getArgs
 	sv <- connectTo "localhost" (PortNumber $ fromIntegral pn)
-	httpClient sv >>= print
+	httpGet sv >>= print

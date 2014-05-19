@@ -10,6 +10,8 @@ module HttpTypes (
 
 	parse, parseResponse, showRequest, showResponse, (+++),
 	myLast, requestBodyLength, postAddBody, getPostBody,
+
+	Post(..),
 ) where
 
 import Control.Applicative
@@ -79,8 +81,8 @@ showRequest (RequestPost uri vsn p) = [
  	Just "",
 	Just $ postBody p
  ]
-showRequest (RequestRaw rt uri v kvs) = [
-	Just $ showRequestType rt +++ " " +++ showUri uri +++ " " +++ showVersion v
+showRequest (RequestRaw rt uri vsn kvs) = [
+	Just $ showRequestType rt +++ " " +++ showUri uri +++ " " +++ showVersion vsn
  ] ++ map (\(k, v) -> Just $ k +++ ": " +++ v) kvs ++ [ Just "" ]
 
 data Get = Get {

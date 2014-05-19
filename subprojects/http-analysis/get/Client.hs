@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 
-module Client (httpClient) where
+module Client (httpGet, httpPost) where
 
 import Control.Applicative
 import Data.Maybe
@@ -11,8 +11,8 @@ import HandleLike
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-httpClient :: HandleLike h => h -> IO BS.ByteString
-httpClient sv = do
+httpGet :: HandleLike h => h -> IO BS.ByteString
+httpGet sv = do
 	hlPutStrLn sv request
 	src <- hGetHeader sv
 	let res = parseResponse src
@@ -21,13 +21,19 @@ httpClient sv = do
 	mapM_ BSC.putStrLn . catMaybes $ showResponse res'
 	return cnt
 
+httpPost :: HandleLike h => h -> BS.ByteString -> IO BS.ByteString
+httpPost sv cnt = do
+	hlPutStrLn sv . requestToString $ post cnt
+	res <- parseResponse <$> hGetHeader sv
+	cnt' <- hlGet sv (contentLength $ responseContentLength res)
+	let res' = res { responseBody = cnt' }
+	BS.putStr $ responseToString res'
+	return cnt'
+
 hGetHeader :: HandleLike h => h -> IO [BS.ByteString]
 hGetHeader h = do
 	l <- hlGetLine h
 	if (BS.null l) then return [] else (l :) <$> hGetHeader h
-
-dropCR :: BS.ByteString -> BS.ByteString
-dropCR s = if BSC.last s == '\r' then BS.init s else s
 
 crlf :: [BS.ByteString] -> BS.ByteString
 crlf = BS.concat . map (+++ "\r\n")
@@ -43,4 +49,26 @@ request = crlf . catMaybes . showRequest . RequestGet (Uri "/") (Version 1 1) $
 		getConnection = Just [Connection "close"],
 		getCacheControl = Just [MaxAge 0],
 		getOthers = []
+	 }
+
+requestToString :: Request -> BS.ByteString
+requestToString = crlf . catMaybes . showRequest
+
+responseToString :: Response -> BS.ByteString
+responseToString = crlf . catMaybes . showResponse
+
+post :: BS.ByteString -> Request
+post cnt = RequestPost (Uri "/") (Version 1 1) $
+	Post {
+		postHost = Just . Host "localhost" $ Just 8080,
+		postUserAgent = Just [Product "Mozilla" (Just "5.0")],
+		postAccept = Just [Accept ("text", "plain") (Qvalue 1.0)],
+		postAcceptLanguage = Just [AcceptLanguage "ja" (Qvalue 1.0)],
+		postAcceptEncoding = Just [],
+		postConnection = Just [Connection "close"],
+		postCacheControl = Just [MaxAge 0],
+		postContentType = Just $ ContentType ("text", "plain"),
+		postContentLength = Just . ContentLength $ BS.length cnt,
+		postOthers = [],
+		postBody = cnt
 	 }
