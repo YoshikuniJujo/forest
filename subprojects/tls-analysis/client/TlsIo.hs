@@ -72,6 +72,7 @@ instance HandleLike TlsServer where
 	hlPut = tPut
 	hlGet = tGet
 	hlGetLine = tGetLine
+	hlGetContent = tGetContent
 
 initTlsClientState :: EntropyPool -> Handle -> TlsClientState cnt
 initTlsClientState ep sv = TlsClientState {
