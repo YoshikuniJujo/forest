@@ -23,7 +23,7 @@ import Crypto.PubKey.RSA
 import System.Console.GetOpt
 
 import TlsServer
-import MyHandle
+import HandleLike
 
 options :: [OptDescr Option]
 options = [
@@ -52,13 +52,12 @@ main = do
 run' :: Bool -> CertificateStore -> CertificateChain ->
 	PrivateKey -> Handle -> IO ()
 run' dcc certStore certChain pk cl = do
-	tls <- tlsClientToMyHandle <$>
-		openTlsClient dcc certStore certChain pk cl
+	tls <- openTlsClient dcc certStore certChain pk cl
 --	tGetByte tls >>= putStrLn . ("tGetByte: " ++) . show
 --	tGet tls 5 >>= print
 --	tGetLine tls >>= print
-	mGetLine tls >>= print
-	mPut tls answer
+	hlGetLine tls >>= print
+	hlPut tls answer
 			
 answer :: BS.ByteString
 answer = BS.concat [

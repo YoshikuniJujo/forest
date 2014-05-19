@@ -41,6 +41,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified CryptoTools as CT
 import Basic
+import HandleLike
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
 
@@ -66,6 +67,11 @@ data TlsClientState cnt = TlsClientState {
 	tlssClientSequenceNumber	:: Word64,
 	tlssServerSequenceNumber	:: Word64
  }
+
+instance HandleLike TlsServer where
+	hlPut = tPut
+	hlGet = tGet
+	hlGetLine = tGetLine
 
 initTlsClientState :: EntropyPool -> Handle -> TlsClientState cnt
 initTlsClientState ep sv = TlsClientState {

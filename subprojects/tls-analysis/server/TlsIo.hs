@@ -39,6 +39,8 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import qualified CryptoTools as CT
 import Basic
 
+import HandleLike
+
 type TlsIo cnt = ErrorT String (StateT (TlsState cnt) IO)
 
 data TlsState cnt = TlsState {
@@ -314,6 +316,11 @@ data TlsClient = TlsClient {
 	tlsClientSequenceNumber :: TVar Word64,
 	tlsServerSequenceNumber :: TVar Word64
  }
+
+instance HandleLike TlsClient where
+	hlPut = tPut
+	hlGet = tGet
+	hlGetLine = tGetLine
 
 runOpen :: TlsIo cnt () -> RSA.PrivateKey -> Handle -> IO TlsClient
 runOpen opn pk cl = do
