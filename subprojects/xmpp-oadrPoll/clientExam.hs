@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
 
 module Main (main) where
 
@@ -12,12 +12,18 @@ import Data.Conduit
 import Network
 
 import Data.XML.Types
+import Text.XML
 
 import qualified Data.ByteString as BS
 
 import TlsClient
 
 import XmppClient
+
+import Text.Hamlet.XML
+
+some :: Data.XML.Types.Element
+[Data.XML.Types.NodeElement some] = map toXMLNode [xml| <hello>myfriend |]
 
 main :: IO ()
 main = do
@@ -26,17 +32,8 @@ main = do
 	hPutStr h starttls
 	replicateM_ 12 . toTagEnd $ hGetChar h
 	tls <- openTlsServer [(undefined, undefined)] h
-	connectSendMsg tls "Good night!"
-	{-
-	ioSource (tGetContent tls)
-		=$= parseBytes def
-		=$= checkEnd h
-		=$= eventToElementAll
-		=$= Cd.map elementToStanza
-		=$= runIO (responseToServer tls "hello")
-		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
-		$$ sinkNull
-		-}
+	connectSendIq tls some
+--	connectSendMsg tls "hogeru"
 	putStrLn "Finished"
 
 starttls :: String
