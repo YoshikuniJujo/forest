@@ -12,6 +12,8 @@ import Data.Conduit.Binary hiding (drop, isolate)
 import Text.XML.Stream.Parse
 import Network
 
+import qualified Data.ByteString as BS
+
 import EventToElement
 import XmppTypes
 import Data.XML.Types
@@ -22,17 +24,38 @@ import qualified Data.ByteString.Base64 as B64
 
 main :: IO ()
 main = do
-	h <- connectTo "localhost" (PortNumber 54492)
+	h <- connectTo "localhost" (PortNumber 5222)
+--	h <- connectTo "localhost" (PortNumber 4492)
 	hPutStr h $ beginDoc ++ stream
 	sourceHandle h
 		=$= parseBytes def
-		=$= checkEnd h
+--		=$= checkEnd h
 		=$= eventToElementAll
 		=$= Cd.map elementToStanza
 		=$= runIO (responseToServer h)
 		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
-		$$ sinkNull
+		$$ mySink
+--	BS.hGet h 1 >>= print
+	BS.hGet h 48 >>= print
+	BS.hPutStr h sample
+	BS.hGet h 4 >>= print
+	BS.hPutStr h "</stream:stream>"
+	BS.hGet h 30 >>= print
 	putStrLn "Finished"
+
+sample :: BS.ByteString
+sample =
+	"<message xmlns=\"jabber:client\" id=\"yoshikuni2\" " `BS.append`
+	"type=\"chat\" from=\"\" to=\"yoshio@localhost\">" `BS.append`
+	"<body xmlns=\"jabber:client\">hogeruka</body></message>"
+
+mySink :: Monad m => Sink Stanza m ()
+mySink = do
+	ms <- await
+	case ms of
+		Just (StanzaIq { iqId = "_xmpp_session1" }) -> return ()
+		Nothing -> return ()
+		_ -> mySink
 
 checkEnd :: Handle -> Conduit Event IO Event
 checkEnd h = do
@@ -99,11 +122,12 @@ responseToServer sv (StanzaIq { iqId = "_xmpp_session1" }) = do
 		messageTo = Just "yoshio@localhost",
 		messageBody = [NodeElement $
 			Element (Name "body" (Just "jabber:client") Nothing) [] [
-				NodeContent $ ContentText "yoshio"
+				NodeContent $ ContentText "yoshio da"
 			 ]
 		 ]
 	 }
-	hPutStr sv "</stream>"
+	hPutStr sv "<presence/>"
+--	hPutStr sv "</stream>"
 responseToServer _ _ = return ()
 
 beginDoc, stream, streamServer :: String

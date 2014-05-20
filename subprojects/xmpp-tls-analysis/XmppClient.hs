@@ -5,6 +5,7 @@ module XmppClient (connectSendMsg, connectSendIq) where
 import Prelude hiding (drop, filter)
 
 import Control.Monad.IO.Class
+import Control.Monad.Catch
 import Data.Conduit
 import Data.Conduit.List
 import qualified Data.Conduit.List as Cd
@@ -19,17 +20,70 @@ import qualified Data.Text as T
 
 import HandleLike
 
-connectSendMsg :: HandleLike h => h -> T.Text -> IO ()
-connectSendMsg sv msg = do
+connect :: HandleLike h => h -> IO ()
+connect sv = do
 	hlPut sv $ beginDoc +++ stream
 	ioSource (hlGetContent sv)
 		=$= parseBytes def
 		=$= eventToElementAll
 		=$= Cd.map elementToStanza
-		=$= runIO (responseToServer sv msg)
+		=$= runIO (responseToServer sv "")
 		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
 		$$ sinkNull
+	putStrLn "connected"
+
+stanzaSource :: (Monad m, MonadIO m, MonadThrow m) =>
+	HandleLike h => h -> Source m Stanza
+stanzaSource sv = ioSource (hlGetContent sv)
+	=$= parseBytes def
+	=$= eventToElementAll
+	=$= Cd.map elementToStanza
+
+connectSendMsg :: HandleLike h => h -> T.Text -> IO ()
+connectSendMsg sv msg = do
+	hlPut sv $ beginDoc +++ stream
+	ioSource (hlGetContent sv)
+		=$= parseBytes def
+		=$= checkEnd sv
+		=$= eventToElementAll
+		=$= myMap elementToStanza
+		=$= runIO (responseToServer sv msg)
+		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
+		$$ mySink
 	putStrLn "Finished"
+
+myMap :: Monad m => (a -> b) -> Conduit a m b
+myMap f = do
+	mx <- await
+	case mx of
+		Just x -> do
+			yield $ f x
+			myMap f
+		_ -> return ()
+
+mySink :: Monad m => Sink Stanza m ()
+mySink = do
+	ms <- await
+	case ms of
+		Just (StanzaIq { iqId = "_xmpp_session1" }) -> return ()
+		Nothing -> return ()
+		_ -> mySink
+-- responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
+
+checkEnd :: HandleLike h => h -> Conduit Event IO Event
+checkEnd h = do
+	me <- await
+	liftIO $ print me
+	case me of
+		Just (EventEndElement (Name "stream" _ _)) -> do
+			liftIO $ do
+				putStrLn "End stream"
+--				exitSuccess
+			return ()
+		Just e -> do
+			yield e
+			checkEnd h
+		_ -> return ()
 
 connectSendIq :: HandleLike h => h -> Element -> IO ()
 connectSendIq sv msg = do
@@ -48,6 +102,19 @@ ioSource io = do
 	x <- liftIO io
 	yield x
 	ioSource io
+
+sinkOnce :: (Monad m, MonadIO m, Show a) => Sink a m ()
+sinkOnce = do
+	x <- await
+	liftIO $ print x
+
+conduitOnce :: (Monad m, MonadIO m, Show a) => Conduit a m a
+conduitOnce = do
+ 	mx <- await
+	case mx of
+		Just x -> yield x
+		_ -> return ()
+	
 
 responseToServer :: HandleLike h => h -> T.Text -> Stanza -> IO ()
 responseToServer sv _ (StanzaMechanismList ms)
@@ -93,6 +160,17 @@ responseToServer sv _ (StanzaIq { iqId = "_xmpp_bind1" }) =
 	 }
 responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
 	BS.putStrLn "\n##### HERE ####\n"
+	BS.putStr . showElement . stanzaToElement $ StanzaMessage {
+		messageType = "chat",
+		messageId = "yoshikuni1",
+		messageFrom = Nothing,
+		messageTo = Just "yoshio@localhost",
+		messageBody = [NodeElement $
+			Element (Name "body" (Just "jabber:client") Nothing) [] [
+				NodeContent $ ContentText ("message: " `T.append` msg)
+			 ]
+		 ]
+	 }
 	hlPut sv . showElement . stanzaToElement $ StanzaMessage {
 		messageType = "chat",
 		messageId = "yoshikuni1",
@@ -104,7 +182,8 @@ responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
 			 ]
 		 ]
 	 }
-	hlPut sv "</stream:stream>"
+	hlPut sv "<presence/>"
+--	hlPut sv "</stream:stream>"
 responseToServer _ _ _ = return ()
 
 beginDoc, stream :: BS.ByteString
