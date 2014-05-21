@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
@@ -12,29 +12,35 @@ import Data.Conduit
 import Network
 
 import Data.XML.Types
-import Text.XML
 
 import qualified Data.ByteString as BS
 
 import TlsClient
 
-import XmppClient
-
-import Text.Hamlet.XML
-
-some :: Data.XML.Types.Element
-[Data.XML.Types.NodeElement some] = map toXMLNode [xml| <hello>myfriend |]
+import XmppClientYoshio
+import HandleLike
 
 main :: IO ()
 main = do
 	h <- connectTo "localhost" (PortNumber 5222)
+--	h <- connectTo "localhost" (PortNumber 4492)
 	BS.hPut h $ beginDoc +++ stream
 	hPutStr h starttls
 	replicateM_ 12 . toTagEnd $ hGetChar h
 	tls <- openTlsServer [(undefined, undefined)] h
-	connectSendIq tls some
---	connectSendMsg tls "hogerunokai"
+	connectSendMsg tls "Good night!"
+	hlPut tls sample
+	hlGetContent tls >>= print
+	hlGetContent tls >>= print
+	hlPut tls "</stream:stream>"
+	hlGetContent tls >>= print
 	putStrLn "Finished"
+
+sample :: BS.ByteString
+sample =
+	"<message xmlns=\"jabber:client\" id=\"yoshikuni1\" type=\"chat\" " +++
+		"from=\"\" to=\"yoshio@localhost\">" +++
+		"<body xmlns=\"jabber:client\">message: hogeru</body></message>"
 
 starttls :: String
 starttls = "<starttls xmlns=\"urn:ietf:params:xml:ns:xmpp-tls\"/>"
@@ -53,7 +59,6 @@ checkEnd h = do
 		Just (EventEndElement (Name "stream" _ _)) -> do
 			liftIO $ do
 				putStrLn "End stream"
-				hClose h
 				exitSuccess
 		Just e -> do
 			yield e

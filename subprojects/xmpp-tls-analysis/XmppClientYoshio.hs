@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module XmppClient (connectSendMsg, connectSendIq) where
+module XmppClientYoshio (connectSendMsg, connectSendIq) where
 
 import Prelude hiding (drop, filter)
 
@@ -93,7 +93,6 @@ connectSendIq sv msg = do
 		=$= eventToElementAll
 		=$= Cd.map elementToStanza
 		=$= runIO (responseToServer' sv $ makeIq msg)
---		=$= runIO (responseToServer' sv $ makeMessage msg)
 		=$= runIO (putStrLn . (color 31 "S: " ++) . show)
 		$$ sinkNull
 	putStrLn "Finished"
@@ -130,7 +129,7 @@ responseToServer sv _ (StanzaChallenge ch@(Challenge {})) = let
 	alg = algorithm ch in case (qp, cs, alg) of
 		("auth", "utf-8", "md5-sess") -> hlPut sv . showElement .
 			stanzaToElement $ StanzaResponse Response {
-				rUsername = "yoshikuni",
+				rUsername = "yoshio",
 				rRealm = rlm,
 				rPassword = "password",
 				rCnonce = "00EADBEEF00",
@@ -168,15 +167,15 @@ responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
 		messageTo = Just "yoshio@localhost",
 		messageBody = [NodeElement $
 			Element (Name "body" (Just "jabber:client") Nothing) [] [
-				NodeContent $ ContentText ("message: " `T.append` msg)
+				NodeContent $ ContentText ("yoshio say: " `T.append` msg)
 			 ]
 		 ]
 	 }
 	hlPut sv . showElement . stanzaToElement $ StanzaMessage {
 		messageType = "chat",
-		messageId = "yoshikuni1",
+		messageId = "yoshio1",
 		messageFrom = Nothing,
-		messageTo = Just "yoshio@localhost",
+		messageTo = Just "yoshikuni@localhost",
 		messageBody = [NodeElement $
 			Element (Name "body" (Just "jabber:client") Nothing) [] [
 				NodeContent $ ContentText ("message: " `T.append` msg)
@@ -209,17 +208,8 @@ makeIq :: Element -> Stanza
 makeIq msg = StanzaIq {
 	iqId = "hogeru",
 	iqType = IqGet,
-	iqTo = Just "yoshio@localhost/profanity",
+	iqTo = Just "yoshio@localhost",
 	iqBody = IqBodyRaw msg
- }
-
-makeMessage :: Element -> Stanza
-makeMessage msg = StanzaMessage {
-	messageType = "chat",
-	messageId = "hogerareru",
-	messageFrom = Nothing,
-	messageTo = Just "yoshio@localhost",
-	messageBody = [NodeElement msg]
  }
 
 responseToServer' :: HandleLike h => h -> Stanza -> Stanza -> IO ()

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module XmppTypes (
 	elementToStanza,
@@ -474,11 +474,17 @@ stanzaToElement s@(StanzaIq {})
 				[ContentText . fromIqType $ iqType s]) ]
 	| otherwise =
 		flip (Element . fromJust $ lookup TagIq tagName)
-			[NodeElement . fromIqBody $ iqBody s] [
+			[NodeElement . fromIqBody $ iqBody s] $ [
 				(Name "id" Nothing Nothing,
 					[ContentText $ iqId s]),
 				(Name "type" Nothing Nothing,
-					[ContentText . fromIqType $ iqType s]) ]
+					[ContentText . fromIqType $ iqType s]) ] ++
+				maybe [] (: [(Name "from" Nothing Nothing, [ContentText ""])]) ((Name "to" Nothing Nothing ,)
+					. (: [])
+					. ContentText <$>  iqTo s)
+--				(Name "to" Nothing Nothing,
+--					maybe [] ((: []) . ContentText) $ iqTo s)
+--			 ]
 stanzaToElement s@(StanzaPresence {}) =
 	Element (fromJust $ lookup TagPresence tagName)
 		[(Name "id" Nothing Nothing, [ContentText $ presenceId s])]
