@@ -46,3 +46,4 @@ main = do
 	tGetByte tls >>= print
 	-}
 --	tGetWhole tls >>= print
+	tClose tls

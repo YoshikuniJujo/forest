@@ -392,9 +392,9 @@ tGetWhole ts = do
 	case ret of
 		(ContentTypeApplicationData, ad) -> return ad
 		(ContentTypeAlert, "\SOH\NUL") -> do
-				tPutWithCT ts ContentTypeAlert "\SOH\NUL"
-				ioError $ mkIOError
-					eofErrorType "tGetWhole" (Just h) Nothing
+			tPutWithCT ts ContentTypeAlert "\SOH\NUL"
+			ioError $ mkIOError
+				eofErrorType "tGetWhole" (Just h) Nothing
 		_ -> error "not implemented yet"
 	where
 	h = tlsHandle ts

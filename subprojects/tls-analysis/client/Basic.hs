@@ -32,6 +32,7 @@ versionToByteString (Version vmjr vmnr) = pack [vmjr, vmnr]
 
 data ContentType
 	= ContentTypeChangeCipherSpec
+	| ContentTypeAlert
 	| ContentTypeHandshake
 	| ContentTypeApplicationData
 	| ContentTypeRaw Word8
@@ -39,12 +40,14 @@ data ContentType
 
 byteStringToContentType :: ByteString -> ContentType
 byteStringToContentType "\20" = ContentTypeChangeCipherSpec
+byteStringToContentType "\21" = ContentTypeAlert
 byteStringToContentType "\22" = ContentTypeHandshake
 byteStringToContentType "\23" = ContentTypeApplicationData
 byteStringToContentType bs = let [ct] = unpack bs in ContentTypeRaw ct
 
 contentTypeToByteString :: ContentType -> ByteString
 contentTypeToByteString ContentTypeChangeCipherSpec = pack [20]
+contentTypeToByteString ContentTypeAlert = pack [21]
 contentTypeToByteString ContentTypeHandshake = pack [22]
 contentTypeToByteString ContentTypeApplicationData = pack [23]
 contentTypeToByteString (ContentTypeRaw ct) = pack [ct]

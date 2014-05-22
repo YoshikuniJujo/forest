@@ -2,7 +2,7 @@
 
 module TlsClient (
 	TlsServer,
-	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent
+	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 ) where
 
 import System.IO

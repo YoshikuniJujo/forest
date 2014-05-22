@@ -13,7 +13,7 @@ module Fragment (
 
 	updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	debugPrintKeys,
 ) where

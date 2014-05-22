@@ -16,7 +16,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber, updateSequenceNumberSmart,
 
-	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent,
+	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	debugPrintKeys,
 ) where
@@ -24,6 +24,7 @@ module TlsIo (
 import Prelude hiding (read)
 
 import System.IO
+import System.IO.Error
 import Control.Concurrent.STM
 import Control.Applicative
 import "monads-tf" Control.Monad.Error
@@ -367,7 +368,10 @@ data TlsServer = TlsServer {
  }
 
 tPut :: TlsServer -> BS.ByteString -> IO ()
-tPut ts msg = case (vr, cs) of
+tPut ts = tPutWithCT ts ContentTypeApplicationData
+
+tPutWithCT :: TlsServer -> ContentType -> BS.ByteString -> IO ()
+tPutWithCT ts ct msg = case (vr, cs) of
 	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
 		ebody <- atomically $ do
 			gen <- readTVar tvgen
@@ -388,14 +392,26 @@ tPut ts msg = case (vr, cs) of
 	h = tlsHandle ts
 	key = tlsClientWriteKey ts
 	mk = tlsClientWriteMacKey ts
-	ct = ContentTypeApplicationData
 	v = Version 3 3
 	tvsn = tlsClientSequenceNumber ts
 	tvgen = tlsRandomGen ts
 	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
 
 tGetWhole :: TlsServer -> IO BS.ByteString
-tGetWhole ts = case (vr, cs) of
+tGetWhole ts = do
+	ret <- tGetWholeWithCT ts
+	case ret of
+		(ContentTypeApplicationData, ad) -> return ad
+		(ContentTypeAlert, "\SOH\NUL") -> do
+			tPutWithCT ts ContentTypeAlert "\SOH\NUL"
+			ioError $ mkIOError
+				eofErrorType "tGetWhole" (Just h) Nothing
+		_ -> error "not impolemented yet"
+	where
+	h = tlsHandle ts
+
+tGetWholeWithCT :: TlsServer -> IO (ContentType, BS.ByteString)
+tGetWholeWithCT ts = case (vr, cs) of
 	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
 		ct <- byteStringToContentType <$> BS.hGet h 1
 		v <- byteStringToVersion <$> BS.hGet h 2
@@ -405,7 +421,7 @@ tGetWhole ts = case (vr, cs) of
 			writeTVar tvsn $ succ n
 			return n
 		case dec sn ct v enc of
-			Right r -> return r
+			Right r -> return (ct, r)
 			Left err -> error err
 	_ -> error "tPut: not implemented"
 	where
@@ -493,3 +509,11 @@ debugPrintKeys = do
 		putStrLn $ "\tSrvrWr Key    : " ++ showKeySingle swk
 --		putStrLn $ "\tClntWr IV     : " ++ showKeySingle cwi
 --		putStrLn $ "\tSrvrWr IV     : " ++ showKeySingle swi
+
+tClose :: TlsServer -> IO ()
+tClose ts = do
+	tPutWithCT ts ContentTypeAlert "\SOH\NUL"
+	tGetWholeWithCT ts >>= print
+	hClose h
+	where
+	h = tlsHandle ts
