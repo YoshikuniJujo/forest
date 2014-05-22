@@ -2,7 +2,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsIo (
-	TlsIo, evalTlsIo, liftIO, throwError, readCached, randomByteString,
+	TlsIo, evalTlsIo, liftIO, throwError, catchError,
+	readCached, randomByteString,
 	Partner(..),
 
 	readContentType, writeContentType, readVersion, writeVersion,

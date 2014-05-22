@@ -14,7 +14,7 @@ module Fragment (
 	Partner(..),
 	TlsIo, evalTlsIo, liftIO,
 
-	throwError,
+	throwError, catchError,
 	updateSequenceNumber,
 	randomByteString,
 	readCached,

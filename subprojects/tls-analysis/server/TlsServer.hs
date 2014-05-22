@@ -11,8 +11,9 @@ import Control.Monad
 import Control.Concurrent
 import System.IO
 import System.IO.Unsafe
-import Data.X509
+import Data.Word
 import qualified Data.ByteString as BS
+import Data.X509
 
 import Fragment
 import Content
@@ -72,12 +73,9 @@ handshake dcc certStore certChain cid = do
 	------------------------------------------
 	c2 <- readContent
 	let	Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
-	pms <- decryptRSA epms
-	let	Just (pmsvmjr, pmstail) = BS.uncons pms
-		Just (pmsvmnr, _) = BS.uncons pmstail
-	unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $ throwError "bad: version"
-	liftIO . putStrLn $
-		"Pre Master Secret Version: " ++ show pmsvmjr ++ " " ++ show pmsvmnr
+	r <- randomByteString 46
+	pms <- makePms cvmjr cvmnr epms `catchError` const (return .
+		BS.cons cvmjr $ BS.cons cvmnr r)
 	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 	generateKeys pms
 	output Client cid "Key Exchange" [take 60 (show c2) ++ " ..."]
@@ -200,3 +198,12 @@ locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
 getDistinguishedNames :: CertificateStore -> [DistinguishedName]
 getDistinguishedNames cs =
 	map (certIssuerDN .  signedObject . getSigned) $ listCertificates cs
+
+makePms :: Word8 -> Word8 -> BS.ByteString -> TlsIo Content BS.ByteString
+makePms cvmjr cvmnr epms = do
+	pms <- decryptRSA epms
+	let	Just (pmsvmjr, pmstail) = BS.uncons pms
+		Just (pmsvmnr, _) = BS.uncons pmstail
+	unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $ throwError "bad: version"
+	unless (BS.length pms == 48) $ throwError "bad: length"
+	return pms
