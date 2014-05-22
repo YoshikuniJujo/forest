@@ -12,6 +12,7 @@ import Control.Concurrent
 import System.IO
 import System.IO.Unsafe
 import Data.X509
+import qualified Data.ByteString as BS
 
 import Fragment
 import Content
@@ -40,6 +41,8 @@ handshake dcc certStore certChain cid = do
 	------------------------------------------
 	ch <- readContent
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
+	let Just (Version cvmjr cvmnr) = clientVersion ch
+	liftIO . putStrLn $ "CLIENT VERSION: " ++ show cvmjr ++ " " ++ show cvmnr
 	output Client cid "Hello" [
 		take 60 (show ch) ++ "...",
 		maybe "No Version" show $ clientVersion ch ]
@@ -70,6 +73,12 @@ handshake dcc certStore certChain cid = do
 	c2 <- readContent
 	let	Just (EncryptedPreMasterSecret epms) = encryptedPreMasterSecret c2
 	pms <- decryptRSA epms
+	let	Just (pmsvmjr, pmstail) = BS.uncons pms
+		Just (pmsvmnr, _) = BS.uncons pmstail
+	unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $ throwError "bad: version"
+	liftIO . putStrLn $
+		"Pre Master Secret Version: " ++ show pmsvmjr ++ " " ++ show pmsvmnr
+	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 	generateKeys pms
 	output Client cid "Key Exchange" [take 60 (show c2) ++ " ..."]
 
