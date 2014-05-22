@@ -191,7 +191,9 @@ beginDoc, stream :: BS.ByteString
 beginDoc = "<?xml version=\"1.0\"?>"
 stream = "<stream:stream to=\"localhost\" xml:lang=\"en\" version=\"1.0\" " +++
 	"xmlns=\"jabber:client\" " +++
-	"xmlns:stream=\"http://etherx.jabber.org/streams\">"
+	"xmlns:stream=\"http://etherx.jabber.org/streams\" " +++
+	"xmlns:oadr=\"hoge:hoge\" " +++
+	"xmlns:ei=\"hage:hage\">"
 
 runIO :: (Monad m, MonadIO m) => (a -> IO ()) -> Conduit a m a
 runIO io = do

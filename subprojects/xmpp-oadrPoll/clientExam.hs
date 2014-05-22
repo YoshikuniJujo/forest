@@ -23,7 +23,12 @@ import XmppClient
 import Text.Hamlet.XML
 
 some :: Data.XML.Types.Element
-[Data.XML.Types.NodeElement some] = map toXMLNode [xml| <hello>myfriend |]
+[Data.XML.Types.NodeElement some] = map toXMLNode [xml|
+
+<oadr:oadrPoll ei:schemaVersion="2.0b">
+    <ei:venID>VEN_123
+
+|]
 
 main :: IO ()
 main = do
