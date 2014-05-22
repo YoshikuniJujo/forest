@@ -20,7 +20,7 @@ module Content (
 	serverVersion, serverRandom, serverCipherSuite, getFinish,
 	getCertificateRequest,
 	clientHello,
-	CertificateRequest,
+	CertificateRequest(..),
 ) where
 
 import Prelude hiding (concat, head)

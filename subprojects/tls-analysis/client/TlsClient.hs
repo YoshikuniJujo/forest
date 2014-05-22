@@ -19,12 +19,17 @@ import Content
 import Basic
 
 openTlsServer :: [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> IO TlsServer
-openTlsServer [(pkys, certChain)] certStore sv =
-	runOpen (handshake pkys certChain certStore) sv
-openTlsServer _ _ _ = error "openTlsServer: not implemented"
+openTlsServer ccs certStore sv = runOpen (handshake ccs certStore) sv
 
-handshake :: PrivateKey -> CertificateChain -> CertificateStore -> TlsIo Content ()
-handshake pkys certChain certStore = do
+isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
+isIncluded (_, CertificateChain certs) dns = let
+	idn = certIssuerDN . signedObject . getSigned $ last certs in
+	idn `elem` dns
+	
+
+handshake ::
+	[(PrivateKey, CertificateChain)] -> CertificateStore -> TlsIo Content ()
+handshake ccs certStore = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -66,13 +71,16 @@ handshake pkys certChain certStore = do
 	-------------------------------------------
 	crtReq <- serverHelloDone
 
+	let	Just (CertificateRequest _ _ sdn) = crtReq
+		(pk, cc) = head $ filter (`isIncluded` sdn) ccs
+
 	-------------------------------------------
 	--     CLIENT CERTIFICATE                --
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			writeContent $ certificate certChain
-			fragmentUpdateHash . contentToFragment $ certificate certChain
+			writeContent $ certificate cc
+			fragmentUpdateHash . contentToFragment $ certificate cc
 		_ -> return ()
 
 	-------------------------------------------
@@ -95,7 +103,7 @@ handshake pkys certChain certStore = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			signed <- clientVerifySign pkys
+			signed <- clientVerifySign pk
 			writeContent $ makeVerify signed
 			fragmentUpdateHash . contentToFragment $ makeVerify signed
 		_ -> return ()
