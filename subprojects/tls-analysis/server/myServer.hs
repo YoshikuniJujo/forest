@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
@@ -45,8 +45,7 @@ main = do
 	scl <- listenOn pcl
 	forever $ do
 		client <- fst3 <$> accept scl
-		_ <- forkIO $ do
-			run' doClientCert certStore certChain pk client
+		_ <- forkIO $ run' doClientCert certStore certChain pk client
 		return ()
 
 run' :: Bool -> CertificateStore -> CertificateChain ->

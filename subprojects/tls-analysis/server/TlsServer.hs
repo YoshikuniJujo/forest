@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openTlsClient, tClose,
@@ -32,8 +32,8 @@ data Option
 
 openTlsClient :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
 	Handle -> IO TlsClient
-openTlsClient dcc certStore certChain pk cl =
-	runOpen (handshake dcc certStore certChain 0) pk cl
+openTlsClient dcc certStore certChain =
+	runOpen (handshake dcc certStore certChain 0)
 	
 handshake :: Bool -> CertificateStore -> CertificateChain -> Int -> TlsIo Content ()
 handshake dcc certStore certChain cid = do
@@ -147,10 +147,7 @@ certificateVerify cid pub = do
 			"recieved hash: \"..." ++ drop 410 (show encHash) ]
 
 readContentNoHash :: TlsIo Content Content
-readContentNoHash = do
-	c <- readCached readContentList
-		<* updateSequenceNumber Client
-	return c
+readContentNoHash = readCached readContentList <* updateSequenceNumber Client
 
 readContent :: TlsIo Content Content
 readContent = do

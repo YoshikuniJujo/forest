@@ -326,6 +326,7 @@ instance HandleLike TlsClient where
 	hlPut = tPut
 	hlGet = tGet
 	hlGetLine = tGetLine
+	hlGetContent = tGetContent
 
 runOpen :: TlsIo cnt () -> RSA.PrivateKey -> Handle -> IO TlsClient
 runOpen opn pk cl = do
@@ -375,9 +376,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 			lenBodyToByteString 2 ebody ]
 	_ -> error "tPut: not implemented"
 	where
-	vr = tlsVersion ts
-	cs = tlsCipherSuite ts
-	h = tlsHandle ts
+	(vr, cs, h) = vrcsh ts
 	key = tlsServerWriteKey ts
 	mk = tlsServerWriteMacKey ts
 --	ct = ContentTypeApplicationData
@@ -385,6 +384,9 @@ tPutWithCT ts ct msg = case (vr, cs) of
 	tvsn = tlsServerSequenceNumber ts
 	tvgen = tlsRandomGen ts
 	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
+
+vrcsh :: TlsClient -> (CT.MSVersion, CipherSuite, Handle)
+vrcsh tc = (tlsVersion tc, tlsCipherSuite tc, tlsHandle tc)
 
 tGetWhole :: TlsClient -> IO BS.ByteString
 tGetWhole ts = do
@@ -425,9 +427,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 		return (ct, ret)
 	_ -> error "tGetWhole: not implemented"
 	where
-	vr = tlsVersion ts
-	cs = tlsCipherSuite ts
-	h = tlsHandle ts
+	(vr, cs, h) = vrcsh ts
 	key = tlsClientWriteKey ts
 	mk = tlsClientWriteMacKey ts
 	tvsn = tlsClientSequenceNumber ts

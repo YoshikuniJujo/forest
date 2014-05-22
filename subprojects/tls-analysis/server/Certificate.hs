@@ -59,7 +59,7 @@ parseCertificateList = section 3 $ list parseCertificate
 
 certificateListToByteString :: [Certificate] -> ByteString
 certificateListToByteString =
-	lenBodyToByteString 3 . concat . map certificateToByteString
+	lenBodyToByteString 3 . BS.concat . map certificateToByteString
 
 parseCertificate :: ByteStringM Certificate
 parseCertificate = CertificateRaw <$> takeLen 3

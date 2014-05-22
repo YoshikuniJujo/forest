@@ -89,7 +89,7 @@ parseContent ContentTypeChangeCipherSpec v =
 parseContent ContentTypeAlert v = do
 	al <- headBS
 	ad <- headBS
-	return $ [ContentAlert v al ad]
+	return [ContentAlert v al ad]
 parseContent ContentTypeHandshake v =
 	map (ContentHandshake v) <$> parse
 parseContent ContentTypeApplicationData v =
@@ -104,6 +104,8 @@ contentListToFragment cs = let
 contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =
 	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
+contentToFragment (ContentAlert v al ad) =
+	Fragment ContentTypeAlert v $ pack [al, ad]
 contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
 	toByteString hss
 contentToFragment (ContentApplicationData v body) =

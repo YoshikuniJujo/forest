@@ -64,9 +64,7 @@ instance Parsable ClientHello where
 
 parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
-	pv <- parse
-	r <- parse
-	sid <- parseSessionId
+	(pv, r, sid) <- pvrsid
 	css <- parse
 --	cms <- parseCompressionMethodList
 	cms <- parse
@@ -111,14 +109,15 @@ serverHelloCipherSuite _ = Nothing
 
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do
-	pv <- parse
-	r <- parse
-	sid <- parseSessionId
+	(pv, r, sid) <- pvrsid
 	cs <- parse
 	cm <- parseCompressionMethod
 	e <- emptyBS
 	me <- if e then return Nothing else Just <$> parseExtensionList
 	return $ ServerHello pv r sid cs cm me
+
+pvrsid :: ByteStringM (Version, Random, SessionId)
+pvrsid = (,,) <$> parse <*> parse <*> parseSessionId
 
 serverHelloToByteString :: ServerHello -> ByteString
 serverHelloToByteString (ServerHello pv r sid cs cm mes) = concat [
