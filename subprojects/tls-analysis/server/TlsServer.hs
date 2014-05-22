@@ -1,7 +1,8 @@
 {-# LANGUAGE PackageImports, OverloadedStrings #-}
 
 module TlsServer (
-	TlsClient, openTlsClient, tPut, tGet, tGetLine, tGetByte, tGetContent,
+	TlsClient, openTlsClient, tClose,
+	tPut, tGet, tGetLine, tGetByte, tGetContent,
 ) where
 
 import Control.Monad.IO.Class

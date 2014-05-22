@@ -86,6 +86,10 @@ fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) bod
 parseContent :: ContentType -> Version -> ByteStringM [Content]
 parseContent ContentTypeChangeCipherSpec v =
 	map (ContentChangeCipherSpec v) <$> parse
+parseContent ContentTypeAlert v = do
+	al <- headBS
+	ad <- headBS
+	return $ [ContentAlert v al ad]
 parseContent ContentTypeHandshake v =
 	map (ContentHandshake v) <$> parse
 parseContent ContentTypeApplicationData v =
@@ -108,6 +112,7 @@ contentToFragment (ContentRaw ct v body) = Fragment ct v body
 
 data Content
 	= ContentChangeCipherSpec Version ChangeCipherSpec
+	| ContentAlert Version Word8 Word8
 	| ContentHandshake Version Handshake
 	| ContentApplicationData Version ByteString
 	| ContentRaw ContentType Version ByteString

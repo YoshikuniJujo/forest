@@ -57,7 +57,9 @@ run' dcc certStore certChain pk cl = do
 --	tGet tls 5 >>= print
 --	tGetLine tls >>= print
 	hlGetLine tls >>= print
+	hlGetLine tls >>= print
 	hlPut tls answer
+	tClose tls
 			
 answer :: BS.ByteString
 answer = BS.concat [

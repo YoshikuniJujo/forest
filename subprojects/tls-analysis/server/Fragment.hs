@@ -20,7 +20,7 @@ module Fragment (
 	readCached,
 	clientVerifyHash,
 
-	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent,
+	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent, tClose,
 ) where
 
 import Prelude hiding (read)

@@ -17,7 +17,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent,
+	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent, tClose,
 ) where
 
 import Prelude hiding (read)
@@ -31,6 +31,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import System.IO
+import System.IO.Error
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.HashDescr as RSA
@@ -356,7 +357,10 @@ runTlsIo io st = do
 		Left err -> error err
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
-tPut ts msg = case (vr, cs) of
+tPut ts = tPutWithCT ts ContentTypeApplicationData
+
+tPutWithCT :: TlsClient -> ContentType -> BS.ByteString -> IO ()
+tPutWithCT ts ct msg = case (vr, cs) of
 	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
 		ebody <- atomically $ do
 			gen <- readTVar tvgen
@@ -376,14 +380,27 @@ tPut ts msg = case (vr, cs) of
 	h = tlsHandle ts
 	key = tlsServerWriteKey ts
 	mk = tlsServerWriteMacKey ts
-	ct = ContentTypeApplicationData
+--	ct = ContentTypeApplicationData
 	v = Version 3 3
 	tvsn = tlsServerSequenceNumber ts
 	tvgen = tlsRandomGen ts
 	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
 
 tGetWhole :: TlsClient -> IO BS.ByteString
-tGetWhole ts = case (vr, cs) of
+tGetWhole ts = do
+	ret <- tGetWholeWithCT ts
+	case ret of
+		(ContentTypeApplicationData, ad) -> return ad
+		(ContentTypeAlert, "\SOH\NUL") -> do
+				tPutWithCT ts ContentTypeAlert "\SOH\NUL"
+				ioError $ mkIOError
+					eofErrorType "tGetWhole" (Just h) Nothing
+		_ -> error "not implemented yet"
+	where
+	h = tlsHandle ts
+
+tGetWholeWithCT :: TlsClient -> IO (ContentType, BS.ByteString)
+tGetWholeWithCT ts = case (vr, cs) of
 	(CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA) -> do
 		ct <- byteStringToContentType <$> BS.hGet h 1
 		liftIO $ print ct
@@ -393,9 +410,19 @@ tGetWhole ts = case (vr, cs) of
 			n <- readTVar tvsn
 			writeTVar tvsn $ succ n
 			return n
-		case dec sn ct v enc of
+		ret <- case dec sn ct v enc of
 			Right r -> return r
 			Left err -> error err
+			{-
+		case (ct, ret) of
+			(ContentTypeApplicationData, _) -> return ret
+			(ContentTypeAlert, "\SOH\NUL") -> do
+				tPutWithCT ts ContentTypeAlert "\SOH\NUL"
+				ioError $ mkIOError
+					eofErrorType "tGetWhole" (Just h) Nothing
+			_ -> error "not implemented yet"
+			-}
+		return (ct, ret)
 	_ -> error "tGetWhole: not implemented"
 	where
 	vr = tlsVersion ts
@@ -463,3 +490,11 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 		(l, ls) = BSC.span (/= '\n') bs
 		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
 	_ -> Nothing
+
+tClose :: TlsClient -> IO ()
+tClose tc = do
+	tPutWithCT tc ContentTypeAlert "\SOH\NUL"
+	tGetWholeWithCT tc >>= print
+	hClose h
+	where
+	h = tlsHandle tc
