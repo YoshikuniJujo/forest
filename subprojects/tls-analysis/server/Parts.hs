@@ -11,9 +11,7 @@ module Parts (
 
 	lenBodyToByteString, emptyBS, concat,
 
-	fst3, fromInt,
-
-	byteStringToInt, intToByteString, showKeySingle, showKey,
+	byteStringToInt, intToByteString,
 	section, takeWords, takeLen, take,
 ) where
 
@@ -23,7 +21,7 @@ import Numeric
 
 import Control.Applicative ((<$>))
 
-import Basic
+import Types
 import ByteStringMonad
 -- import ToByteString
 

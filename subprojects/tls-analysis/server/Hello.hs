@@ -13,7 +13,7 @@ module Hello (
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
 --	list1,
-	evalByteStringM, fst3, fromInt, lenBodyToByteString
+	evalByteStringM, lenBodyToByteString
  ) where
 
 import Prelude hiding (concat, take)
@@ -32,7 +32,6 @@ import Parts(
 	HashAlgorithm(..),
 --	Version(..),
 
-	fst3, fromInt,
 	lenBodyToByteString, headBS, takeLen,
 --	list1,
 	evalByteStringM)

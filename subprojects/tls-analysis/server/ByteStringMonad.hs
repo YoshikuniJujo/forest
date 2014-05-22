@@ -9,9 +9,7 @@ module ByteStringMonad (
 
 	word16ToByteString,
 
-	fst3, fromInt,
-
-	byteStringToInt, intToByteString,
+	byteStringToInt, intToByteString, lenBodyToByteString,
 
 	Parsable(..),
 ) where
@@ -29,7 +27,7 @@ import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Error
 
 -- import Tools
-import Basic
+import Tools
 
 class Parsable a where
 	parse :: ByteStringM a
@@ -120,3 +118,23 @@ whole = do w <- get; put ""; return w
 
 word16ToByteString :: Word16 -> ByteString
 word16ToByteString w = BS.pack [fromIntegral (w `shiftR` 8), fromIntegral w]
+
+{-
+byteStringToInt :: ByteString -> Int
+byteStringToInt bs = wordsToInt (BS.length bs - 1) $ BS.unpack bs
+
+wordsToInt :: Int -> [Word8] -> Int
+wordsToInt n _ | n < 0 = 0
+wordsToInt _ [] = 0
+wordsToInt n (x : xs) = fromIntegral x `shift` (n * 8) .|. wordsToInt (n - 1) xs
+
+intToByteString :: Int -> Int -> ByteString
+intToByteString n = BS.pack . reverse . intToWords n
+
+intToWords :: Int -> Int -> [Word8]
+intToWords 0 _ = []
+intToWords n i = fromIntegral i : intToWords (n - 1) (i `shiftR` 8)
+
+lenBodyToByteString :: Int -> ByteString -> ByteString
+lenBodyToByteString n bs = intToByteString n (BS.length bs) `BS.append` bs
+-}

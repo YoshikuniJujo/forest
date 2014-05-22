@@ -6,6 +6,14 @@ module CryptoTools (
 	MS.MSVersion(..), MS.versionToVersion,
 	MS.ClientRandom(..), MS.ServerRandom(..),
 	MS.generateMasterSecret, MS.generateKeyBlock, MS.generateFinished,
+
+	lenBodyToByteString, intToByteString, byteStringToInt,
+	MS.Version(..), MS.ContentType(..),
+	MS.byteStringToVersion, MS.byteStringToContentType,
+	MS.versionToByteString, MS.contentTypeToByteString,
+	MS.CipherSuite(..),
+	MS.Random(..),
+	MS.Fragment(..),
 ) where
 
 import Data.Word
@@ -15,28 +23,28 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
-import Basic
+import Tools
 
 encryptMessage :: SystemRNG -> BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> Version -> BS.ByteString -> (BS.ByteString, SystemRNG)
+	MS.ContentType -> MS.Version -> BS.ByteString -> (BS.ByteString, SystemRNG)
 encryptMessage gen key sn mk ct v msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac sn mk $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
+		MS.contentTypeToByteString ct,
+		MS.versionToByteString v,
 		lenBodyToByteString 2 msg]
 
 decryptMessage :: BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> Version -> BS.ByteString -> Either String BS.ByteString
+	MS.ContentType -> MS.Version -> BS.ByteString -> Either String BS.ByteString
 decryptMessage key sn mk ct v enc = if mac == cmac then Right body else
 	Left "decryptMessage: bad MAC"
 	where
 	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - 20) bm
 	cmac = calcMac sn mk $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
+		MS.contentTypeToByteString ct,
+		MS.versionToByteString v,
 		lenBodyToByteString 2 body]
 
 calcMac :: Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString

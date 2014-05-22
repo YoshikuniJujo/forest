@@ -11,7 +11,6 @@ import Control.Applicative
 import qualified Data.ByteString as BS
 
 import ByteStringMonad
-import Basic
 -- import ToByteString
 
 type ExtensionList = [Extension]

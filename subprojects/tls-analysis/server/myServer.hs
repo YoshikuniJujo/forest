@@ -12,7 +12,7 @@ import Data.X509
 
 import Network
 
-import Basic
+-- import Basic
 
 import qualified Data.ByteString as BS
 
@@ -41,10 +41,11 @@ main = do
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	(opts, args, _errs) <- getOpt Permute options <$> getArgs
 	let doClientCert = OptDisableClientCert `notElem` opts
-	[pcl] <- mapM ((PortNumber . fromInt <$>) . readIO) args
+	[pcl] <- forM args $
+		(PortNumber . fromIntegral <$>) . (readIO :: String -> IO Int)
 	scl <- listenOn pcl
 	forever $ do
-		client <- fst3 <$> accept scl
+		(client, _, _) <- accept scl
 		_ <- forkIO $ run' doClientCert certStore certChain pk client
 		return ()
 

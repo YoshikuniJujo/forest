@@ -8,6 +8,7 @@ module Content (
 
 	EncryptedPreMasterSecret(..),
 
+	Version(..), Random(..),
 	version, cipherSuite,
 	doesChangeCipherSpec,
 	doesServerHelloDone,
@@ -35,7 +36,7 @@ import Handshake
 -- import Parts
 import Data.ByteString(ByteString, pack, concat)
 import Data.Word
-import Basic
+import Types
 
 showHandshake :: Content -> String
 showHandshake (ContentHandshake _ hs) = show hs

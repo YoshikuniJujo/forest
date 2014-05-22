@@ -16,7 +16,10 @@ module MasterSecret (
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
-	P.Version(..),
+	P.Version(..), P.versionToByteString, P.byteStringToVersion,
+	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
+
+	P.Fragment(..), P.Random(..), P.CipherSuite(..),
 
 --	P.Random(..),
 --	P.CipherSuite(..),
@@ -46,7 +49,8 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
 
-import qualified Basic as P (Version(..))
+-- import qualified Basic as P (Version(..))
+import qualified Types as P
 
 -- import qualified Crypto.Hash.MD5 as MD5
 -- import qualified Crypto.Hash.SHA1 as SHA1

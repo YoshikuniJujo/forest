@@ -18,7 +18,6 @@ import Data.X509
 
 import Fragment
 import Content
-import Basic
 
 import Data.X509.CertificateStore
 import Data.X509.Validation

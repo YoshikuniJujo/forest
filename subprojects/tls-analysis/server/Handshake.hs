@@ -33,9 +33,10 @@ module Handshake (
 	SessionId(..),
 	Version(..),
 
-	fst3, fromInt, headBS,
+	headBS,
 --	list1,
 	whole, ByteStringM, evalByteStringM,
+
 ) where
 
 import Prelude hiding (head, take, concat)

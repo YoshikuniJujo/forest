@@ -30,7 +30,6 @@ import Control.Monad
 import qualified Data.ByteString as BS
 
 import TlsIo
-import Basic
 
 readFragment :: TlsIo cnt Fragment
 readFragment = do
