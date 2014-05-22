@@ -18,7 +18,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen, tPut, tGet, tGetLine, tGetByte, tGetContent, tClose,
+	TlsClient, runOpen,
 ) where
 
 import Prelude hiding (read)
@@ -327,6 +327,7 @@ instance HandleLike TlsClient where
 	hlGet = tGet
 	hlGetLine = tGetLine
 	hlGetContent = tGetContent
+	hlClose = tClose
 
 runOpen :: TlsIo cnt () -> RSA.PrivateKey -> Handle -> IO TlsClient
 runOpen opn pk cl = do
@@ -433,6 +434,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 	tvsn = tlsClientSequenceNumber ts
 	dec sn = CT.decryptMessage key sn mk
 
+{-
 tGetByte :: TlsClient -> IO Word8
 tGetByte ts = do
 	bfr <- atomically . readTVar $ tlsBuffer ts
@@ -448,6 +450,7 @@ tGetByte ts = do
 			writeTVar (tlsBuffer ts) bs
 			return b
 		_ -> error "tGetByte: never occur"
+		-}
 
 tGet :: TlsClient -> Int -> IO BS.ByteString
 tGet tc n = do
