@@ -43,10 +43,8 @@ handshake dcc certStore certChain cid = do
 	ch <- readContent
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 	let Just (Version cvmjr cvmnr) = clientVersion ch
-	liftIO . putStrLn $ "CLIENT VERSION: " ++ show cvmjr ++ " " ++ show cvmnr
-	output Client cid "Hello" [
-		take 60 (show ch) ++ "...",
-		maybe "No Version" show $ clientVersion ch ]
+--	liftIO . putStrLn $ "CLIENT VERSION: " ++ show cvmjr ++ " " ++ show cvmnr
+	output Client cid "Hello" [maybe "No Version" show $ clientVersion ch]
 
 	------------------------------------------
 	--           SERVER HELLO               --
@@ -76,9 +74,9 @@ handshake dcc certStore certChain cid = do
 	r <- randomByteString 46
 	pms <- makePms cvmjr cvmnr epms `catchError` const (return .
 		BS.cons cvmjr $ BS.cons cvmnr r)
-	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
+--	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 	generateKeys pms
-	output Client cid "Key Exchange" [take 60 (show c2) ++ " ..."]
+	output Client cid "Key Exchange" []
 
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
@@ -90,7 +88,7 @@ handshake dcc certStore certChain cid = do
 	------------------------------------------
 	cccs <- readContent
 	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
-	output Client cid "Change Cipher Spec" [take 60 $ show cccs]
+	output Client cid "Change Cipher Spec" []
 
 	------------------------------------------
 	--      CLIENT FINISHED                 --
@@ -104,7 +102,7 @@ handshake dcc certStore certChain cid = do
 	------------------------------------------
 	writeFragment $ contentToFragment changeCipherSpec
 	flushCipherSuite Server
-	output Server cid "Change Cipher Spec" [show changeCipherSpec]
+	output Server cid "Change Cipher Spec" []
 
 	------------------------------------------
 	--      SERVER FINISHED                 --
@@ -123,9 +121,8 @@ clientCertification cid certStore = do
 	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
 	v <- liftIO $ validateDefault certStore
 		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
-	output Client cid "Client Certificate" [
-		take 60 (show c1) ++ " ...",
-		if null v then "Validate Success" else "Validate Failure" ]
+	output Client cid "Client Certificate"
+		[if null v then "Validate Success" else "Validate Failure"]
 	return pub
 
 certificateVerify :: Int -> PublicKey -> TlsIo Content ()
@@ -141,7 +138,7 @@ certificateVerify cid pub = do
 		throwError "client authentification failed"
 	fragmentUpdateHash $ contentToFragment c3
 	output Client cid "Certificate Verify" [
-			take 60 (show c3) ++ " ...",
+--			take 60 (show c3) ++ " ...",
 			"local hash   : \"..." ++ drop 410 (show hash),
 			"recieved hash: \"..." ++ drop 410 (show encHash) ]
 
@@ -187,7 +184,7 @@ output partner cid msg strs = do
 		readChan locker
 		putStrLn $ replicate 10 '-' ++ " " ++ show partner ++ "(" ++
 			show cid ++ ") " ++ msg ++ " " ++ replicate 10 '-'
-	end = liftIO $ putStrLn "" >> writeChan locker ()
+	end = liftIO $ writeChan locker ()
 
 locker :: Chan ()
 locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan

@@ -405,7 +405,7 @@ tGetWholeWithCT :: TlsClient -> IO (CT.ContentType, BS.ByteString)
 tGetWholeWithCT ts = case (vr, cs) of
 	(CT.TLS12, CT.TLS_RSA_WITH_AES_128_CBC_SHA) -> do
 		ct <- CT.byteStringToContentType <$> BS.hGet h 1
-		liftIO $ print ct
+--		liftIO $ print ct
 		v <- CT.byteStringToVersion <$> BS.hGet h 2
 		enc <- BS.hGet h . CT.byteStringToInt =<< BS.hGet h 2
 		sn <- atomically $ do
