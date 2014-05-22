@@ -10,18 +10,21 @@ import Control.Applicative
 import Control.Monad
 import qualified Data.ByteString as BS
 import Data.X509
+import Data.X509.CertificateStore
+import Data.X509.Validation
 import Crypto.PubKey.RSA
 
 import Fragment
 import Content
 import Basic
 
-openTlsServer :: [(PrivateKey, CertificateChain)] -> Handle -> IO TlsServer
-openTlsServer [(pkys, certChain)] sv = runOpen (handshake pkys certChain) sv
-openTlsServer _ _ = error "openTlsServer: not implemented"
+openTlsServer :: [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> IO TlsServer
+openTlsServer [(pkys, certChain)] certStore sv =
+	runOpen (handshake pkys certChain certStore) sv
+openTlsServer _ _ _ = error "openTlsServer: not implemented"
 
-handshake :: PrivateKey -> CertificateChain -> TlsIo Content ()
-handshake pkys certChain = do
+handshake :: PrivateKey -> CertificateChain -> CertificateStore -> TlsIo Content ()
+handshake pkys certChain certStore = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -47,6 +50,10 @@ handshake pkys certChain = do
 	crt <- readContent
 	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
 		PubKeyRSA pub = certPubKey $ getCertificate cert
+	v <- liftIO $ validateDefault certStore
+		(ValidationCache query add) ("localhost", "localhost da") scc
+	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
+	unless (null v) $ throwError "SERVER VALIDATION FAILURE"
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
 	liftIO . putStrLn $ "CERTIFICATE Chain: " ++ take 60 (show scc) ++ "..."
 	liftIO . putStrLn $ "PUBKEY: " ++ take 60 (show pub) ++ "..."
@@ -166,3 +173,9 @@ writeContent :: Content -> TlsIo Content ()
 writeContent c = do
 	let f = contentToFragment c
 	writeFragment f
+
+query :: ValidationCacheQueryCallback
+query _ _ _ = return ValidationCacheUnknown
+
+add :: ValidationCacheAddCallback
+add _ _ _ = return ()

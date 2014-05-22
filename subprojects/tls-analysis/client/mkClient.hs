@@ -5,6 +5,7 @@ import Control.Applicative
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
+import Data.X509.CertificateStore
 import Network
 import TlsClient
 import HandleLike
@@ -17,8 +18,9 @@ main = do
 	(svpn :: Int) : _ <- mapM readIO =<< getArgs
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
+	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
-	tls <- openTlsServer [(pkys, certChain)] sv
+	tls <- openTlsServer [(pkys, certChain)] certStore sv
 	hlPut tls $
 		"GET / HTTP/1.1\r\n" +++
 		"Host: localhost:4492\r\n" +++
