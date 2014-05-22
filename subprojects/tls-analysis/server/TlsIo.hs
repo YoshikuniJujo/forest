@@ -182,7 +182,10 @@ flushCipherSuite p = do
 decryptRSA :: BS.ByteString -> TlsIo cnt BS.ByteString
 decryptRSA e = do
 	pk <- gets tlssPrivateKey
-	case RSA.decrypt Nothing pk e of
+	tlss@TlsState{ tlssRandomGen = gen } <- get
+	let (ret, gen') = RSA.decryptSafer gen pk e
+	put tlss{ tlssRandomGen = gen' }
+	case ret of
 		Right d -> return d
 		Left err -> throwError $ show err
 
