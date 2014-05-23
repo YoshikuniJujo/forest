@@ -8,32 +8,28 @@ import Control.Concurrent
 import System.Environment
 import System.Console.GetOpt
 import qualified Data.ByteString as BS
-import Data.X509
-import Data.X509.File
-import Data.X509.CertificateStore
 import Network
 import TlsServer
 import HandleLike
 
 main :: IO ()
 main = do
-	certChain <- CertificateChain <$> readSignedObject "localhost.crt"
-	[PrivKeyRSA pk] <- readKeyFile "localhost.key"
-	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
-	(opts, args, _errs) <- getOpt Permute options <$> getArgs
+	(opts, pn : _, _errs) <- getOpt Permute options <$> getArgs
 	let dcc = OptDisableClientCert `notElem` opts
-	[port] <- forM args $
-		(PortNumber . fromIntegral <$>) . (readIO :: String -> IO Int)
+	port <- (PortNumber . fromIntegral <$>) $ (readIO :: String -> IO Int) pn
+	pk <- readRsaKey "localhost.key"
+	cc <- readCertificateChain "localhost.crt"
+	cs <- readCertificateStore ["cacert.pem"]
 	soc <- listenOn port
 	forever $ do
-		(client, _, _) <- accept soc
+		(h, _, _) <- accept soc
 		void $ forkIO $ do
-			tls <- openTlsClient dcc certStore certChain pk client
-			hlGetLine tls >>= print
-			hlGetLine tls >>= print
-			hlGetContent tls >>= print
-			hlPut tls answer
-			hlClose tls
+			cl <- openClient h pk cc $ if dcc then Just cs else Nothing
+			hlGetLine cl >>= print
+			hlGetLine cl >>= print
+			hlGetContent cl >>= print
+			hlPut cl answer
+			hlClose cl
 
 data Option = OptDisableClientCert deriving (Show, Eq)
 

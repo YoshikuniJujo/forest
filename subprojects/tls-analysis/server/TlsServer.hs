@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module TlsServer (TlsClient, openTlsClient) where
+module TlsServer (
+	TlsClient, openClient,
+	readRsaKey, readCertificateChain, readCertificateStore) where
 
 import Control.Monad.IO.Class
 
@@ -12,6 +14,7 @@ import System.IO.Unsafe
 import Data.Word
 import qualified Data.ByteString as BS
 import Data.X509
+import Data.X509.File
 
 import Fragment
 import Content
@@ -22,15 +25,31 @@ import Data.X509.Validation
 import Crypto.PubKey.RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
+readCertificateChain :: FilePath -> IO CertificateChain
+readCertificateChain = (CertificateChain <$>) . readSignedObject
+
+readRsaKey :: FilePath -> IO PrivateKey
+readRsaKey fp = do [PrivKeyRSA pk] <- readKeyFile fp; return pk
+
+readCertificateStore :: [FilePath] -> IO CertificateStore
+readCertificateStore fps =
+	makeCertificateStore . concat <$> mapM readSignedObject fps
+
 data Option
 	= OptDisableClientCert
 	deriving (Show, Eq)
 
-openTlsClient :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
+openClient :: Handle ->
+	PrivateKey -> CertificateChain -> Maybe CertificateStore -> IO TlsClient
+openClient cl pk cc mcs = case mcs of
+	Just cs -> openTlsClient_ True cs cc pk cl
+	_ -> openTlsClient_ False undefined cc pk cl
+
+openTlsClient_ :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
 	Handle -> IO TlsClient
-openTlsClient dcc certStore certChain =
+openTlsClient_ dcc certStore certChain =
 	runOpen (handshake dcc certStore certChain 0)
-	
+
 handshake :: Bool -> CertificateStore -> CertificateChain -> Int -> TlsIo Content ()
 handshake dcc certStore certChain cid = do
 
