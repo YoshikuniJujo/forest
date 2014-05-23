@@ -6,6 +6,8 @@ module Parts (
 	HashAlgorithm(..), SignatureAlgorithm(..),
 	parseSignatureAlgorithm,
 
+	Parsable'(..),
+
 --	list1,
 	whole, ByteStringM, evalByteStringM, headBS,
 
@@ -13,6 +15,8 @@ module Parts (
 
 	byteStringToInt, intToByteString,
 	section, takeWords, takeLen, takeBS,
+
+	takeLen',
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -20,6 +24,7 @@ import qualified Prelude
 import Numeric
 
 import Control.Applicative ((<$>))
+import Control.Monad
 
 import Types
 import ByteStringMonad
@@ -36,6 +41,9 @@ instance Parsable Random where
 
 parseRandom :: ByteStringM Random
 parseRandom = Random <$> takeBS 32
+
+instance Parsable' Random where
+	parse' rd = Random `liftM` rd 32
 
 randomToByteString :: Random -> ByteString
 randomToByteString (Random r) = r
@@ -130,3 +138,8 @@ parseVersion :: ByteStringM Version
 parseVersion = do
 	[vmjr, vmnr] <- takeWords 2
 	return $ Version vmjr vmnr
+
+instance Parsable' Version where
+	parse' rd = do
+		[vmjr, vmnr] <- takeWords' rd 2
+		return $ Version vmjr vmnr

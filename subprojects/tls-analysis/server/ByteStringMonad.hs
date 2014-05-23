@@ -7,11 +7,13 @@ module ByteStringMonad (
 	headBS, takeBS, takeWords, takeInt, takeWord16, takeLen, emptyBS,
 	list1, list, section', section, whole,
 
+	takeWords', takeLen',
+
 	word16ToByteString,
 
 	byteStringToInt, intToByteString, lenBodyToByteString,
 
-	Parsable(..),
+	Parsable(..), Parsable'(..),
 ) where
 
 import Prelude hiding (head, take)
@@ -33,6 +35,9 @@ class Parsable a where
 	parse :: ByteStringM a
 	toByteString :: a -> ByteString
 	listLength :: a -> Maybe Int
+
+class Parsable' a where
+	parse' :: Monad m => (Int -> m BS.ByteString) -> m a
 
 instance Parsable a => Parsable [a] where
 	parse = case listLength (undefined :: a) of
@@ -79,6 +84,9 @@ takeBS len = do
 takeWords :: Int -> ByteStringM [Word8]
 takeWords = (BS.unpack <$>) . takeBS
 
+takeWords' :: Monad m => (Int -> m BS.ByteString) -> Int -> m [Word8]
+takeWords' = ((BS.unpack `liftM`) .)
+
 takeInt' :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
 takeInt' rd = (byteStringToInt `liftM`) . rd
 
@@ -94,6 +102,11 @@ takeLen :: Int -> ByteStringM ByteString
 takeLen n = do
 	len <- takeInt n
 	takeBS len
+
+takeLen' :: Monad m => (Int -> m BS.ByteString) -> Int -> m BS.ByteString
+takeLen' rd n = do
+	len <- takeInt' rd n
+	rd len
 
 emptyBS :: ByteStringM Bool
 emptyBS = (== BS.empty) <$> get

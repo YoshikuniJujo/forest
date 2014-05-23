@@ -20,7 +20,9 @@ import Prelude hiding (concat, take)
 import Numeric
 
 import Control.Applicative
+import Control.Monad
 import Data.ByteString (ByteString, pack, unpack)
+import qualified Data.ByteString as BS
 import Data.Word
 
 -- import Types
@@ -28,13 +30,18 @@ import Data.Word
 import Parts(
 	Version(..), Parsable(..), CipherSuite(..), Random(..),
 
+	Parsable'(..),
+
 	SignatureAlgorithm(..),
 	HashAlgorithm(..),
 --	Version(..),
 
-	lenBodyToByteString, headBS, takeLen,
+	lenBodyToByteString, headBS,
 --	list1,
-	evalByteStringM)
+	evalByteStringM,
+
+	takeLen',
+ )
 import Extension
 
 data ClientHello
@@ -63,7 +70,7 @@ instance Parsable ClientHello where
 
 parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
-	(pv, r, sid) <- pvrsid
+	(pv, r, sid) <- pvrsid' takeBS
 	css <- parse
 --	cms <- parseCompressionMethodList
 	cms <- parse
@@ -108,15 +115,15 @@ serverHelloCipherSuite _ = Nothing
 
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do
-	(pv, r, sid) <- pvrsid
+	(pv, r, sid) <- pvrsid' takeBS
 	cs <- parse
 	cm <- parseCompressionMethod
 	e <- emptyBS
 	me <- if e then return Nothing else Just <$> parseExtensionList takeBS
 	return $ ServerHello pv r sid cs cm me
 
-pvrsid :: ByteStringM (Version, Random, SessionId)
-pvrsid = (,,) <$> parse <*> parse <*> parseSessionId
+pvrsid' :: Monad m => (Int -> m BS.ByteString) -> m (Version, Random, SessionId)
+pvrsid' rd = (,,) `liftM` parse' rd `ap` parse' rd `ap` parse' rd
 
 serverHelloToByteString :: ServerHello -> ByteString
 serverHelloToByteString (ServerHello pv r sid cs cm mes) = concat [
@@ -156,8 +163,8 @@ instance Show SessionId where
 	show (SessionId sid) =
 		"(SessionID " ++ concatMap (`showHex` "") (unpack sid) ++ ")"
 
-parseSessionId :: ByteStringM SessionId
-parseSessionId = SessionId <$> takeLen 1
-
 sessionIdToByteString :: SessionId -> ByteString
 sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
+
+instance Parsable' SessionId where
+	parse' rd = SessionId `liftM` takeLen' rd 1
