@@ -6,7 +6,7 @@ module Certificate (
 	CertificateRequest(..),
 	ClientCertificateType(..),
 	EncryptedPreMasterSecret(..),
-	DigitallySigned(..), digitallySignedSign,
+	DigitallySigned(..),
 
 	section, whole, headBS,
 ) where
@@ -159,10 +159,6 @@ instance Parsable DigitallySigned where
 	parse = parseDigitallySigned
 	toByteString = digitallySignedToByteString
 	listLength _ = Nothing
-
-digitallySignedSign :: DigitallySigned -> Maybe ByteString
-digitallySignedSign (DigitallySigned _ s) = Just s
-digitallySignedSign _ = Nothing
 
 parseDigitallySigned :: ByteStringM DigitallySigned
 parseDigitallySigned = DigitallySigned

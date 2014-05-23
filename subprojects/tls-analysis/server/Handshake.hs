@@ -12,7 +12,7 @@ module Handshake (
 	handshakeGetFinish,
 
 	HandshakeType(HandshakeTypeFinished),
-	CertificateChain, handshakeSign,
+	CertificateChain,
 	handshakeCertificateRequest,
 	handshakeMakeVerify,
 	handshakeMakeClientKeyExchange,
@@ -31,6 +31,8 @@ module Handshake (
 	CompressionMethod(..),
 	SessionId(..),
 	Version(..),
+
+	DigitallySigned(..),
 
 	headBS,
 --	list1,
@@ -68,10 +70,6 @@ instance Parsable Handshake where
 	parse = parseHandshake
 	toByteString = handshakeToByteString
 	listLength _ = Nothing
-
-handshakeSign :: Handshake -> Maybe ByteString
-handshakeSign (HandshakeCertificateVerify ds) = digitallySignedSign ds
-handshakeSign _ = Nothing
 
 handshakeMakeVerify :: ByteString -> Handshake
 handshakeMakeVerify = HandshakeCertificateVerify .

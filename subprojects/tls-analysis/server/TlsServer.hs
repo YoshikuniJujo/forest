@@ -7,14 +7,12 @@ module TlsServer (
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
-import Control.Concurrent
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
 import Data.X509.Validation
 import Data.X509.CertificateStore
 import System.IO
-import System.IO.Unsafe
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
@@ -80,7 +78,7 @@ serverHello cc mcs = do
 		. CertificateRequest
 			[ClientCertificateTypeRsaSign]
 			[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
-		. getDistinguishedNames
+		. map (certIssuerDN . signedObject . getSigned) . listCertificates
 	cert = mkhs $ HandshakeCertificate cc
 
 clientCertificate ::
@@ -125,35 +123,50 @@ clientKeyExchange (Version cvmjr cvmnr) = do
 				_ -> throwError "bad length"
 			_ -> throwError "bad length"
 
--- refactoring --
-
 certificateVerify :: RSA.PublicKey -> TlsIo Content ()
 certificateVerify pub = do
-	hash <- clientVerifyHash pub
-	c3 <- readContentNoHash
-	let	Just ds = digitalSign c3
-		encHash = RSA.ep pub ds
-	unless (hash == encHash) $
-		throwError "client authentification failed"
-	fragmentUpdateHash $ contentToFragment c3
-	output 0 "Client Certificate Verify" [
-			"local hash   : \"..." ++ drop 410 (show hash),
-			"recieved hash: \"..." ++ drop 410 (show encHash) ]
+	hash0 <- clientVerifyHash pub
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeCertificateVerify (DigitallySigned a s) -> do
+			chk a
+			let hash1 = RSA.ep pub s
+			unless (hash1 == hash0) $
+				throwError "client authentificatin failed"
+		_ -> throwError "Not Certificate Verify"
+	where
+	chk a = case a of
+		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
+		_ -> throwError $ "Not implement such algorithm: " ++ show a
 
 clientChangeCipherSuite :: TlsIo Content ()
 clientChangeCipherSuite = do
-	cccs <- readContent
-	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
+	cnt <- readContent
+	case cnt of
+		ContentChangeCipherSpec v ChangeCipherSpec -> do
+			unless (v == version) $ throwError "bad version"
+			flushCipherSuite Client
+		_ -> throwError "Not Change Cipher Spec"
+
+clientFinished :: TlsIo Content ()
+clientFinished = do
+	fhc <- finishedHash Client
+	cnt <- readContent
+	case cnt of
+		ContentHandshake v (HandshakeFinished f) -> do
+			unless (v == version) $ throwError "bad version"
+			unless (f == fhc) $ throwError "Finished error"
+		_ -> throwError "Not Finished"
 
 serverChangeCipherSuite :: TlsIo Content ()
 serverChangeCipherSuite = do
-	writeFragment $ contentToFragment changeCipherSpec
+	writeFragment . contentToFragment $
+		ContentChangeCipherSpec version ChangeCipherSpec
 	flushCipherSuite Server
 
 serverFinished :: TlsIo Content ()
-serverFinished = do
-	sf <- finishedHash Server
-	writeFragment . contentToFragment $ finished sf
+serverFinished = writeFragment . contentToFragment .
+	ContentHandshake version . HandshakeFinished =<< finishedHash Server
 
 readHandshake :: (Version -> Bool) -> TlsIo Content Handshake
 readHandshake ck = do
@@ -164,24 +177,13 @@ readHandshake ck = do
 			| otherwise -> throwError "Not supported layer version"
 		_ -> throwError "Not Handshake"
 
-clientFinished :: TlsIo Content ()
-clientFinished = do
-	fhc <- finishedHash Client
-	cf <- readContent
-	output 0 "Client Finished" [show fhc, showHandshake cf]
-
-readContentNoHash :: TlsIo Content Content
-readContentNoHash = readCached readContentList <* updateSequenceNumber Client
-
 readContent :: TlsIo Content Content
 readContent = do
-	c <- readCached readContentList
-		<* updateSequenceNumber Client
+	c <- readCached rcl <* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
-
-readContentList :: TlsIo Content [Content]
-readContentList = (\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash
+	where
+	rcl = (\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash
 
 writeContentList :: [Content] -> TlsIo Content ()
 writeContentList cs = do
@@ -189,33 +191,6 @@ writeContentList cs = do
 	updateSequenceNumber Client
 	writeFragment f
 	fragmentUpdateHash f
-
-{-
-writeContent :: Content -> TlsIo Content ()
-writeContent c = do
-	let f = contentToFragment c
-	writeFragment f
-	fragmentUpdateHash f
-	-}
-
-output :: Int -> String -> [String] -> TlsIo Content ()
-output cid msg strs = do
-	begin
-	liftIO . mapM_ putStr $ map (unlines . map ("\t" ++) . lines) strs
-	end
-	where
-	begin = liftIO $ do
-		readChan locker
-		putStrLn $ replicate 10 '-' ++ " (" ++
-			show cid ++ ") " ++ msg ++ " " ++ replicate 10 '-'
-	end = liftIO $ writeChan locker ()
-
-locker :: Chan ()
-locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
-
-getDistinguishedNames :: CertificateStore -> [DistinguishedName]
-getDistinguishedNames cs =
-	map (certIssuerDN .  signedObject . getSigned) $ listCertificates cs
 
 readCertificateChain :: FilePath -> IO CertificateChain
 readCertificateChain = (CertificateChain <$>) . readSignedObject

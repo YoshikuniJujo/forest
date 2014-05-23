@@ -5,17 +5,15 @@ module Content (
 	Handshake(..), ClientHello(..), ServerHello(..), SessionId(..),
 	CertificateRequest(..), ClientCertificateType(..),
 	HashAlgorithm(..), SignatureAlgorithm(..),
-	changeCipherSpec, finished, applicationData,
+	applicationData,
 	showHandshake,
 
 	EncryptedPreMasterSecret(..),
 
 	Version(..), Random(..),
-	doesChangeCipherSpec,
 	doesServerHelloDone,
 
 	clientVersion, clientRandom,
-	digitalSign,
 	makeVerify,
 	makeClientKeyExchange,
 	makeClientHello,
@@ -24,6 +22,8 @@ module Content (
 	getCertificateRequest,
 
 	CipherSuite(..), CompressionMethod(..),
+
+	DigitallySigned(..), ChangeCipherSpec(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -49,12 +49,6 @@ makeClientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
 		[TLS_RSA_WITH_AES_128_CBC_SHA]
 		[CompressionMethodNull]
 		Nothing
-
-changeCipherSpec :: Content
-changeCipherSpec = ContentChangeCipherSpec (Version 3 3) ChangeCipherSpec
-
-finished :: ByteString -> Content
-finished fh = ContentHandshake (Version 3 3) $ HandshakeFinished fh
 
 applicationData :: ByteString -> Content
 applicationData = ContentApplicationData (Version 3 3)
@@ -99,10 +93,6 @@ data Content
 	| ContentRaw ContentType Version ByteString
 	deriving Show
 
-doesChangeCipherSpec :: Content -> Bool
-doesChangeCipherSpec (ContentChangeCipherSpec _ ChangeCipherSpec) = True
-doesChangeCipherSpec _ = False
-
 doesServerHelloDone :: Content -> Bool
 doesServerHelloDone (ContentHandshake _ HandshakeServerHelloDone) = True
 doesServerHelloDone _ = False
@@ -127,10 +117,6 @@ parseChangeCipherSpec = do
 changeCipherSpecToByteString :: ChangeCipherSpec -> ByteString
 changeCipherSpecToByteString ChangeCipherSpec = pack [1]
 changeCipherSpecToByteString (ChangeCipherSpecRaw ccs) = pack [ccs]
-
-digitalSign :: Content -> Maybe ByteString
-digitalSign (ContentHandshake _ hss) = handshakeSign hss
-digitalSign _ = Nothing
 
 makeVerify :: ByteString -> Content
 makeVerify = ContentHandshake (Version 3 3) . handshakeMakeVerify
