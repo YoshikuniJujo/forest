@@ -5,12 +5,12 @@ module Main (main) where
 import Control.Applicative
 import Control.Monad
 import Control.Concurrent
+import Data.HandleLike
 import System.Environment
 import System.Console.GetOpt
 import qualified Data.ByteString as BS
 import Network
 import TlsServer
-import Data.HandleLike
 
 main :: IO ()
 main = do
@@ -23,7 +23,7 @@ main = do
 	soc <- listenOn port
 	forever $ do
 		(h, _, _) <- accept soc
-		void $ forkIO $ do
+		void . forkIO $ do
 			cl <- openClient h pk cc $ if dcc then Just cs else Nothing
 			hlGetLine cl >>= print
 			hlGetLine cl >>= print

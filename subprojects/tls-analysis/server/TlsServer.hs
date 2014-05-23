@@ -4,31 +4,28 @@ module TlsServer (
 	TlsClient, openClient,
 	readRsaKey, readCertificateChain, readCertificateStore) where
 
-import Control.Monad.IO.Class
-
 import Control.Applicative
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Concurrent
-import System.IO
-import System.IO.Unsafe
 import Data.Word
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
+import Data.X509.Validation
+import Data.X509.CertificateStore
+import System.IO
+import System.IO.Unsafe
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import Fragment
 import Content
 
-import Data.X509.CertificateStore
-import Data.X509.Validation
-
-import Crypto.PubKey.RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
-
 readCertificateChain :: FilePath -> IO CertificateChain
 readCertificateChain = (CertificateChain <$>) . readSignedObject
 
-readRsaKey :: FilePath -> IO PrivateKey
+readRsaKey :: FilePath -> IO RSA.PrivateKey
 readRsaKey fp = do [PrivKeyRSA pk] <- readKeyFile fp; return pk
 
 readCertificateStore :: [FilePath] -> IO CertificateStore
@@ -40,12 +37,12 @@ data Option
 	deriving (Show, Eq)
 
 openClient :: Handle ->
-	PrivateKey -> CertificateChain -> Maybe CertificateStore -> IO TlsClient
+	RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore -> IO TlsClient
 openClient cl pk cc mcs = case mcs of
 	Just cs -> openTlsClient_ True cs cc pk cl
 	_ -> openTlsClient_ False undefined cc pk cl
 
-openTlsClient_ :: Bool -> CertificateStore -> CertificateChain -> PrivateKey ->
+openTlsClient_ :: Bool -> CertificateStore -> CertificateChain -> RSA.PrivateKey ->
 	Handle -> IO TlsClient
 openTlsClient_ dcc certStore certChain =
 	runOpen (handshake dcc certStore certChain 0)
@@ -127,7 +124,7 @@ handshake dcc certStore certChain cid = do
 	writeFragment . contentToFragment $ finished sf
 	output Server cid "Finished" [showHandshake $ finished sf]
 
-clientCertification :: Int -> CertificateStore -> TlsIo Content PublicKey
+clientCertification :: Int -> CertificateStore -> TlsIo Content RSA.PublicKey
 clientCertification cid certStore = do
 	------------------------------------------
 	--          CLIENT CERTIFICATION        --
@@ -141,7 +138,7 @@ clientCertification cid certStore = do
 		[if null v then "Validate Success" else "Validate Failure"]
 	return pub
 
-certificateVerify :: Int -> PublicKey -> TlsIo Content ()
+certificateVerify :: Int -> RSA.PublicKey -> TlsIo Content ()
 certificateVerify cid pub = do
 	------------------------------------------
 	--          CERTIFICATE VERIFY          --
