@@ -68,7 +68,7 @@ parseClientHello = do
 --	cms <- parseCompressionMethodList
 	cms <- parse
 	e <- emptyBS
-	mel <- if e then return Nothing else Just <$> parseExtensionList
+	mel <- if e then return Nothing else Just <$> parseExtensionList takeBS
 	return $ ClientHello pv r sid css cms mel
 
 clientHelloToByteString :: ClientHello -> ByteString
@@ -112,7 +112,7 @@ parseServerHello = do
 	cs <- parse
 	cm <- parseCompressionMethod
 	e <- emptyBS
-	me <- if e then return Nothing else Just <$> parseExtensionList
+	me <- if e then return Nothing else Just <$> parseExtensionList takeBS
 	return $ ServerHello pv r sid cs cm me
 
 pvrsid :: ByteStringM (Version, Random, SessionId)

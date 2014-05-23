@@ -183,7 +183,11 @@ readContent = do
 	fragmentUpdateHash $ contentToFragment c
 	return c
 	where
-	rcl = (\(Right c) -> c) .  fragmentToContent <$> readFragmentNoHash
+	rcl = do
+		ec <- fragmentToContent <$> readFragmentNoHash
+		case ec of
+			Left err -> error err
+			Right c -> return c
 
 writeContentList :: [Content] -> TlsIo Content ()
 writeContentList cs = do

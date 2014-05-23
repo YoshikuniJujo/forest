@@ -1,22 +1,24 @@
 module Extension (
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
-	concat, emptyBS, ByteStringM,
+	concat, emptyBS, ByteStringM, takeBS,
 ) where
 
 import Prelude hiding (head, concat)
 
 import Control.Applicative
+import Control.Monad
 
 import qualified Data.ByteString as BS
 
 import ByteStringMonad
 -- import ToByteString
+import Data.Bits
 
 type ExtensionList = [Extension]
 
-parseExtensionList :: ByteStringM ExtensionList
-parseExtensionList = section 2 $ list parseExtension
+parseExtensionList :: Monad m => (Int -> m BS.ByteString) -> m ExtensionList
+parseExtensionList rd = section' rd 2 . list $ parseExtension takeBS
 
 extensionListToByteString :: ExtensionList -> ByteString
 extensionListToByteString =
@@ -32,10 +34,10 @@ data Extension
 	| ExtensionRaw ExtensionType ByteString
 	deriving Show
 
-parseExtension :: ByteStringM Extension
-parseExtension = do
-	et <- parseExtensionType
-	section 2 $ case et of
+parseExtension :: Monad m => (Int -> m BS.ByteString) -> m Extension
+parseExtension rd = do
+	et <- parseExtensionType rd
+	section' rd 2 $ case et of
 		ExtensionTypeServerName -> section 2 $
 			ExtensionServerName <$> list1 parseServerName
 		ExtensionTypeEllipticCurve -> section 2 $
@@ -49,7 +51,6 @@ parseExtension = do
 		ExtensionTypeRenegotiationInfo ->
 			ExtensionRenegotiationInfo <$> takeLen 1
 		_ -> ExtensionRaw et <$> whole
-
 
 extensionToByteString :: Extension -> ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
@@ -80,9 +81,11 @@ data ExtensionType
 	| ExtensionTypeRaw Word16
 	deriving Show
 
-parseExtensionType :: ByteStringM ExtensionType
-parseExtensionType = do
-	et <- takeWord16
+parseExtensionType :: Monad m => (Int -> m BS.ByteString) -> m ExtensionType
+parseExtensionType rd = do
+--	et <- takeWord16
+	[et1, et0] <- BS.unpack `liftM` rd 2
+	let et = fromIntegral et1 `shiftL` 8 .|. fromIntegral et0
 	return $ case et of
 		0 -> ExtensionTypeServerName
 		10 -> ExtensionTypeEllipticCurve

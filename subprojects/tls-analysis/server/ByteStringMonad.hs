@@ -4,8 +4,8 @@ module ByteStringMonad (
 	ByteString, Word8, Word16, BS.pack, BS.unpack, BS.append, BS.concat,
 
 	ByteStringM, evalByteStringM, throwError,
-	headBS, take, takeWords, takeInt, takeWord16, takeLen, emptyBS,
-	list1, list, section, whole,
+	headBS, takeBS, takeWords, takeInt, takeWord16, takeLen, emptyBS,
+	list1, list, section', section, whole,
 
 	word16ToByteString,
 
@@ -65,11 +65,11 @@ headBS = do
 		Just (h, t) -> lift (put t) >> return h
 		_ -> throwError "ByteStringMonad.head"
 
-take :: Int -> ByteStringM ByteString
-take len = do
+takeBS :: Int -> ByteStringM ByteString
+takeBS len = do
 	(t, d) <- lift $ gets (BS.splitAt len)
 	if BS.length t /= len
-	then throwError $ "ByteStringMonad.take:\n" ++
+	then throwError $ "ByteStringMonad.takeBS:\n" ++
 		"expected: " ++ show len ++ "bytes\n" ++
 		"actual  : " ++ show (BS.length t) ++ "bytes\n"
 	else do
@@ -77,10 +77,13 @@ take len = do
 		return t
 
 takeWords :: Int -> ByteStringM [Word8]
-takeWords = (BS.unpack <$>) . take
+takeWords = (BS.unpack <$>) . takeBS
+
+takeInt' :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
+takeInt' rd = (byteStringToInt `liftM`) . rd
 
 takeInt :: Int -> ByteStringM Int
-takeInt = (byteStringToInt <$>) . take
+takeInt = (byteStringToInt <$>) . takeBS
 
 takeWord16 :: ByteStringM Word16
 takeWord16 = do
@@ -90,7 +93,7 @@ takeWord16 = do
 takeLen :: Int -> ByteStringM ByteString
 takeLen n = do
 	len <- takeInt n
-	take len
+	takeBS len
 
 emptyBS :: ByteStringM Bool
 emptyBS = (== BS.empty) <$> get
@@ -105,6 +108,16 @@ list :: ByteStringM a -> ByteStringM [a]
 list m = do
 	e <- emptyBS
 	if e then return [] else (:) <$> m <*> list m
+
+section' :: Monad m => (Int -> m BS.ByteString) -> Int -> ByteStringM a -> m a
+section' rd n m = do
+	l <- takeInt' rd n
+	bs <- rd l
+	let e = evalByteStringM m bs
+	case e of
+		Right x -> return x
+		Left err -> error err
+--	e <- evalByteStringM m
 
 section :: Int -> ByteStringM a -> ByteStringM a
 section n m = do

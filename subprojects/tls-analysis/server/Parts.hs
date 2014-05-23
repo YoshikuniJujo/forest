@@ -12,7 +12,7 @@ module Parts (
 	lenBodyToByteString, emptyBS, concat,
 
 	byteStringToInt, intToByteString,
-	section, takeWords, takeLen, take,
+	section, takeWords, takeLen, takeBS,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -35,7 +35,7 @@ instance Parsable Random where
 	listLength _ = Nothing
 
 parseRandom :: ByteStringM Random
-parseRandom = Random <$> take 32
+parseRandom = Random <$> takeBS 32
 
 randomToByteString :: Random -> ByteString
 randomToByteString (Random r) = r
