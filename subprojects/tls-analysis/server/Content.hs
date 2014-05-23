@@ -30,11 +30,7 @@ import Prelude hiding (concat, head)
 
 import Control.Applicative
 
--- import Fragment
--- import ByteStringMonad
 import Handshake
--- import PreMasterSecret
--- import Parts
 import Data.ByteString(ByteString, pack, concat)
 import Data.Word
 import Types
@@ -55,6 +51,9 @@ applicationData = ContentApplicationData (Version 3 3)
 
 fragmentToContent :: Fragment -> Either String [Content]
 fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) body
+
+-- getContent :: Monad m => (Int -> m BS.ByteString) -> m Content
+-- getContent
 
 parseContent :: ContentType -> Version -> ByteStringM [Content]
 parseContent ContentTypeChangeCipherSpec v =

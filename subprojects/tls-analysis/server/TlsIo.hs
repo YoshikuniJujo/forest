@@ -18,7 +18,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen,
+	TlsClient, runOpen, buffered,
 ) where
 
 import Prelude hiding (read)
@@ -47,6 +47,7 @@ type TlsIo cnt = ErrorT String (StateT (TlsState cnt) IO)
 
 data TlsState cnt = TlsState {
 	tlssClientHandle :: Handle,
+	tlssByteStringBuffer :: BS.ByteString,
 	tlssContentCache :: [cnt],
 
 	tlssVersion :: Maybe CT.MSVersion,
@@ -72,6 +73,7 @@ data TlsState cnt = TlsState {
 initTlsState :: EntropyPool -> Handle -> RSA.PrivateKey -> TlsState cnt
 initTlsState ep cl pk = TlsState {
 	tlssClientHandle = cl,
+	tlssByteStringBuffer = "",
 	tlssContentCache = [],
 
 	tlssVersion = Nothing,
@@ -93,6 +95,18 @@ initTlsState ep cl pk = TlsState {
 	tlssClientSequenceNumber = 0,
 	tlssServerSequenceNumber = 0
  }
+
+buffered :: Int -> TlsIo cnt BS.ByteString -> TlsIo cnt BS.ByteString
+buffered n rd = do
+	tlss@TlsState{ tlssByteStringBuffer = bf } <- get
+	if BS.length bf >= n
+	then do	let (ret, bf') = BS.splitAt n bf
+		put tlss{ tlssByteStringBuffer = bf' }
+		return ret
+	else do	bf' <- rd
+		when (BS.null bf') $ throwError "buffered: No data available"
+		put tlss{ tlssByteStringBuffer = bf' }
+		(bf `BS.append`) <$> buffered (n - BS.length bf) rd
 
 evalTlsIo :: TlsIo cnt a -> EntropyPool -> Handle -> RSA.PrivateKey -> IO a
 evalTlsIo io ep cl pk = do

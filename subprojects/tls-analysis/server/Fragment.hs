@@ -2,6 +2,7 @@
 
 module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version,
+	readByteString,
 	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
@@ -30,6 +31,13 @@ import Control.Monad
 import qualified Data.ByteString as BS
 
 import TlsIo
+
+readByteString :: ContentType -> (Version -> Bool) -> Int -> TlsIo cnt BS.ByteString
+readByteString ct0 vc n = buffered n $ do
+	Fragment ct v bs <- readFragment
+	unless (ct == ct0) $ throwError "readByteString: bad Content Type"
+	unless (vc v) $ throwError "readByteString: bad Version"
+	return bs
 
 readFragment :: TlsIo cnt Fragment
 readFragment = do
