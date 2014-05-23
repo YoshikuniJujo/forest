@@ -1,15 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content, fragmentToContent, contentToFragment, contentListToFragment,
-	serverHello, certificate, certificateRequest, serverHelloDone,
+	Content(..), fragmentToContent, contentToFragment, contentListToFragment,
+	Handshake(..), ClientHello(..), ServerHello(..), SessionId(..),
+	certificate, certificateRequest, serverHelloDone,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
 
 	EncryptedPreMasterSecret(..),
 
 	Version(..), Random(..),
-	version, cipherSuite,
+--	version,
+	cipherSuite,
 	doesChangeCipherSpec,
 	doesServerHelloDone,
 
@@ -17,11 +19,13 @@ module Content (
 	certificateChain, digitalSign,
 	makeVerify,
 	makeClientKeyExchange,
+	makeClientHello,
 
 	serverVersion, serverRandom, serverCipherSuite, getFinish,
 	getCertificateRequest,
-	clientHello,
 	CertificateRequest,
+
+	CipherSuite(..), CompressionMethod(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -45,15 +49,8 @@ showHandshake _ = ""
 version :: Version
 version = Version 3 3
 
-serverHello :: Random -> Content
-serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
-	ServerHello (Version 3 3) sr (SessionId "")
-		TLS_RSA_WITH_AES_128_CBC_SHA
-		CompressionMethodNull
-		Nothing
-
-clientHello :: Random -> Content
-clientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
+makeClientHello :: Random -> Content
+makeClientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
 	ClientHello (Version 3 3) cr (SessionId "")
 		[TLS_RSA_WITH_AES_128_CBC_SHA]
 		[CompressionMethodNull]

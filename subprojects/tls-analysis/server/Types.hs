@@ -16,7 +16,7 @@ data Fragment
 
 data Version
 	= Version Word8 Word8
-	deriving Show
+	deriving (Show, Eq, Ord)
 
 byteStringToVersion :: BS.ByteString -> Version
 byteStringToVersion v = let [vmjr, vmnr] = BS.unpack v in Version vmjr vmnr
@@ -55,4 +55,4 @@ data CipherSuite
 	| TLS_ECDHE_PSK_WITH_NULL_SHA
 	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 	| CipherSuiteRaw Word8 Word8
-	deriving Show
+	deriving (Show, Eq)

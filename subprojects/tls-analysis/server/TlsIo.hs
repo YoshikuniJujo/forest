@@ -19,6 +19,8 @@ module TlsIo (
 	updateSequenceNumber,
 
 	TlsClient, runOpen,
+
+	CT.versionToByteString,
 ) where
 
 import Prelude hiding (read)

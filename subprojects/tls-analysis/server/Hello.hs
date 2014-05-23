@@ -132,7 +132,7 @@ serverHelloToByteString (ServerHelloRaw sh) = sh
 data CompressionMethod
 	= CompressionMethodNull
 	| CompressionMethodRaw Word8
-	deriving Show
+	deriving (Show, Eq)
 
 instance Parsable CompressionMethod where
 	parse = parseCompressionMethod
