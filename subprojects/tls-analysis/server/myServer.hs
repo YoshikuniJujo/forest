@@ -10,7 +10,7 @@ import System.Console.GetOpt
 import qualified Data.ByteString as BS
 import Network
 import TlsServer
-import HandleLike
+import Data.HandleLike
 
 main :: IO ()
 main = do

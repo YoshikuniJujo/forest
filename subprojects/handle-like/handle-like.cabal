@@ -1,0 +1,10 @@
+cabal-version: >= 1.6
+build-type: Simple
+
+name: handle-like
+version: 0.0.0.0
+
+library
+    hs-source-dirs: src
+    exposed-modules: Data.HandleLike
+    build-depends: base == 4.*, bytestring == 0.10.*

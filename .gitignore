@@ -6,6 +6,7 @@ tmp/
 *.pem
 *.key
 *.crt
+dist/
 /subprojects/schedevr/src/mkschd/marge-schedule
 /subprojects/schedevr/src/mkschd/marge-schedule-evr
 /subprojects/schedevr/src/prog_graph/mkGraph

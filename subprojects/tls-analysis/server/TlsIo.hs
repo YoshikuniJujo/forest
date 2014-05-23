@@ -41,7 +41,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified CryptoTools as CT
 
-import HandleLike
+import Data.HandleLike
 
 type TlsIo cnt = ErrorT String (StateT (TlsState cnt) IO)
 
