@@ -76,6 +76,7 @@ serverHello cc mcs = do
 		Just cs -> [certificateRequest $ getDistinguishedNames cs]
 		_ -> []
 
+{-
 readHandshake :: TlsIo Content Handshake
 readHandshake = do
 	cnt <- readContent
@@ -84,6 +85,7 @@ readHandshake = do
 			| v == version -> return hs
 			| otherwise -> throwError "Not supported layer version"
 		_ -> throwError "Not Handshake"
+		-}
 
 clientKeyExchange :: Version -> TlsIo Content ()
 clientKeyExchange cv = do
@@ -151,11 +153,13 @@ writeContentList cs = do
 	writeFragment f
 	fragmentUpdateHash f
 
+{-
 writeContent :: Content -> TlsIo Content ()
 writeContent c = do
 	let f = contentToFragment c
 	writeFragment f
 	fragmentUpdateHash f
+	-}
 
 query :: ValidationCacheQueryCallback
 query _ _ _ = return ValidationCacheUnknown

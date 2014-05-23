@@ -10,8 +10,6 @@ module Content (
 	EncryptedPreMasterSecret(..),
 
 	Version(..), Random(..),
---	version,
-	cipherSuite,
 	doesChangeCipherSpec,
 	doesServerHelloDone,
 
@@ -45,9 +43,6 @@ import Types
 showHandshake :: Content -> String
 showHandshake (ContentHandshake _ hs) = show hs
 showHandshake _ = ""
-
-version :: Version
-version = Version 3 3
 
 makeClientHello :: Random -> Content
 makeClientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
@@ -165,9 +160,6 @@ clientRandom _ = Nothing
 clientVersion :: Content -> Maybe Version
 clientVersion (ContentHandshake _ hss) = handshakeClientVersion hss
 clientVersion _ = Nothing
-
-cipherSuite :: CipherSuite
-cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
 
 encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
 encryptedPreMasterSecret (ContentHandshake _ hss) =
