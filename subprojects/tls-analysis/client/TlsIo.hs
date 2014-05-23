@@ -42,7 +42,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified CryptoTools as CT
 import Basic
-import HandleLike
+import Data.HandleLike
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
 
@@ -74,6 +74,7 @@ instance HandleLike TlsServer where
 	hlGet = tGet
 	hlGetLine = tGetLine
 	hlGetContent = tGetContent
+	hlClose = tClose
 
 initTlsClientState :: EntropyPool -> Handle -> TlsClientState cnt
 initTlsClientState ep sv = TlsClientState {

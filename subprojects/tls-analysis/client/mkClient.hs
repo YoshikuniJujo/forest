@@ -8,7 +8,7 @@ import Data.X509.File
 import Data.X509.CertificateStore
 import Network
 import TlsClient
-import HandleLike
+import Data.HandleLike
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
