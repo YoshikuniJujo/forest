@@ -331,8 +331,8 @@ instance HandleLike TlsClient where
 	hlGetContent = tGetContent
 	hlClose = tClose
 
-runOpen :: TlsIo cnt () -> RSA.PrivateKey -> Handle -> IO TlsClient
-runOpen opn pk cl = do
+runOpen :: Handle -> RSA.PrivateKey -> TlsIo cnt () -> IO TlsClient
+runOpen cl pk opn = do
 	ep <- createEntropyPool
 	(_, tlss) <- opn `runTlsIo` initTlsState ep cl pk
 	tvgen <- atomically . newTVar $ tlssRandomGen tlss

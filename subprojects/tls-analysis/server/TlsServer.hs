@@ -26,20 +26,32 @@ version = Version 3 3
 
 openClient :: Handle -> RSA.PrivateKey ->
 	CertificateChain -> Maybe CertificateStore -> IO TlsClient
-openClient cl pk cc mcs = runOpen (handshake cc mcs) pk cl
+openClient = (((. handshake) . (.)) .) . runOpen
 
 handshake :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
 handshake cc mcs = do
 	cv <- clientHello
 	serverHello cc mcs
-	pub <- maybe (return Nothing) ((Just <$>) . clientCertification) mcs
+	mpub <- maybe (return Nothing) ((Just <$>) . clientCertification) mcs
 	clientKeyExchange cv
-	maybe (return ()) certificateVerify pub
+	maybe (return ()) certificateVerify mpub
+	clientChangeCipherSuite
+	clientFinished
+	serverChangeCipherSuite
+	serverFinished
+
+clientChangeCipherSuite :: TlsIo Content ()
+clientChangeCipherSuite = do
 	cccs <- readContent
 	when (doesChangeCipherSpec cccs) $ flushCipherSuite Client
-	clientFinished
+
+serverChangeCipherSuite :: TlsIo Content ()
+serverChangeCipherSuite = do
 	writeFragment $ contentToFragment changeCipherSpec
 	flushCipherSuite Server
+
+serverFinished :: TlsIo Content ()
+serverFinished = do
 	sf <- finishedHash Server
 	writeFragment . contentToFragment $ finished sf
 
