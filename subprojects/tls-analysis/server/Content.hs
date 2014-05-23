@@ -3,7 +3,8 @@
 module Content (
 	Content(..), fragmentToContent, contentToFragment, contentListToFragment,
 	Handshake(..), ClientHello(..), ServerHello(..), SessionId(..),
-	certificate, certificateRequest, serverHelloDone,
+	CertificateRequest(..), ClientCertificateType(..),
+	HashAlgorithm(..), SignatureAlgorithm(..),
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
 
@@ -13,15 +14,14 @@ module Content (
 	doesChangeCipherSpec,
 	doesServerHelloDone,
 
-	clientVersion, clientRandom, encryptedPreMasterSecret,
-	certificateChain, digitalSign,
+	clientVersion, clientRandom,
+	digitalSign,
 	makeVerify,
 	makeClientKeyExchange,
 	makeClientHello,
 
 	serverVersion, serverRandom, serverCipherSuite, getFinish,
 	getCertificateRequest,
-	CertificateRequest,
 
 	CipherSuite(..), CompressionMethod(..),
 ) where
@@ -29,7 +29,6 @@ module Content (
 import Prelude hiding (concat, head)
 
 import Control.Applicative
-import Data.X509
 
 -- import Fragment
 -- import ByteStringMonad
@@ -50,19 +49,6 @@ makeClientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
 		[TLS_RSA_WITH_AES_128_CBC_SHA]
 		[CompressionMethodNull]
 		Nothing
-
-certificateRequest :: [DistinguishedName] -> Content
-certificateRequest = ContentHandshake (Version 3 3)
-	. HandshakeCertificateRequest
-	. CertificateRequest
-		[ClientCertificateTypeRsaSign]
-		[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
-
-serverHelloDone :: Content
-serverHelloDone = ContentHandshake (Version 3 3) HandshakeServerHelloDone
-
-certificate :: CertificateChain -> Content
-certificate = ContentHandshake (Version 3 3) . HandshakeCertificate
 
 changeCipherSpec :: Content
 changeCipherSpec = ContentChangeCipherSpec (Version 3 3) ChangeCipherSpec
@@ -149,10 +135,6 @@ digitalSign _ = Nothing
 makeVerify :: ByteString -> Content
 makeVerify = ContentHandshake (Version 3 3) . handshakeMakeVerify
 
-certificateChain :: Content -> Maybe CertificateChain
-certificateChain (ContentHandshake _ hss) = handshakeCertificate hss
-certificateChain _ = Nothing
-
 clientRandom :: Content -> Maybe Random
 clientRandom (ContentHandshake _ hss) = handshakeClientRandom hss
 clientRandom _ = Nothing
@@ -160,11 +142,6 @@ clientRandom _ = Nothing
 clientVersion :: Content -> Maybe Version
 clientVersion (ContentHandshake _ hss) = handshakeClientVersion hss
 clientVersion _ = Nothing
-
-encryptedPreMasterSecret :: Content -> Maybe EncryptedPreMasterSecret
-encryptedPreMasterSecret (ContentHandshake _ hss) =
-	handshakeEncryptedPreMasterSecret hss
-encryptedPreMasterSecret _ = Nothing
 
 makeClientKeyExchange :: EncryptedPreMasterSecret -> Content
 makeClientKeyExchange =

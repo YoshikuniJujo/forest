@@ -7,13 +7,12 @@ module Handshake (
 	handshakeDoesClientKeyExchange,
 	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
 	handshakeClientVersion, handshakeServerVersion,
-	handshakeEncryptedPreMasterSecret,
 	handshakeOnlyKnownCipherSuite,
 
 	handshakeGetFinish,
 
 	HandshakeType(HandshakeTypeFinished),
-	handshakeCertificate, CertificateChain, handshakeSign,
+	CertificateChain, handshakeSign,
 	handshakeCertificateRequest,
 	handshakeMakeVerify,
 	handshakeMakeClientKeyExchange,
@@ -78,10 +77,6 @@ handshakeMakeVerify :: ByteString -> Handshake
 handshakeMakeVerify = HandshakeCertificateVerify .
 	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
 
-handshakeCertificate :: Handshake -> Maybe CertificateChain
-handshakeCertificate (HandshakeCertificate cc) = Just cc
-handshakeCertificate _ = Nothing
-
 handshakeClientRandom :: Handshake -> Maybe Random
 handshakeClientRandom (HandshakeClientHello ch) = clientHelloClientRandom ch
 handshakeClientRandom _ = Nothing
@@ -118,10 +113,6 @@ handshakeDoesFinish _ = False
 handshakeGetFinish :: Handshake -> Maybe ByteString
 handshakeGetFinish (HandshakeFinished f) = Just f
 handshakeGetFinish _ = Nothing
-
-handshakeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
-handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
-handshakeEncryptedPreMasterSecret _ = Nothing
 
 handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
 handshakeMakeClientKeyExchange = HandshakeClientKeyExchange

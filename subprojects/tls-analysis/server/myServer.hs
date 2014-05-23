@@ -24,7 +24,8 @@ main = do
 	forever $ do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
-			cl <- openClient h pk cc $ if dcc then Just cs else Nothing
+			cl <- openClient h pk cc $
+				if dcc then Just ("Yoshikuni", cs) else Nothing
 			hlGetLine cl >>= print
 			hlGetLine cl >>= print
 			hlGetContent cl >>= print

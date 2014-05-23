@@ -24,21 +24,121 @@ import Fragment
 version :: Version
 version = Version 3 3
 
-openClient :: Handle -> RSA.PrivateKey ->
-	CertificateChain -> Maybe CertificateStore -> IO TlsClient
-openClient = (((. handshake) . (.)) .) . runOpen
+mkhs :: Handshake -> Content
+mkhs = ContentHandshake version
 
-handshake :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
+openClient :: Handle -> RSA.PrivateKey ->
+	CertificateChain -> Maybe (String, CertificateStore) -> IO TlsClient
+openClient cl pk = (runOpen cl pk .) . handshake
+
+handshake :: CertificateChain -> Maybe (String, CertificateStore) -> TlsIo Content ()
 handshake cc mcs = do
 	cv <- clientHello
-	serverHello cc mcs
-	mpub <- maybe (return Nothing) ((Just <$>) . clientCertification) mcs
+	serverHello cc $ snd <$> mcs
+	mpub <- maybe (return Nothing) ((Just <$>) . uncurry clientCertificate) mcs
 	clientKeyExchange cv
 	maybe (return ()) certificateVerify mpub
 	clientChangeCipherSuite
 	clientFinished
 	serverChangeCipherSuite
 	serverFinished
+
+clientHello :: TlsIo Content Version
+clientHello = do
+	hs <- readHandshake $ \(Version mj _) -> mj == 3
+	case hs of
+		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
+			setClientRandom rnd >> err ch >> return vsn
+		_ -> throwError "Not Client Hello"
+	where
+	err (ClientHello vsn _ _ css cms _)
+		| vsn < version = throwError emCVersion
+		| TLS_RSA_WITH_AES_128_CBC_SHA `notElem` css = throwError emCSuite
+		| CompressionMethodNull `notElem` cms = throwError emCMethod
+		| otherwise = return ()
+	err _ = throwError "Never occur"
+
+emCVersion, emCSuite, emCMethod :: String
+emCVersion = "Client Version should 3.3 or more"
+emCSuite = "No supported Cipher Suites"
+emCMethod = "No supported Compression Method"
+
+serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
+serverHello cc mcs = do
+	sr <- Random <$> randomByteString 32
+	setVersion version
+	setServerRandom sr
+	cacheCipherSuite TLS_RSA_WITH_AES_128_CBC_SHA
+	writeContentList $ [mksh sr, cert] ++ maybe [] ((: []) . certReq) mcs
+		++ [ContentHandshake version HandshakeServerHelloDone]
+	where
+	mksh sr = mkhs . HandshakeServerHello $ ServerHello version sr
+		(SessionId "")
+		TLS_RSA_WITH_AES_128_CBC_SHA
+		CompressionMethodNull Nothing
+	certReq = mkhs . HandshakeCertificateRequest
+		. CertificateRequest
+			[ClientCertificateTypeRsaSign]
+			[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
+		. getDistinguishedNames
+	cert = mkhs $ HandshakeCertificate cc
+
+clientCertificate ::
+	HostName -> CertificateStore -> TlsIo Content RSA.PublicKey
+clientCertificate hn cs = do
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeCertificate cc@(CertificateChain (c : _)) -> do
+			case certPubKey $ getCertificate c of
+				PubKeyRSA pub -> chk cc >> return pub
+				p -> throwError $ "Not implemented: " ++ show p
+		_ -> throwError "Not Certificate"
+	where
+	vc = ValidationCache
+		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
+	chk cc = do
+		v <- liftIO $ validateDefault cs vc (hn, "") cc
+		unless (null v) . throwError $ "Validate Failure: " ++ show v
+
+clientKeyExchange :: Version -> TlsIo Content ()
+clientKeyExchange (Version cvmjr cvmnr) = do
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
+			r <- randomByteString 46
+			pms <- mkpms epms `catchError` const (return $ dummy r)
+			generateKeys pms
+		_ -> throwError "Not Client Key Exchange"
+	where
+	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
+	mkpms epms = do
+		pms <- decryptRSA epms
+		case BS.uncons pms of
+			Just (pmsvmjr, pmstail) -> case BS.uncons pmstail of
+				Just (pmsvmnr, _) -> do
+					unless (pmsvmjr == cvmjr &&
+						pmsvmnr == cvmnr) $
+						throwError "bad: version"
+					unless (BS.length pms == 48) $
+						throwError "bad: length"
+					return pms
+				_ -> throwError "bad length"
+			_ -> throwError "bad length"
+
+-- refactoring --
+
+certificateVerify :: RSA.PublicKey -> TlsIo Content ()
+certificateVerify pub = do
+	hash <- clientVerifyHash pub
+	c3 <- readContentNoHash
+	let	Just ds = digitalSign c3
+		encHash = RSA.ep pub ds
+	unless (hash == encHash) $
+		throwError "client authentification failed"
+	fragmentUpdateHash $ contentToFragment c3
+	output 0 "Client Certificate Verify" [
+			"local hash   : \"..." ++ drop 410 (show hash),
+			"recieved hash: \"..." ++ drop 410 (show encHash) ]
 
 clientChangeCipherSuite :: TlsIo Content ()
 clientChangeCipherSuite = do
@@ -55,95 +155,20 @@ serverFinished = do
 	sf <- finishedHash Server
 	writeFragment . contentToFragment $ finished sf
 
-clientHello :: TlsIo Content Version
-clientHello = do
-	cnt <- readContent
-	case cnt of
-		ContentHandshake (Version 3 _) (HandshakeClientHello
-			(ClientHello vsn rnd _sid css cms _mex)) -> do
-			setClientRandom rnd
-			unless (vsn >= version) $
-				throwError "Client Version should 3.3 or more"
-			unless (TLS_RSA_WITH_AES_128_CBC_SHA `elem` css) $
-				throwError "No Supported Cipher Suites"
-			unless (CompressionMethodNull `elem` cms) $
-				throwError "No Supported Compression Method"
-			return vsn
-		ContentHandshake _ (HandshakeClientHello _) ->
-			throwError "Bad record layer version"
-		_ -> throwError "Not Client Hello"
-
-serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
-serverHello cc mcs = do
-	sr <- Random <$> randomByteString 32
-	setVersion version
-	setServerRandom sr
-	cacheCipherSuite TLS_RSA_WITH_AES_128_CBC_SHA
-	writeContentList $ [mksh sr, certificate cc] ++ crtreq ++ [serverHelloDone]
-	where
-	mksh sr = ContentHandshake version . HandshakeServerHello $ ServerHello
-		version sr (SessionId "") TLS_RSA_WITH_AES_128_CBC_SHA
-		CompressionMethodNull Nothing
-	crtreq = case mcs of
-		Just cs -> [certificateRequest $ getDistinguishedNames cs]
-		_ -> []
-
-{-
-readHandshake :: TlsIo Content Handshake
-readHandshake = do
+readHandshake :: (Version -> Bool) -> TlsIo Content Handshake
+readHandshake ck = do
 	cnt <- readContent
 	case cnt of
 		ContentHandshake v hs
-			| v == version -> return hs
+			| ck v -> return hs
 			| otherwise -> throwError "Not supported layer version"
 		_ -> throwError "Not Handshake"
-		-}
-
-clientKeyExchange :: Version -> TlsIo Content ()
-clientKeyExchange cv = do
-	Just (EncryptedPreMasterSecret epms) <-
-		encryptedPreMasterSecret <$> readContent
-	r <- randomByteString 46
-	pms <- makePms cv epms `catchError` const
-		(return $ versionToByteString cv `BS.append` r)
-	generateKeys pms
 
 clientFinished :: TlsIo Content ()
 clientFinished = do
 	fhc <- finishedHash Client
 	cf <- readContent
 	output 0 "Client Finished" [show fhc, showHandshake cf]
-
-clientCertification :: CertificateStore -> TlsIo Content RSA.PublicKey
-clientCertification certStore = do
-	------------------------------------------
-	--          CLIENT CERTIFICATION        --
-	------------------------------------------
-	c1 <- readContent
-	let	Just cc@(CertificateChain certs) = certificateChain c1
-	let 	PubKeyRSA pub = certPubKey .  getCertificate $ head certs
-	v <- liftIO $ validateDefault certStore
-		(ValidationCache query add) ("Yoshikuni", "Yoshio") cc
-	output 0 "Client Certificate"
-		[if null v then "Validate Success" else "Validate Failure"]
-	return pub
-
-certificateVerify :: RSA.PublicKey -> TlsIo Content ()
-certificateVerify pub = do
-	------------------------------------------
-	--          CERTIFICATE VERIFY          --
-	------------------------------------------
-	hash <- clientVerifyHash pub
-	c3 <- readContentNoHash
-	let	Just ds = digitalSign c3
-		encHash = RSA.ep pub ds
-	unless (hash == encHash) $
-		throwError "client authentification failed"
-	fragmentUpdateHash $ contentToFragment c3
-	output 0 "Client Certificate Verify" [
---			take 60 (show c3) ++ " ...",
-			"local hash   : \"..." ++ drop 410 (show hash),
-			"recieved hash: \"..." ++ drop 410 (show encHash) ]
 
 readContentNoHash :: TlsIo Content Content
 readContentNoHash = readCached readContentList <* updateSequenceNumber Client
@@ -173,12 +198,6 @@ writeContent c = do
 	fragmentUpdateHash f
 	-}
 
-query :: ValidationCacheQueryCallback
-query _ _ _ = return ValidationCacheUnknown
-
-add :: ValidationCacheAddCallback
-add _ _ _ = return ()
-
 output :: Int -> String -> [String] -> TlsIo Content ()
 output cid msg strs = do
 	begin
@@ -197,15 +216,6 @@ locker = unsafePerformIO $ ((>>) <$> (`writeChan` ()) <*> return) =<< newChan
 getDistinguishedNames :: CertificateStore -> [DistinguishedName]
 getDistinguishedNames cs =
 	map (certIssuerDN .  signedObject . getSigned) $ listCertificates cs
-
-makePms :: Version -> BS.ByteString -> TlsIo Content BS.ByteString
-makePms (Version cvmjr cvmnr) epms = do
-	pms <- decryptRSA epms
-	let	Just (pmsvmjr, pmstail) = BS.uncons pms
-		Just (pmsvmnr, _) = BS.uncons pmstail
-	unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $ throwError "bad: version"
-	unless (BS.length pms == 48) $ throwError "bad: length"
-	return pms
 
 readCertificateChain :: FilePath -> IO CertificateChain
 readCertificateChain = (CertificateChain <$>) . readSignedObject
