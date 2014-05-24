@@ -6,6 +6,7 @@ import Prelude hiding (drop, filter)
 
 import System.IO
 import System.Exit
+import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Conduit
@@ -22,8 +23,11 @@ import XmppClient
 
 import Text.Hamlet.XML
 
-some :: Data.XML.Types.Element
-[Data.XML.Types.NodeElement some] = map toXMLNode [xml|
+import Data.X509.File
+import Data.X509.CertificateStore
+
+oadrPoll :: Data.XML.Types.Element
+[Data.XML.Types.NodeElement oadrPoll] = map toXMLNode [xml|
 
 <oadr:oadrPoll ei:schemaVersion="2.0b">
     <ei:venID>VEN_123
@@ -33,11 +37,12 @@ some :: Data.XML.Types.Element
 main :: IO ()
 main = do
 	h <- connectTo "localhost" (PortNumber 5222)
+	cs <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	BS.hPut h $ beginDoc +++ stream
 	hPutStr h starttls
 	replicateM_ 12 . toTagEnd $ hGetChar h
-	tls <- openTlsServer [(undefined, undefined)] h
-	connectSendIq tls some
+	tls <- openTlsServer [] cs h
+	connectSendIq tls oadrPoll
 --	connectSendMsg tls "hogerunokai"
 	putStrLn "Finished"
 

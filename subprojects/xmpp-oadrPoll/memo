@@ -1,1 +1,1 @@
-runhaskell -i../tls-analysis/client/ -i../http-analysis/get/ -i../xmpp-tls-analysis/ -Wall clientExam.hs
+runhaskell -i../tls-analysis/client/ -i../xmpp-tls-analysis/ -Wall clientExam.hs

@@ -18,7 +18,7 @@ import Data.XML.Types
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
-import HandleLike
+import Data.HandleLike
 
 connect :: HandleLike h => h -> IO ()
 connect sv = do

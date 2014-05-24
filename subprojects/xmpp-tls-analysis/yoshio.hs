@@ -6,6 +6,7 @@ import Prelude hiding (drop, filter)
 
 import System.IO
 import System.Exit
+import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Conduit
@@ -18,16 +19,20 @@ import qualified Data.ByteString as BS
 import TlsClient
 
 import XmppClientYoshio
-import HandleLike
+import Data.HandleLike
+
+import Data.X509.File
+import Data.X509.CertificateStore
 
 main :: IO ()
 main = do
 	h <- connectTo "localhost" (PortNumber 5222)
 --	h <- connectTo "localhost" (PortNumber 4492)
+	cs <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	BS.hPut h $ beginDoc +++ stream
 	hPutStr h starttls
 	replicateM_ 12 . toTagEnd $ hGetChar h
-	tls <- openTlsServer [(undefined, undefined)] h
+	tls <- openTlsServer [] cs h
 	connectSendMsg tls "Good night!"
 	hlPut tls sample
 	hlGetContent tls >>= print
