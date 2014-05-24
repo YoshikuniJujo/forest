@@ -26,6 +26,8 @@ import Numeric
 import Control.Applicative ((<$>))
 import Control.Monad
 
+import qualified Data.ByteString as BS
+
 import Types
 import ByteStringMonad
 -- import ToByteString
@@ -63,6 +65,20 @@ parseCipherSuite = do
 		(0x00, 0x39) -> TLS_ECDHE_PSK_WITH_NULL_SHA
 		(0x00, 0x45) -> TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 		_ -> CipherSuiteRaw w1 w2
+
+parseCipherSuite' :: Monad m => (Int -> m BS.ByteString) -> m CipherSuite
+parseCipherSuite' rd = do
+	[w1, w2] <- takeWords' rd 2
+	return $ case (w1, w2) of
+		(0x00, 0x00) -> TLS_NULL_WITH_NULL_NULL
+		(0x00, 0x2f) -> TLS_RSA_WITH_AES_128_CBC_SHA
+		(0x00, 0x33) -> TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+		(0x00, 0x39) -> TLS_ECDHE_PSK_WITH_NULL_SHA
+		(0x00, 0x45) -> TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+		_ -> CipherSuiteRaw w1 w2
+
+instance Parsable' CipherSuite where
+	parse' = parseCipherSuite'
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
 cipherSuiteToByteString TLS_NULL_WITH_NULL_NULL = "\x00\x00"

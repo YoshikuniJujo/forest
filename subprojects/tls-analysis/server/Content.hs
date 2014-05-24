@@ -24,14 +24,18 @@ module Content (
 	CipherSuite(..), CompressionMethod(..),
 
 	DigitallySigned(..), ChangeCipherSpec(..),
+
+	getContent,
 ) where
 
 import Prelude hiding (concat, head)
 
+import Control.Monad
 import Control.Applicative
 
 import Handshake
 import Data.ByteString(ByteString, pack, concat)
+import qualified Data.ByteString as BS
 import Data.Word
 import Types
 
@@ -52,8 +56,20 @@ applicationData = ContentApplicationData (Version 3 3)
 fragmentToContent :: Fragment -> Either String [Content]
 fragmentToContent (Fragment ct v body) = evalByteStringM (parseContent ct v) body
 
--- getContent :: Monad m => (Int -> m BS.ByteString) -> m Content
--- getContent
+getContent :: Monad m =>
+	(Int -> m BS.ByteString) -> ContentType -> m Content
+getContent rd ct = parseContent' rd ct (Version 3 3)
+
+parseContent' :: Monad m =>
+	(Int -> m BS.ByteString) -> ContentType -> Version -> m Content
+parseContent' rd ContentTypeChangeCipherSpec v =
+	ContentChangeCipherSpec v `liftM` parse' rd
+parseContent' rd ContentTypeAlert v = do
+	[al, ad] <- BS.unpack `liftM` rd 2
+	return $ ContentAlert v al ad
+parseContent' rd ContentTypeHandshake v = ContentHandshake v `liftM` parse' rd
+parseContent' _ ContentTypeApplicationData _ = undefined
+parseContent' _ _ _ = undefined -- ContentRaw ct v <$> whole
 
 parseContent :: ContentType -> Version -> ByteStringM [Content]
 parseContent ContentTypeChangeCipherSpec v =
@@ -106,9 +122,19 @@ instance Parsable ChangeCipherSpec where
 	toByteString = changeCipherSpecToByteString
 	listLength _ = Nothing
 
+instance Parsable' ChangeCipherSpec where
+	parse' = parseChangeCipherSpec'
+
 parseChangeCipherSpec :: ByteStringM ChangeCipherSpec
 parseChangeCipherSpec = do
 	ccs <- headBS
+	return $ case ccs of
+		1 -> ChangeCipherSpec
+		_ -> ChangeCipherSpecRaw ccs
+
+parseChangeCipherSpec' :: Monad m => (Int -> m BS.ByteString) -> m ChangeCipherSpec
+parseChangeCipherSpec' rd = do
+	[ccs] <- BS.unpack `liftM` rd 1
 	return $ case ccs of
 		1 -> ChangeCipherSpec
 		_ -> ChangeCipherSpecRaw ccs

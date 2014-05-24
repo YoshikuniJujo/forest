@@ -2,6 +2,7 @@
 
 module Handshake (
 	Parsable(..),
+	Parsable'(..),
 	Handshake(..),
 	handshakeDoesServerHelloFinish, handshakeDoesFinish,
 	handshakeDoesClientKeyExchange,
@@ -34,7 +35,7 @@ module Handshake (
 
 	DigitallySigned(..),
 
-	headBS,
+	headBS, takeBS,
 --	list1,
 	whole, ByteStringM, evalByteStringM,
 
@@ -42,6 +43,7 @@ module Handshake (
 
 import Prelude hiding (head, take, concat)
 
+import Control.Monad
 import Control.Applicative ((<$>))
 
 import Data.Word
@@ -70,6 +72,9 @@ instance Parsable Handshake where
 	parse = parseHandshake
 	toByteString = handshakeToByteString
 	listLength _ = Nothing
+
+instance Parsable' Handshake where
+	parse' = parseHandshake'
 
 handshakeMakeVerify :: ByteString -> Handshake
 handshakeMakeVerify = HandshakeCertificateVerify .
@@ -114,6 +119,24 @@ handshakeGetFinish _ = Nothing
 
 handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
 handshakeMakeClientKeyExchange = HandshakeClientKeyExchange
+
+parseHandshake' :: Monad m => (Int -> m BS.ByteString) -> m Handshake
+parseHandshake' rd = do
+	mt <- parseHandshakeType' rd
+	section' rd 3 $ case mt of
+		HandshakeTypeClientHello -> HandshakeClientHello `liftM` parse
+		HandshakeTypeServerHello -> HandshakeServerHello `liftM` parse
+		HandshakeTypeCertificate -> HandshakeCertificate `liftM` parse
+		HandshakeTypeCertificateRequest ->
+			HandshakeCertificateRequest `liftM` parse
+		HandshakeTypeServerHelloDone ->
+			const HandshakeServerHelloDone `liftM` whole
+		HandshakeTypeCertificateVerify ->
+			HandshakeCertificateVerify `liftM` parse
+		HandshakeTypeClientKeyExchange ->
+			HandshakeClientKeyExchange `liftM` parse
+		HandshakeTypeFinished -> HandshakeFinished `liftM` whole
+		_ -> HandshakeRaw mt `liftM` whole
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do
@@ -168,6 +191,20 @@ data HandshakeType
 parseHandshakeType :: ByteStringM HandshakeType
 parseHandshakeType = do
 	ht <- headBS
+	return $ case ht of
+		1 -> HandshakeTypeClientHello
+		2 -> HandshakeTypeServerHello
+		11 -> HandshakeTypeCertificate
+		13 -> HandshakeTypeCertificateRequest
+		14 -> HandshakeTypeServerHelloDone
+		15 -> HandshakeTypeCertificateVerify
+		16 -> HandshakeTypeClientKeyExchange
+		20 -> HandshakeTypeFinished
+		_ -> HandshakeTypeRaw ht
+
+parseHandshakeType' :: Monad m => (Int -> m BS.ByteString) -> m HandshakeType
+parseHandshakeType' rd = do
+	[ht] <- BS.unpack `liftM` rd 1
 	return $ case ht of
 		1 -> HandshakeTypeClientHello
 		2 -> HandshakeTypeServerHello

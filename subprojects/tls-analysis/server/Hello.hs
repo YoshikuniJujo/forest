@@ -13,7 +13,9 @@ module Hello (
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
 --	list1,
-	evalByteStringM, lenBodyToByteString,
+	evalByteStringM, lenBodyToByteString, takeBS, section',
+
+	Parsable'(..),
  ) where
 
 import Prelude hiding (concat, take)
@@ -30,7 +32,7 @@ import Data.Word
 import Parts(
 	Version(..), Parsable(..), CipherSuite(..), Random(..),
 
-	Parsable'(..),
+--	Parsable'(..),
 
 	SignatureAlgorithm(..),
 	HashAlgorithm(..),
@@ -116,7 +118,7 @@ serverHelloCipherSuite _ = Nothing
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do
 	(pv, r, sid) <- pvrsid' takeBS
-	cs <- parse
+	cs <- parse' takeBS
 	cm <- parseCompressionMethod
 	e <- emptyBS
 	me <- if e then return Nothing else Just <$> parseExtensionList takeBS

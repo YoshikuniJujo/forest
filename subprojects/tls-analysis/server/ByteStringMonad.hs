@@ -48,6 +48,13 @@ instance Parsable a => Parsable [a] where
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
 
+{-
+instance (Parsable a, Parsable' a) => Parsable' [a] where
+	parse' rd = case listLength (undefined :: a) of
+		Just n -> section' rd n $ list parse
+--		_ -> list parse
+-}
+
 instance (Parsable a, Parsable b) => Parsable (a, b) where
 	parse = (,) <$> parse <*> parse
 	toByteString (x, y) = toByteString x `BS.append` toByteString y
@@ -121,6 +128,13 @@ list :: ByteStringM a -> ByteStringM [a]
 list m = do
 	e <- emptyBS
 	if e then return [] else (:) <$> m <*> list m
+
+{-
+list' :: Monad m => (Int -> m BS.ByteString) ->
+	((Int -> m BS.ByteString) -> m a) -> m [a]
+list' rd m = do
+	e <- empty
+	-}
 
 section' :: Monad m => (Int -> m BS.ByteString) -> Int -> ByteStringM a -> m a
 section' rd n m = do
