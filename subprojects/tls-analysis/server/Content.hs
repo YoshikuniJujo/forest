@@ -20,8 +20,11 @@ import qualified Data.ByteString as BS
 import Handshake
 import Types
 
-getContent :: Monad m => (Int -> m BS.ByteString) -> ContentType -> m Content
-getContent rd ct = parseContent rd ct (Version 3 3)
+getContent :: Monad m =>
+	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
+getContent rct rd = do
+	ct <- rct
+	parseContent ((snd `liftM`) . rd) ct (Version 3 3)
 
 parseContent :: Monad m =>
 	(Int -> m BS.ByteString) -> ContentType -> Version -> m Content

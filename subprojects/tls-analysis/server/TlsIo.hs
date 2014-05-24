@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE PackageImports, OverloadedStrings, TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsIo (
@@ -18,7 +18,7 @@ module TlsIo (
 	encryptMessage, decryptMessage,
 	updateSequenceNumber,
 
-	TlsClient, runOpen, buffered,
+	TlsClient, runOpen, buffered, getContentType,
 ) where
 
 import Prelude hiding (read)
@@ -47,7 +47,7 @@ type TlsIo cnt = ErrorT String (StateT (TlsState cnt) IO)
 
 data TlsState cnt = TlsState {
 	tlssClientHandle :: Handle,
-	tlssByteStringBuffer :: BS.ByteString,
+	tlssByteStringBuffer :: (Maybe CT.ContentType, BS.ByteString),
 	tlssContentCache :: [cnt],
 
 	tlssVersion :: Maybe CT.MSVersion,
@@ -73,7 +73,7 @@ data TlsState cnt = TlsState {
 initTlsState :: EntropyPool -> Handle -> RSA.PrivateKey -> TlsState cnt
 initTlsState ep cl pk = TlsState {
 	tlssClientHandle = cl,
-	tlssByteStringBuffer = "",
+	tlssByteStringBuffer = (Nothing, ""),
 	tlssContentCache = [],
 
 	tlssVersion = Nothing,
@@ -96,17 +96,33 @@ initTlsState ep cl pk = TlsState {
 	tlssServerSequenceNumber = 0
  }
 
-buffered :: Int -> TlsIo cnt BS.ByteString -> TlsIo cnt BS.ByteString
+getContentType :: TlsIo cnt (CT.ContentType, BS.ByteString)
+	-> TlsIo cnt CT.ContentType
+getContentType rd = do
+	mct <- fst <$> gets tlssByteStringBuffer
+	(\gt -> maybe gt return mct) $ do
+		(ct, bf) <- rd
+		tlss <- get
+		put tlss{ tlssByteStringBuffer = (Just ct, bf) }
+		return ct
+
+buffered :: Int -> TlsIo cnt (CT.ContentType, BS.ByteString) ->
+	TlsIo cnt (CT.ContentType, BS.ByteString)
 buffered n rd = do
-	tlss@TlsState{ tlssByteStringBuffer = bf } <- get
+	tlss@TlsState{ tlssByteStringBuffer = (mct, bf) } <- get
 	if BS.length bf >= n
 	then do	let (ret, bf') = BS.splitAt n bf
-		put tlss{ tlssByteStringBuffer = bf' }
-		return ret
-	else do	bf' <- rd
+		put $ if BS.null bf'
+			then tlss{ tlssByteStringBuffer = (Nothing, "") }
+			else tlss{ tlssByteStringBuffer = (mct, bf') }
+		return (fromJust mct, ret)
+	else do	(ct', bf') <- rd
+		unless (maybe True (== ct') mct) $
+			throwError "Content Type confliction"
+--		unless (ct == ct') $ throwError "Content Type conflict"
 		when (BS.null bf') $ throwError "buffered: No data available"
-		put tlss{ tlssByteStringBuffer = bf' }
-		(bf `BS.append`) <$> buffered (n - BS.length bf) rd
+		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
+		(ct' ,) . (bf `BS.append`) . snd <$> buffered (n - BS.length bf) rd
 
 evalTlsIo :: TlsIo cnt a -> EntropyPool -> Handle -> RSA.PrivateKey -> IO a
 evalTlsIo io ep cl pk = do
