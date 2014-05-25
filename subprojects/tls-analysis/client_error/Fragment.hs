@@ -15,7 +15,7 @@ module Fragment (
 
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
-	debugPrintKeys, Option(..),
+	debugPrintKeys, Option(..), isOptHelloVersion,
 ) where
 
 import Prelude hiding (read)

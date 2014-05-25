@@ -54,12 +54,13 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 		CompressionMethodNull
 		Nothing
 
-clientHello :: Random -> Content
-clientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
-	ClientHello (Version 3 3) cr (SessionId "")
-		[TLS_RSA_WITH_AES_128_CBC_SHA]
-		[CompressionMethodNull]
-		Nothing
+clientHello :: Random -> (Word8, Word8) -> Content
+clientHello cr (vmjr, vmnr) =
+	ContentHandshake (Version vmjr vmnr) . HandshakeClientHello $
+		ClientHello (Version 3 3) cr (SessionId "")
+			[TLS_RSA_WITH_AES_128_CBC_SHA]
+			[CompressionMethodNull]
+			Nothing
 
 certificateRequest :: [DistinguishedName] -> Content
 certificateRequest = ContentHandshake (Version 3 3)
@@ -131,6 +132,7 @@ data AlertLevel
 data AlertDescription
 	= AlertDescriptionCloseNotify
 	| AlertDescriptionBadRecordMac
+	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
 
@@ -159,6 +161,7 @@ parseAlertDescription = do
 	return $ case ad of
 		0 -> AlertDescriptionCloseNotify
 		20 -> AlertDescriptionBadRecordMac
+		70 -> AlertDescriptionProtocolVersion
 		_ -> AlertDescriptionRaw ad
 
 alertToByteString :: Alert -> ByteString
@@ -173,6 +176,7 @@ alertLevelToWord8 (AlertLevelRaw al) = al
 alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 
 doesChangeCipherSpec :: Content -> Bool

@@ -10,6 +10,8 @@ module TlsClient (
 import System.IO
 import Control.Applicative
 import Control.Monad
+import Data.List
+import Data.Word
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.CertificateStore
@@ -28,7 +30,11 @@ isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
-	
+
+helloVersionFromOptions :: [Option] -> (Word8, Word8)
+helloVersionFromOptions =
+	maybe (3, 3) (\(OptHelloVersion mjr mnr) -> (mjr, mnr)) .
+		find isOptHelloVersion
 
 handshake :: [(PrivateKey, CertificateChain)] -> CertificateStore
 	-> [Option] -> TlsIo Content ()
@@ -38,7 +44,7 @@ handshake ccs certStore opts = do
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	let ch = clientHello cr
+	let ch = clientHello cr $ helloVersionFromOptions opts
 	writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
@@ -47,6 +53,7 @@ handshake ccs certStore opts = do
 	--     SERVER HELLO                      --
 	-------------------------------------------
 	sh <- readContent
+	liftIO $ print sh
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh

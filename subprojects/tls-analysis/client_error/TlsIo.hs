@@ -18,7 +18,7 @@ module TlsIo (
 
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
-	debugPrintKeys, Option(..)
+	debugPrintKeys, Option(..), isOptHelloVersion,
 ) where
 
 import Prelude hiding (read)
@@ -46,7 +46,12 @@ import Data.HandleLike
 
 data Option
 	= OptPmsVerErr
+	| OptHelloVersion Word8 Word8
 	deriving (Show, Eq)
+
+isOptHelloVersion :: Option -> Bool
+isOptHelloVersion (OptHelloVersion _ _) = True
+isOptHelloVersion _ = False
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
 

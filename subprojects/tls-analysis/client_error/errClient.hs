@@ -14,8 +14,16 @@ import System.Console.GetOpt
 
 options :: [OptDescr Option]
 options = [
-	Option "p" ["pms-ver-err"] (NoArg OptPmsVerErr) "PMS version error"
+	Option "p" ["pms-ver-err"] (NoArg OptPmsVerErr) "PMS version error",
+	Option "" ["hello-version"]
+		(ReqArg readOptHelloVersion "version [major].[minor]")
+		"client hello version"
  ]
+
+readOptHelloVersion :: String -> Option
+readOptHelloVersion (mjr : '.' : mnr : "") =
+	OptHelloVersion (read [mjr]) (read [mnr])
+readOptHelloVersion _ = error "readOptHelloVersion: bad version expression"
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
