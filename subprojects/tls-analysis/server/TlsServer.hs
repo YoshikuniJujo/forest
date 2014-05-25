@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module TlsServer (
 	TlsClient, openClient,
@@ -18,6 +18,8 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import Content
 import Fragment
+
+import "monads-tf" Control.Monad.Error.Class
 
 version :: Version
 version = Version 3 3
@@ -56,7 +58,7 @@ clientHello = do
 		| otherwise = return ()
 	err _ = throwError "Never occur"
 
-emCVersion, emCSuite, emCMethod :: String
+emCVersion, emCSuite, emCMethod :: Alert
 emCVersion = "Client Version should 3.3 or more"
 emCSuite = "No supported Cipher Suites"
 emCMethod = "No supported Compression Method"
@@ -89,14 +91,14 @@ clientCertificate hn cs = do
 		HandshakeCertificate cc@(CertificateChain (c : _)) -> do
 			case certPubKey $ getCertificate c of
 				PubKeyRSA pub -> chk cc >> return pub
-				p -> throwError $ "Not implemented: " ++ show p
+				p -> throwError $ strMsg $ "Not implemented: " ++ show p
 		_ -> throwError "Not Certificate"
 	where
 	vc = ValidationCache
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
 	chk cc = do
 		v <- liftIO $ validateDefault cs vc (hn, "") cc
-		unless (null v) . throwError $ "Validate Failure: " ++ show v
+		unless (null v) . throwError . strMsg $ "Validate Failure: " ++ show v
 
 clientKeyExchange :: Version -> TlsIo Content ()
 clientKeyExchange (Version cvmjr cvmnr) = do
@@ -137,7 +139,7 @@ certificateVerify pub = do
 	where
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
-		_ -> throwError $ "Not implement such algorithm: " ++ show a
+		_ -> throwError $ strMsg $ "Not implement such algorithm: " ++ show a
 
 clientChangeCipherSuite :: TlsIo Content ()
 clientChangeCipherSuite = do

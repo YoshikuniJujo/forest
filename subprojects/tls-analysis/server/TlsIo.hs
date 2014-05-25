@@ -19,6 +19,7 @@ module TlsIo (
 	updateSequenceNumber,
 
 	TlsClient, runOpen, buffered, getContentType,
+	Alert,
 ) where
 
 import Prelude hiding (read)
@@ -26,7 +27,9 @@ import Prelude hiding (read)
 import Control.Applicative
 import Control.Concurrent.STM
 import "monads-tf" Control.Monad.Error
+import "monads-tf" Control.Monad.Error.Class
 import "monads-tf" Control.Monad.State
+import Data.String
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
@@ -43,7 +46,22 @@ import qualified CryptoTools as CT
 
 import Data.HandleLike
 
-type TlsIo cnt = ErrorT String (StateT (TlsState cnt) IO)
+type TlsIo cnt = ErrorT Alert (StateT (TlsState cnt) IO)
+
+data Alert
+	= Alert AlertLevel AlertDiscription String
+	| NotDetected String
+	deriving Show
+
+data AlertLevel = AlertLevelRaw Word8 deriving Show
+
+data AlertDiscription = AlertDiscriptionRaw Word8 deriving Show
+
+instance Error Alert where
+	strMsg err = NotDetected err
+
+instance IsString Alert where
+	fromString err = NotDetected err
 
 data TlsState cnt = TlsState {
 	tlssClientHandle :: Handle,
@@ -129,7 +147,7 @@ evalTlsIo io ep cl pk = do
 	ret <- runErrorT io `evalStateT` initTlsState ep cl pk
 	case ret of
 		Right r -> return r
-		Left err -> error err
+		Left err -> error $ show err
 
 readCached :: TlsIo cnt [cnt] -> TlsIo cnt cnt
 readCached rd = do
@@ -175,7 +193,7 @@ read n = do
 	r <- liftIO . flip BS.hGet n =<< gets tlssClientHandle
 	if BS.length r == n
 		then return r
-		else throwError $ "Basic.read: bad reading: " ++
+		else throwError $ strMsg $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
 write :: BS.ByteString -> TlsIo cnt ()
@@ -218,7 +236,7 @@ decryptRSA e = do
 	put tlss{ tlssRandomGen = gen' }
 	case ret of
 		Right d -> return d
-		Left err -> throwError $ show err
+		Left err -> throwError $ strMsg $ show err
 
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do
@@ -283,8 +301,7 @@ encryptMessage ct v msg = do
 				put tlss{ tlssRandomGen = gen' }
 				return ret
 		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return msg
-		_ -> throwError $ "encryptMessage:\n" ++
-			"\bNo keys or not implemented cipher suite"
+		_ -> throwError $ "encryptMessage:\n\bNo keys or not implemented cipher suite"
 
 decryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptMessage ct v enc = do
@@ -298,7 +315,7 @@ decryptMessage ct v enc = do
 			-> do	let emsg = CT.decryptMessage key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
-					Left err -> throwError err
+					Left err -> throwError $ strMsg err
 		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return enc
 		_ -> throwError "decryptMessage: No keys or bad cipher suite"
 
@@ -386,7 +403,7 @@ runTlsIo io st = do
 	(ret, st') <- runErrorT io `runStateT` st
 	case ret of
 		Right r -> return (r, st')
-		Left err -> error err
+		Left err -> error $ show err
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts CT.ContentTypeApplicationData
