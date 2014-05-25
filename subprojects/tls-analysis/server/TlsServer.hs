@@ -143,7 +143,7 @@ certificateVerify pub = do
 
 clientChangeCipherSuite :: TlsIo Content ()
 clientChangeCipherSuite = do
-	cnt <- readContent
+	cnt <- readContent (== version)
 	case cnt of
 		ContentChangeCipherSpec v ChangeCipherSpec -> do
 			unless (v == version) $ throwError "bad version"
@@ -153,7 +153,7 @@ clientChangeCipherSuite = do
 clientFinished :: TlsIo Content ()
 clientFinished = do
 	fhc <- finishedHash Client
-	cnt <- readContent
+	cnt <- readContent (== version)
 	case cnt of
 		ContentHandshake v (HandshakeFinished f) -> do
 			unless (v == version) $ throwError "bad version"
@@ -172,16 +172,16 @@ serverFinished = writeFragment . contentToFragment .
 
 readHandshake :: (Version -> Bool) -> TlsIo Content Handshake
 readHandshake ck = do
-	cnt <- readContent
+	cnt <- readContent ck
 	case cnt of
 		ContentHandshake v hs
 			| ck v -> return hs
 			| otherwise -> throwError "Not supported layer version"
 		_ -> throwError "Not Handshake"
 
-readContent :: TlsIo Content Content
-readContent = do
-	c <- getContent readBufferContentType (readByteString (== version))
+readContent :: (Version -> Bool) -> TlsIo Content Content
+readContent vc = do
+	c <- getContent (readBufferContentType vc) (readByteString (== version))
 		<* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c

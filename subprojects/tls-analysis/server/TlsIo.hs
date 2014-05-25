@@ -19,7 +19,7 @@ module TlsIo (
 	updateSequenceNumber,
 
 	TlsClient, runOpen, buffered, getContentType,
-	Alert,
+	Alert, alertVersion, processAlert,
 ) where
 
 import Prelude hiding (read)
@@ -73,6 +73,7 @@ data AlertDescription
 	= AlertDescriptionCloseNotify
 	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
+	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
 
@@ -80,7 +81,12 @@ alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
+
+alertVersion :: Alert
+alertVersion = Alert AlertLevelFatal AlertDescriptionProtocolVersion
+	"readByteString: bad Version"
 
 instance Error Alert where
 	strMsg err = NotDetected err
@@ -139,12 +145,14 @@ initTlsState ep cl pk = TlsState {
 	tlssServerSequenceNumber = 0
  }
 
-getContentType :: TlsIo cnt (CT.ContentType, BS.ByteString)
+getContentType :: (CT.Version -> Bool)
+	-> TlsIo cnt (CT.ContentType, CT.Version, BS.ByteString)
 	-> TlsIo cnt CT.ContentType
-getContentType rd = do
+getContentType vc rd = do
 	mct <- fst <$> gets tlssByteStringBuffer
 	(\gt -> maybe gt return mct) $ do
-		(ct, bf) <- rd
+		(ct, v, bf) <- rd
+		unless (vc v) $ throwError alertVersion
 		tlss <- get
 		put tlss{ tlssByteStringBuffer = (Just ct, bf) }
 		return ct
@@ -154,12 +162,14 @@ buffered :: Int -> TlsIo cnt (CT.ContentType, BS.ByteString) ->
 buffered n rd = do
 	tlss@TlsState{ tlssByteStringBuffer = (mct, bf) } <- get
 	if BS.length bf >= n
-	then do	let (ret, bf') = BS.splitAt n bf
+	then do -- liftIO $ putStrLn "FROM BUFFER"
+		let (ret, bf') = BS.splitAt n bf
 		put $ if BS.null bf'
 			then tlss{ tlssByteStringBuffer = (Nothing, "") }
 			else tlss{ tlssByteStringBuffer = (mct, bf') }
 		return (fromJust mct, ret)
-	else do	(ct', bf') <- rd
+	else do -- liftIO $ putStrLn "FROM IO"
+		(ct', bf') <- rd
 		unless (maybe True (== ct') mct) $
 			throwError "Content Type confliction"
 --		unless (ct == ct') $ throwError "Content Type conflict"
