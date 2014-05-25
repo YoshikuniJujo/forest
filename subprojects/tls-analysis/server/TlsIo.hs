@@ -3,7 +3,7 @@
 
 module TlsIo (
 	CT.Fragment(..), CT.Version, CT.ContentType(..),
-	TlsIo, evalTlsIo, liftIO, throwError, catchError,
+	TlsIo, liftIO, throwError, catchError,
 	readCached, randomByteString,
 	Partner(..),
 
@@ -49,13 +49,38 @@ import Data.HandleLike
 type TlsIo cnt = ErrorT Alert (StateT (TlsState cnt) IO)
 
 data Alert
-	= Alert AlertLevel AlertDiscription String
+	= Alert AlertLevel AlertDescription String
 	| NotDetected String
 	deriving Show
 
-data AlertLevel = AlertLevelRaw Word8 deriving Show
+alertToByteString :: Alert -> BS.ByteString
+alertToByteString (Alert al ad _) = "\21\3\3\0\2" `BS.append`
+	BS.pack [alertLevelToWord8 al, alertDescriptionToWord8 ad]
+alertToByteString alt = error $ "alertToByteString: " ++ show alt
 
-data AlertDiscription = AlertDiscriptionRaw Word8 deriving Show
+data AlertLevel
+	= AlertLevelWarning
+	| AlertLevelFatal
+	| AlertLevelRaw Word8
+	deriving Show
+
+alertLevelToWord8 :: AlertLevel -> Word8
+alertLevelToWord8 AlertLevelWarning = 1
+alertLevelToWord8 AlertLevelFatal = 2
+alertLevelToWord8 (AlertLevelRaw al) = al
+
+data AlertDescription
+	= AlertDescriptionCloseNotify
+	| AlertDescriptionUnexpectedMessage
+	| AlertDescriptionBadRecordMac
+	| AlertDescriptionRaw Word8
+	deriving Show
+
+alertDescriptionToWord8 :: AlertDescription -> Word8
+alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
+alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
+alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 
 instance Error Alert where
 	strMsg err = NotDetected err
@@ -141,13 +166,6 @@ buffered n rd = do
 		when (BS.null bf') $ throwError "buffered: No data available"
 		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
 		(ct' ,) . (bf `BS.append`) . snd <$> buffered (n - BS.length bf) rd
-
-evalTlsIo :: TlsIo cnt a -> EntropyPool -> Handle -> RSA.PrivateKey -> IO a
-evalTlsIo io ep cl pk = do
-	ret <- runErrorT io `evalStateT` initTlsState ep cl pk
-	case ret of
-		Right r -> return r
-		Left err -> error $ show err
 
 readCached :: TlsIo cnt [cnt] -> TlsIo cnt cnt
 readCached rd = do
@@ -315,7 +333,10 @@ decryptMessage ct v enc = do
 			-> do	let emsg = CT.decryptMessage key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
-					Left err -> throwError $ strMsg err
+					Left err -> throwError $ Alert
+						AlertLevelFatal
+						AlertDescriptionBadRecordMac
+						err
 		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return enc
 		_ -> throwError "decryptMessage: No keys or bad cipher suite"
 
@@ -400,10 +421,16 @@ runOpen cl pk opn = do
 
 runTlsIo :: TlsIo cnt a -> TlsState cnt -> IO (a, TlsState cnt)
 runTlsIo io st = do
-	(ret, st') <- runErrorT io `runStateT` st
+	(ret, st') <- runErrorT (io `catchError` processAlert)
+		`runStateT` st
 	case ret of
 		Right r -> return (r, st')
 		Left err -> error $ show err
+
+processAlert :: Alert -> TlsIo cnt a
+processAlert alt = do
+	write $ alertToByteString alt
+	throwError alt
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts CT.ContentTypeApplicationData

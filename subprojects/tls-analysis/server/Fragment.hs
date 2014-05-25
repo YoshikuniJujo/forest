@@ -13,7 +13,7 @@ module Fragment (
 	decryptRSA, finishedHash,
 
 	Partner(..),
-	TlsIo, evalTlsIo, liftIO,
+	TlsIo, liftIO,
 
 	throwError, catchError,
 	updateSequenceNumber,
