@@ -51,9 +51,12 @@ handshake ccs certStore opts = do
 	cr <- Random <$> randomByteString 32
 	let ch = clientHello cr
 		(helloVersionFromOptions opts)
-		(clientVersionFromOptions opts) $
-			if OptEmptyCipherSuite `elem` opts then [] else
-				[TLS_RSA_WITH_AES_128_CBC_SHA]
+		(clientVersionFromOptions opts)
+		(if OptEmptyCipherSuite `elem` opts then [] else
+			[TLS_RSA_WITH_AES_128_CBC_SHA])
+		(if OptEmptyCompressionMethod `elem` opts
+			then []
+			else [CompressionMethodNull])
 	case (OptStartByChangeCipherSpec `elem` opts,
 		OptStartByFinished `elem` opts) of
 		(True, _) -> writeContent changeCipherSpec

@@ -23,7 +23,7 @@ module Content (
 	clientHello,
 	CertificateRequest(..),
 
-	isFatal,
+	isFatal, CompressionMethod(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -60,11 +60,12 @@ clientHello ::
 	(Word8, Word8) ->
 	(Word8, Word8) ->
 	[CipherSuite] ->
+	[CompressionMethod] ->
 	Content
-clientHello cr (vmjr, vmnr) (cvmjr, cvmnr) cs =
+clientHello cr (vmjr, vmnr) (cvmjr, cvmnr) cs cm =
 	ContentHandshake (Version vmjr vmnr) . HandshakeClientHello $
-		ClientHello (Version cvmjr cvmnr) cr (SessionId "") cs
-			[CompressionMethodNull] Nothing
+		ClientHello (Version cvmjr cvmnr) cr (SessionId "") cs cm
+			Nothing
 
 certificateRequest :: [DistinguishedName] -> Content
 certificateRequest = ContentHandshake (Version 3 3)
@@ -138,6 +139,7 @@ data AlertDescription
 	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
 	| AlertDescriptionIllegalParameter
+	| AlertDescriptionDecodeError
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
@@ -169,6 +171,7 @@ parseAlertDescription = do
 		10 -> AlertDescriptionUnexpectedMessage
 		20 -> AlertDescriptionBadRecordMac
 		47 -> AlertDescriptionIllegalParameter
+		50 -> AlertDescriptionDecodeError
 		70 -> AlertDescriptionProtocolVersion
 		_ -> AlertDescriptionRaw ad
 
@@ -186,6 +189,7 @@ alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
 alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
+alertDescriptionToWord8 AlertDescriptionDecodeError = 50
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 

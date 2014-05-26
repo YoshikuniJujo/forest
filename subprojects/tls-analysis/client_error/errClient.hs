@@ -2,6 +2,7 @@
 
 import System.Environment
 import Control.Applicative
+import Control.Monad
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.File
@@ -11,6 +12,7 @@ import TlsClient
 import Data.HandleLike
 
 import System.Console.GetOpt
+import System.Exit
 
 options :: [OptDescr Option]
 options = [
@@ -28,7 +30,9 @@ options = [
 		(ReqArg readOptClientVersion "version [major].[minor]")
 		"client version",
 	Option "e" ["empty-cipher-suite"] (NoArg OptEmptyCipherSuite)
-		"empty cipher suite"
+		"empty cipher suite",
+	Option "" ["empty-compression-method"] (NoArg OptEmptyCompressionMethod)
+		"empty compression method"
  ]
 
 readOptHelloVersion :: String -> Option
@@ -46,7 +50,10 @@ readOptClientVersion _ = error "readOptHelloVersion: bad version expression"
 
 main :: IO ()
 main = do
-	(opts, args, _errs) <- getOpt Permute options <$> getArgs
+	(opts, args, errs) <- getOpt Permute options <$> getArgs
+	unless (null errs) $ do
+		mapM_ putStr errs
+		exitFailure
 	print $ OptPmsVerErr `elem` opts
 	(svpn :: Int) : _ <- mapM readIO args
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
