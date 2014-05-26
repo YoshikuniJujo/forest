@@ -8,14 +8,15 @@ import Control.Concurrent
 import Data.HandleLike
 import System.Environment
 import System.Console.GetOpt
+import System.Exit
 import qualified Data.ByteString as BS
 import Network
 import TlsServer
 
 main :: IO ()
 main = do
-	(opts, pn : _, _errs) <- getOpt Permute options <$> getArgs
-	let dcc = OptDisableClientCert `notElem` opts
+	(opts, pn : _, errs) <- getOpt Permute options <$> getArgs
+	unless (null errs) $ mapM_ putStr errs >> exitFailure
 	port <- (PortNumber . fromIntegral <$>) $ (readIO :: String -> IO Int) pn
 	pk <- readRsaKey "localhost.key"
 	cc <- readCertificateChain "localhost.crt"
@@ -25,7 +26,9 @@ main = do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
 			cl <- openClient h pk cc $
-				if dcc then Just ("Yoshikuni", cs) else Nothing
+				if OptDisableClientCert `elem` opts
+					then Nothing
+					else Just ("Yoshikuni", cs)
 			hlGetLine cl >>= print
 			hlGetLine cl >>= print
 			hlGetContent cl >>= print
