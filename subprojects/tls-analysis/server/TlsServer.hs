@@ -19,8 +19,6 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import Content
 import Fragment
 
-import "monads-tf" Control.Monad.Error.Class
-
 version :: Version
 version = Version 3 3
 
@@ -167,11 +165,17 @@ certificateVerify pub = do
 				AlertLevelFatal
 				AlertDescriptionDecryptError
 				"client authentification failed"
-		_ -> throwError "Not Certificate Verify"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Certificate Verify"
 	where
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
-		_ -> throwError $ strMsg $ "Not implement such algorithm: " ++ show a
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionDecodeError
+			("Not implement such algorithm: " ++ show a)
 
 clientChangeCipherSuite :: TlsIo Content ()
 clientChangeCipherSuite = do
