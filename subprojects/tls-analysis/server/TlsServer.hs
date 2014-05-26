@@ -46,6 +46,7 @@ handshake cc mcs = do
 clientHello :: TlsIo Content Version
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
+	liftIO $ print hs
 	case hs of
 		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
 			setClientRandom rnd >> err ch >> return vsn
@@ -62,7 +63,10 @@ clientHello = do
 	err _ = throwError "Never occur"
 
 emCVersion, emCSuite, emCMethod :: Alert
-emCVersion = "Client Version should 3.3 or more"
+emCVersion = Alert
+	AlertLevelFatal
+	AlertDescriptionProtocolVersion
+	"Client Version should 3.3 or more"
 emCSuite = "No supported Cipher Suites"
 emCMethod = "No supported Compression Method"
 
