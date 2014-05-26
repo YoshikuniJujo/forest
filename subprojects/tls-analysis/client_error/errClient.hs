@@ -17,7 +17,10 @@ options = [
 	Option "p" ["pms-ver-err"] (NoArg OptPmsVerErr) "PMS version error",
 	Option "" ["hello-version"]
 		(ReqArg readOptHelloVersion "version [major].[minor]")
-		"client hello version"
+		"client hello version",
+	Option "c" ["start-by-change-cipher-spec"]
+		(NoArg OptStartByChangeCipherSpec)
+		"start by change cipher spec"
  ]
 
 readOptHelloVersion :: String -> Option

@@ -47,6 +47,7 @@ import Data.HandleLike
 data Option
 	= OptPmsVerErr
 	| OptHelloVersion Word8 Word8
+	| OptStartByChangeCipherSpec
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool

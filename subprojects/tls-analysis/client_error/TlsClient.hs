@@ -45,7 +45,9 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
 	let ch = clientHello cr $ helloVersionFromOptions opts
-	writeContent ch
+	if (OptStartByChangeCipherSpec `elem` opts)
+	then writeContent changeCipherSpec
+	else writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 
@@ -55,8 +57,10 @@ handshake ccs certStore opts = do
 	sh <- readContent
 	liftIO $ print sh
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
-	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
-	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
+	maybe (throwError "No Server Hello") setServerRandom $
+		serverRandom sh
+	maybe (throwError "No Server Hello") cacheCipherSuite $
+		serverCipherSuite sh
 	liftIO . putStrLn $ "SERVER HELLO: " ++ take 60 (show sh) ++ "..."
 
 	-------------------------------------------
