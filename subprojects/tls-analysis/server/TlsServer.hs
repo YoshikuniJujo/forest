@@ -49,7 +49,10 @@ clientHello = do
 	case hs of
 		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
 			setClientRandom rnd >> err ch >> return vsn
-		_ -> throwError "Not Client Hello"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Client Hello"
 	where
 	err (ClientHello vsn _ _ css cms _)
 		| vsn < version = throwError emCVersion
