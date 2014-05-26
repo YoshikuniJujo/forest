@@ -19,7 +19,7 @@ module TlsIo (
 	updateSequenceNumber,
 
 	TlsClient, runOpen, buffered, getContentType,
-	Alert, alertVersion, processAlert,
+	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
 ) where
 
 import Prelude hiding (read)
@@ -172,7 +172,6 @@ buffered n rd = do
 		(ct', bf') <- rd
 		unless (maybe True (== ct') mct) $
 			throwError "Content Type confliction"
---		unless (ct == ct') $ throwError "Content Type conflict"
 		when (BS.null bf') $ throwError "buffered: No data available"
 		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
 		(ct' ,) . (bf `BS.append`) . snd <$> buffered (n - BS.length bf) rd

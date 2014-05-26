@@ -177,7 +177,9 @@ readHandshake ck = do
 		ContentHandshake v hs
 			| ck v -> return hs
 			| otherwise -> throwError "Not supported layer version"
-		_ -> throwError "Not Handshake"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage "Not Handshake"
 
 readContent :: (Version -> Bool) -> TlsIo Content Content
 readContent vc = do

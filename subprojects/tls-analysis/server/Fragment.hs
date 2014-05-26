@@ -21,7 +21,7 @@ module Fragment (
 	readCached,
 	clientVerifyHash,
 
-	TlsClient, runOpen, Alert,
+	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
 ) where
 
 import Prelude hiding (read)
@@ -43,7 +43,7 @@ readByteString vc n = do
 	buffered n $ do
 		Fragment ct v bs <- readFragmentNoHash
 		liftIO $ putStrLn $ "VERSION: " ++ show v
-		unless (vc v) $ throwError alertVersion -- "readByteString: bad Version"
+		unless (vc v) $ throwError alertVersion
 		return (ct, bs)
 
 readFragment :: TlsIo cnt Fragment
