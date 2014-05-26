@@ -45,9 +45,12 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
 	let ch = clientHello cr $ helloVersionFromOptions opts
-	if (OptStartByChangeCipherSpec `elem` opts)
-	then writeContent changeCipherSpec
-	else writeContent ch
+	case (OptStartByChangeCipherSpec `elem` opts,
+		OptStartByFinished `elem` opts) of
+		(True, _) -> writeContent changeCipherSpec
+		(_, True) -> writeContent $ ContentHandshake version $
+			HandshakeFinished ""
+		_ -> writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 

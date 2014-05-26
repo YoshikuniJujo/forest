@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content, fragmentToContent, contentToFragment, contentListToFragment,
+	Content(..), Handshake(..),
+	fragmentToContent, contentToFragment, contentListToFragment,
 	serverHello, certificate, certificateRequest,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
@@ -131,6 +132,7 @@ data AlertLevel
 
 data AlertDescription
 	= AlertDescriptionCloseNotify
+	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
@@ -160,6 +162,7 @@ parseAlertDescription = do
 	ad <- headBS
 	return $ case ad of
 		0 -> AlertDescriptionCloseNotify
+		10 -> AlertDescriptionUnexpectedMessage
 		20 -> AlertDescriptionBadRecordMac
 		70 -> AlertDescriptionProtocolVersion
 		_ -> AlertDescriptionRaw ad
@@ -175,6 +178,7 @@ alertLevelToWord8 (AlertLevelRaw al) = al
 
 alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
+alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad

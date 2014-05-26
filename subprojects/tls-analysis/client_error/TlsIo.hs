@@ -48,6 +48,7 @@ data Option
 	= OptPmsVerErr
 	| OptHelloVersion Word8 Word8
 	| OptStartByChangeCipherSpec
+	| OptStartByFinished
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool

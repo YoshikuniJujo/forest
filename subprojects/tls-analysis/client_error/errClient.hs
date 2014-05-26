@@ -20,7 +20,10 @@ options = [
 		"client hello version",
 	Option "c" ["start-by-change-cipher-spec"]
 		(NoArg OptStartByChangeCipherSpec)
-		"start by change cipher spec"
+		"start by change cipher spec",
+	Option "f" ["start-by-finished"]
+		(NoArg OptStartByFinished)
+		"start by finished"
  ]
 
 readOptHelloVersion :: String -> Option
