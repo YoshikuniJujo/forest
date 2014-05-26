@@ -182,9 +182,15 @@ clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
 		ContentChangeCipherSpec v ChangeCipherSpec -> do
-			unless (v == version) $ throwError "bad version"
+			unless (v == version) $ throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionProtocolVersion
+				"bad version"
 			flushCipherSuite Client
-		_ -> throwError "Not Change Cipher Spec"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Change Cipher Spec"
 
 clientFinished :: TlsIo Content ()
 clientFinished = do
@@ -192,9 +198,18 @@ clientFinished = do
 	cnt <- readContent (== version)
 	case cnt of
 		ContentHandshake v (HandshakeFinished f) -> do
-			unless (v == version) $ throwError "bad version"
-			unless (f == fhc) $ throwError "Finished error"
-		_ -> throwError "Not Finished"
+			unless (v == version) $ throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionProtocolVersion
+				"bad version"
+			unless (f == fhc) $ throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionDecryptError
+				"Finished error"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Finished"
 
 serverChangeCipherSuite :: TlsIo Content ()
 serverChangeCipherSuite = do
@@ -212,7 +227,10 @@ readHandshake ck = do
 	case cnt of
 		ContentHandshake v hs
 			| ck v -> return hs
-			| otherwise -> throwError "Not supported layer version"
+			| otherwise -> throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionProtocolVersion
+				"Not supported layer version"
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
