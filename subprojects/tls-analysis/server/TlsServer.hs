@@ -8,6 +8,8 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import qualified Data.ByteString as BS
+import Data.Maybe
+import Data.ASN1.Types
 import Data.X509
 import Data.X509.File
 import Data.X509.Validation
@@ -113,18 +115,29 @@ clientCertificate hn cs = do
 	where
 	vc = ValidationCache
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
-	chk cc = do
+	chk cc@(CertificateChain (t : _)) = do
+		liftIO . putStrLn $ "NAMES: " ++ show (getNames $ getCertificate t)
 		v <- liftIO $ validate HashSHA256
 			defaultHooks defaultChecks cs vc (hn, "") cc
 		unless (null v) . throwError $ Alert
 			AlertLevelFatal
 			(selectAlert v)
 			("Validate Failure: " ++ show v)
+	chk _ = error "chk: bad certificate chain"
 	selectAlert rs
 		| Expired `elem` rs = AlertDescriptionCertificateExpired
 		| InFuture `elem` rs = AlertDescriptionCertificateExpired
 		| UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
+
+getNames :: Certificate -> (Maybe String, [String])
+getNames cert = (commonName >>= asn1CharacterToString, altNames)
+	where
+	commonName = getDnElement DnCommonName $ certSubjectDN cert
+	altNames = maybe [] toAltName $ extensionGet $ certExtensions cert
+	toAltName (ExtSubjectAltName names) = catMaybes $ map unAltName names
+	unAltName (AltNameDNS s) = Just s
+	unAltName _ = Nothing
 
 clientKeyExchange :: Version -> TlsIo Content ()
 clientKeyExchange (Version cvmjr cvmnr) = do
