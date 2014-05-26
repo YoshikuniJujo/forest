@@ -55,13 +55,16 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 		CompressionMethodNull
 		Nothing
 
-clientHello :: Random -> (Word8, Word8) -> (Word8, Word8) -> Content
-clientHello cr (vmjr, vmnr) (cvmjr, cvmnr) =
+clientHello ::
+	Random ->
+	(Word8, Word8) ->
+	(Word8, Word8) ->
+	[CipherSuite] ->
+	Content
+clientHello cr (vmjr, vmnr) (cvmjr, cvmnr) cs =
 	ContentHandshake (Version vmjr vmnr) . HandshakeClientHello $
-		ClientHello (Version cvmjr cvmnr) cr (SessionId "")
-			[TLS_RSA_WITH_AES_128_CBC_SHA]
-			[CompressionMethodNull]
-			Nothing
+		ClientHello (Version cvmjr cvmnr) cr (SessionId "") cs
+			[CompressionMethodNull] Nothing
 
 certificateRequest :: [DistinguishedName] -> Content
 certificateRequest = ContentHandshake (Version 3 3)
@@ -134,6 +137,7 @@ data AlertDescription
 	= AlertDescriptionCloseNotify
 	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
+	| AlertDescriptionIllegalParameter
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
@@ -164,6 +168,7 @@ parseAlertDescription = do
 		0 -> AlertDescriptionCloseNotify
 		10 -> AlertDescriptionUnexpectedMessage
 		20 -> AlertDescriptionBadRecordMac
+		47 -> AlertDescriptionIllegalParameter
 		70 -> AlertDescriptionProtocolVersion
 		_ -> AlertDescriptionRaw ad
 
@@ -180,6 +185,7 @@ alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 

@@ -26,7 +26,9 @@ options = [
 		"start by finished",
 	Option "" ["client-version"]
 		(ReqArg readOptClientVersion "version [major].[minor]")
-		"client version"
+		"client version",
+	Option "e" ["empty-cipher-suite"] (NoArg OptEmptyCipherSuite)
+		"empty cipher suite"
  ]
 
 readOptHelloVersion :: String -> Option

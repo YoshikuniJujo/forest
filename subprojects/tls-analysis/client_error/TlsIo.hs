@@ -50,6 +50,7 @@ data Option
 	| OptStartByChangeCipherSpec
 	| OptStartByFinished
 	| OptClientVersion Word8 Word8
+	| OptEmptyCipherSuite
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool
