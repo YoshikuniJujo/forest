@@ -29,18 +29,12 @@ main = do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
 			cl <- openClient h pk cc mcs
-			unless (tCheckName cl "Yoshikuni") $ do
+			unless (checkName cl "Yoshikuni") $ do
 				putStrLn "This client is not accepted."
 				exitFailure
-			untilEmpty (hlGetLine cl) >>= mapM_ BSC.putStrLn
+			doUntil BS.null (hlGetLine cl) >>= mapM_ BSC.putStrLn
 			hlPut cl answer
 			hlClose cl
-			putStrLn ""
-
-untilEmpty :: IO BS.ByteString -> IO [BS.ByteString]
-untilEmpty rd = do
-	ln <- rd
-	if BS.null ln then return [] else (ln :) <$> untilEmpty rd
 
 data Option = OptDisableClientCert deriving (Show, Eq)
 
@@ -56,3 +50,6 @@ answer = BS.concat [
 	"Server: Warp/2.1.4\r\n",
 	"Content-Type: text/plain\r\n\r\n",
 	"004\r\n", "PONC\r\n", "003\r\n", "abc\r\n", "0\r\n\r\n" ]
+
+doUntil :: (a -> Bool) -> IO a -> IO [a]
+doUntil p rd = (\x -> if p x then return [x] else (x :) <$> doUntil p rd) =<< rd

@@ -3,7 +3,7 @@
 module TlsServer (
 	TlsClient, openClient,
 	readRsaKey, readCertificateChain, readCertificateStore,
-	tCheckName) where
+	checkName) where
 
 import Control.Applicative
 import Control.Monad

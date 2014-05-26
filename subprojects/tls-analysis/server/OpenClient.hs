@@ -20,7 +20,7 @@ module OpenClient (
 
 	TlsClient, runOpen, buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
-	tCheckName,
+	checkName,
 ) where
 
 import Prelude hiding (read)
@@ -87,8 +87,8 @@ runOpen cl pk opn = do
 		tlsServerSequenceNumber = tvssn
 	 }
 
-tCheckName :: TlsClient -> String -> Bool
-tCheckName TlsClient{ tlsNames = ns } n = n `elem` ns
+checkName :: TlsClient -> String -> Bool
+checkName TlsClient{ tlsNames = ns } n = n `elem` ns
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts ContentTypeApplicationData
