@@ -73,6 +73,7 @@ data AlertDescription
 	= AlertDescriptionCloseNotify
 	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
+	| AlertDescriptionIllegalParameter
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
@@ -81,6 +82,7 @@ alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 

@@ -67,7 +67,10 @@ emCVersion = Alert
 	AlertLevelFatal
 	AlertDescriptionProtocolVersion
 	"Client Version should 3.3 or more"
-emCSuite = "No supported Cipher Suites"
+emCSuite = Alert
+	AlertLevelFatal
+	AlertDescriptionIllegalParameter
+	"No supported Cipher Suites"
 emCMethod = "No supported Compression Method"
 
 serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
