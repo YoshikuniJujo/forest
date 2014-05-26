@@ -201,7 +201,10 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 tClose :: TlsClient -> IO ()
 tClose tc = do
 	tPutWithCT tc ContentTypeAlert "\SOH\NUL"
-	tGetWholeWithCT tc >>= print
+	cn <- tGetWholeWithCT tc
+	case cn of
+		(ContentTypeAlert, "\SOH\NUL") -> return ()
+		_ -> putStrLn "tClose: bad response"
 	hClose h
 	where
 	h = tlsHandle tc

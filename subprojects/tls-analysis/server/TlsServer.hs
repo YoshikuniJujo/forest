@@ -48,7 +48,7 @@ handshake cc mcs = do
 clientHello :: TlsIo Content Version
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
-	liftIO $ print hs
+--	liftIO $ print hs
 	case hs of
 		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
 			setClientRandom rnd >> err ch >> return vsn
@@ -120,7 +120,7 @@ clientCertificate cs = do
 	names (CertificateChain (t : _)) = getNames $ getCertificate t
 	names _ = error "names: bad certificate chain"
 	chk cc = do
-		liftIO . putStrLn $ "NAMES: " ++ show (names cc)
+--		liftIO . putStrLn $ "NAMES: " ++ show (names cc)
 		v <- liftIO $ validate HashSHA256 defaultHooks
 			defaultChecks{ checkFQHN = False } cs vc ("", "") cc
 		unless (null v) . throwError $ Alert

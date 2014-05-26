@@ -10,6 +10,7 @@ import System.Environment
 import System.Console.GetOpt
 import System.Exit
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Network
 import TlsServer
 
@@ -28,13 +29,18 @@ main = do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
 			cl <- openClient h pk cc mcs
-			print $ tCheckName cl "Yoshikuni"
-			print $ tCheckName cl "Yoshio"
-			hlGetLine cl >>= print
-			hlGetLine cl >>= print
-			hlGetContent cl >>= print
+			unless (tCheckName cl "Yoshikuni") $ do
+				putStrLn "This client is not accepted."
+				exitFailure
+			untilEmpty (hlGetLine cl) >>= mapM_ BSC.putStrLn
 			hlPut cl answer
 			hlClose cl
+			putStrLn ""
+
+untilEmpty :: IO BS.ByteString -> IO [BS.ByteString]
+untilEmpty rd = do
+	ln <- rd
+	if BS.null ln then return [] else (ln :) <$> untilEmpty rd
 
 data Option = OptDisableClientCert deriving (Show, Eq)
 
