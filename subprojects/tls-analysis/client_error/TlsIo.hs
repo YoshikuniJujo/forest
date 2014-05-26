@@ -55,6 +55,8 @@ data Option
 	| OptNotClientCertificate
 	| OptNotClientKeyExchange
 	| OptBadSignature
+	| OptNotCertificateVerify
+	| OptNotExistHashAndSignature
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool

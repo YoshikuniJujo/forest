@@ -73,9 +73,9 @@ handshakeSign :: Handshake -> Maybe ByteString
 handshakeSign (HandshakeCertificateVerify ds) = digitallySignedSign ds
 handshakeSign _ = Nothing
 
-handshakeMakeVerify :: ByteString -> Handshake
-handshakeMakeVerify = HandshakeCertificateVerify .
-	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
+handshakeMakeVerify ::
+	HashAlgorithm -> SignatureAlgorithm -> ByteString -> Handshake
+handshakeMakeVerify ha sa = HandshakeCertificateVerify . DigitallySigned (ha, sa)
 
 handshakeCertificate :: Handshake -> Maybe CertificateChain
 handshakeCertificate (HandshakeCertificate cc) = Just cc

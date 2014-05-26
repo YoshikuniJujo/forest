@@ -139,8 +139,17 @@ handshake ccs certStore opts = do
 	case crtReq of
 		Just _ -> do
 			signed <- clientVerifySign pk $ OptBadSignature `elem` opts
-			writeContent $ makeVerify signed
-			fragmentUpdateHash . contentToFragment $ makeVerify signed
+			let	(ha, sa) = if OptNotExistHashAndSignature `elem` opts
+					then (HashAlgorithmRaw 255,
+						SignatureAlgorithmRaw 255)
+					else (HashAlgorithmSha256,
+						SignatureAlgorithmRsa)
+				cv = if OptNotCertificateVerify `elem` opts
+					then ContentHandshake version $
+						HandshakeFinished ""
+					else makeVerify ha sa signed
+			writeContent cv
+			fragmentUpdateHash . contentToFragment $ cv
 		_ -> return ()
 
 	-------------------------------------------
