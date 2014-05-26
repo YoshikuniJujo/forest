@@ -117,7 +117,15 @@ clientCertificate hn cs = do
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
 	chk cc = do
 		v <- liftIO $ validateDefault cs vc (hn, "") cc
-		unless (null v) . throwError . strMsg $ "Validate Failure: " ++ show v
+		unless (null v) . throwError $ Alert
+			AlertLevelFatal
+			(selectAlert v)
+			("Validate Failure: " ++ show v)
+	selectAlert rs
+		| Expired `elem` rs = AlertDescriptionCertificateExpired
+		| InFuture `elem` rs = AlertDescriptionCertificateExpired
+		| UnknownCA `elem` rs = AlertDescriptionUnknownCa
+		| otherwise = AlertDescriptionCertificateUnknown
 
 clientKeyExchange :: Version -> TlsIo Content ()
 clientKeyExchange (Version cvmjr cvmnr) = do
