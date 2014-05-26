@@ -34,7 +34,9 @@ options = [
 	Option "" ["empty-compression-method"] (NoArg OptEmptyCompressionMethod)
 		"empty compression method",
 	Option "" ["not-client-certificate"] (NoArg OptNotClientCertificate)
-		"not client certificate"
+		"not client certificate",
+	Option "" ["not-client-key-exchange"] (NoArg OptNotClientKeyExchange)
+		"not client key exchange"
  ]
 
 readOptHelloVersion :: String -> Option

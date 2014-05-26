@@ -109,8 +109,9 @@ handshake ccs certStore opts = do
 	case crtReq of
 		Just _ -> do
 			writeContent $ if OptNotClientCertificate `elem` opts
-			then ContentHandshake version $ HandshakeFinished ""
-			else certificate cc
+				then ContentHandshake version $
+					HandshakeFinished ""
+				else certificate cc
 			fragmentUpdateHash . contentToFragment $ certificate cc
 		_ -> return ()
 
@@ -123,7 +124,9 @@ handshake ccs certStore opts = do
 --	liftIO $ putStrLn $ "Encrypted Pre Master Secret: " ++ show epms'
 	generateKeys pms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
-	writeContent cke''
+	writeContent $ if OptNotClientKeyExchange `elem` opts
+		then ContentHandshake version $ HandshakeFinished ""
+		else cke''
 	fragmentUpdateHash $ contentToFragment cke''
 --	liftIO $ putStrLn $ "KEY EXCHANGE: " ++ show (contentToFragment cke'')
 	liftIO $ putStrLn "GENERATE KEYS"

@@ -53,6 +53,7 @@ data Option
 	| OptEmptyCipherSuite
 	| OptEmptyCompressionMethod
 	| OptNotClientCertificate
+	| OptNotClientKeyExchange
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool
