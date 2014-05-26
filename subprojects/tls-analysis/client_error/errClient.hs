@@ -32,7 +32,9 @@ options = [
 	Option "e" ["empty-cipher-suite"] (NoArg OptEmptyCipherSuite)
 		"empty cipher suite",
 	Option "" ["empty-compression-method"] (NoArg OptEmptyCompressionMethod)
-		"empty compression method"
+		"empty compression method",
+	Option "" ["not-client-certificate"] (NoArg OptNotClientCertificate)
+		"not client certificate"
  ]
 
 readOptHelloVersion :: String -> Option

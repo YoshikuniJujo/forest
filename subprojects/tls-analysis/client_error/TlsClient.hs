@@ -108,7 +108,9 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			writeContent $ certificate cc
+			writeContent $ if OptNotClientCertificate `elem` opts
+			then ContentHandshake version $ HandshakeFinished ""
+			else certificate cc
 			fragmentUpdateHash . contentToFragment $ certificate cc
 		_ -> return ()
 
