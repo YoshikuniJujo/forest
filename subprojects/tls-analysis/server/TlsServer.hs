@@ -2,7 +2,8 @@
 
 module TlsServer (
 	TlsClient, openClient,
-	readRsaKey, readCertificateChain, readCertificateStore) where
+	readRsaKey, readCertificateChain, readCertificateStore,
+	tCheckName) where
 
 import Control.Applicative
 import Control.Monad
@@ -31,17 +32,19 @@ openClient :: Handle -> RSA.PrivateKey ->
 	CertificateChain -> Maybe (String, CertificateStore) -> IO TlsClient
 openClient cl pk = (runOpen cl pk .) . handshake
 
-handshake :: CertificateChain -> Maybe (String, CertificateStore) -> TlsIo Content ()
+handshake :: CertificateChain -> Maybe (String, CertificateStore)
+	-> TlsIo Content [String]
 handshake cc mcs = do
 	cv <- clientHello
 	serverHello cc $ snd <$> mcs
 	mpub <- maybe (return Nothing) ((Just <$>) . uncurry clientCertificate) mcs
 	clientKeyExchange cv
-	maybe (return ()) certificateVerify mpub
+	maybe (return ()) (certificateVerify . fst) mpub
 	clientChangeCipherSuite
 	clientFinished
 	serverChangeCipherSuite
 	serverFinished
+	return $ maybe [] snd mpub
 
 clientHello :: TlsIo Content Version
 clientHello = do
@@ -97,13 +100,15 @@ serverHello cc mcs = do
 	cert = mkhs $ HandshakeCertificate cc
 
 clientCertificate ::
-	HostName -> CertificateStore -> TlsIo Content RSA.PublicKey
+	HostName -> CertificateStore -> TlsIo Content (RSA.PublicKey, [String])
+--	HostName -> CertificateStore -> TlsIo Content RSA.PublicKey
 clientCertificate hn cs = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeCertificate cc@(CertificateChain (c : _)) ->
 			case certPubKey $ getCertificate c of
-				PubKeyRSA pub -> chk cc >> return pub
+				PubKeyRSA pub ->
+					chk cc >> return (pub, names cc)
 				p -> throwError $ Alert
 					AlertLevelFatal
 					AlertDescriptionUnsupportedCertificate
@@ -115,23 +120,24 @@ clientCertificate hn cs = do
 	where
 	vc = ValidationCache
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
-	chk cc@(CertificateChain (t : _)) = do
-		liftIO . putStrLn $ "NAMES: " ++ show (getNames $ getCertificate t)
-		v <- liftIO $ validate HashSHA256
-			defaultHooks defaultChecks cs vc (hn, "") cc
+	names (CertificateChain (t : _)) = getNames $ getCertificate t
+	names _ = error "names: bad certificate chain"
+	chk cc = do
+		liftIO . putStrLn $ "NAMES: " ++ show (names cc)
+		v <- liftIO $ validate HashSHA256 defaultHooks
+			defaultChecks{ checkFQHN = False } cs vc (hn, "") cc
 		unless (null v) . throwError $ Alert
 			AlertLevelFatal
 			(selectAlert v)
 			("Validate Failure: " ++ show v)
-	chk _ = error "chk: bad certificate chain"
 	selectAlert rs
 		| Expired `elem` rs = AlertDescriptionCertificateExpired
 		| InFuture `elem` rs = AlertDescriptionCertificateExpired
 		| UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
 
-getNames :: Certificate -> (Maybe String, [String])
-getNames cert = (commonName >>= asn1CharacterToString, altNames)
+getNames :: Certificate -> [String]
+getNames cert = maybe [] (: altNames) $ commonName >>= asn1CharacterToString
 	where
 	commonName = getDnElement DnCommonName $ certSubjectDN cert
 	altNames = maybe [] toAltName $ extensionGet $ certExtensions cert

@@ -21,6 +21,7 @@ module Fragment (
 	clientVerifyHash,
 
 	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
+	tCheckName,
 ) where
 
 import Prelude hiding (read)

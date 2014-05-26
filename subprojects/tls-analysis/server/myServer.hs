@@ -28,7 +28,9 @@ main = do
 			cl <- openClient h pk cc $
 				if OptDisableClientCert `elem` opts
 					then Nothing
-					else Just ("Yoshikuni", cs)
+					else Just ("hogera", cs)
+			print $ tCheckName cl "Yoshikuni"
+			print $ tCheckName cl "Yoshio"
 			hlGetLine cl >>= print
 			hlGetLine cl >>= print
 			hlGetContent cl >>= print

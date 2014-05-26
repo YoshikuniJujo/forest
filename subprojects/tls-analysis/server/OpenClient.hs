@@ -20,6 +20,7 @@ module OpenClient (
 
 	TlsClient, runOpen, buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
+	tCheckName,
 ) where
 
 import Prelude hiding (read)
@@ -27,9 +28,6 @@ import Prelude hiding (read)
 import Control.Applicative
 import Control.Concurrent.STM
 import "monads-tf" Control.Monad.Error
--- import "monads-tf" Control.Monad.Error.Class
--- import "monads-tf" Control.Monad.State
--- import Data.String
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
@@ -39,14 +37,13 @@ import System.IO.Error
 import "crypto-random" Crypto.Random
 import qualified Crypto.PubKey.RSA as RSA
 
--- import qualified CryptoTools as CT
-
 import Data.HandleLike
 
 import TlsIo
 import Types
 
 data TlsClient = TlsClient {
+	tlsNames :: [String],
 	tlsVersion :: MSVersion,
 	tlsCipherSuite :: CipherSuite,
 	tlsHandle :: Handle,
@@ -67,15 +64,16 @@ instance HandleLike TlsClient where
 	hlGetContent = tGetContent
 	hlClose = tClose
 
-runOpen :: Handle -> RSA.PrivateKey -> TlsIo cnt () -> IO TlsClient
+runOpen :: Handle -> RSA.PrivateKey -> TlsIo cnt [String] -> IO TlsClient
 runOpen cl pk opn = do
 	ep <- createEntropyPool
-	(_, tlss) <- opn `runTlsIo` initTlsState ep cl pk
+	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl pk
 	tvgen <- atomically . newTVar $ tlssRandomGen tlss
 	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
 	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
 	tvbfr <- atomically $ newTVar ""
 	return TlsClient {
+		tlsNames = ns,
 		tlsVersion = fromJust $ tlssVersion tlss,
 		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
 		tlsHandle = tlssClientHandle tlss,
@@ -89,20 +87,8 @@ runOpen cl pk opn = do
 		tlsServerSequenceNumber = tvssn
 	 }
 
-{-
-runTlsIo :: TlsIo cnt a -> TlsState cnt -> IO (a, TlsState cnt)
-runTlsIo io st = do
-	(ret, st') <- runErrorT (io `catchError` processAlert)
-		`runStateT` st
-	case ret of
-		Right r -> return (r, st')
-		Left err -> error $ show err
-
-processAlert :: Alert -> TlsIo cnt a
-processAlert alt = do
-	write $ alertToByteString alt
-	throwError alt
-	-}
+tCheckName :: TlsClient -> String -> Bool
+tCheckName TlsClient{ tlsNames = ns } n = n `elem` ns
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts ContentTypeApplicationData
