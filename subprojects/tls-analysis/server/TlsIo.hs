@@ -508,7 +508,8 @@ tGetWhole ts = do
 			tPutWithCT ts CT.ContentTypeAlert "\SOH\NUL"
 			ioError $ mkIOError
 				eofErrorType "tGetWhole" (Just h) Nothing
-		_ -> error "not implemented yet"
+		_ -> do	tPutWithCT ts CT.ContentTypeAlert "\2\10"
+			error "not application data"
 	where
 	h = tlsHandle ts
 
