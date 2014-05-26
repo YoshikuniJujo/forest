@@ -163,8 +163,10 @@ certificateVerify pub = do
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
 			let hash1 = RSA.ep pub s
-			unless (hash1 == hash0) $
-				throwError "client authentificatin failed"
+			unless (hash1 == hash0) . throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionDecryptError
+				"client authentification failed"
 		_ -> throwError "Not Certificate Verify"
 	where
 	chk a = case a of

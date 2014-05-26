@@ -79,6 +79,7 @@ data AlertDescription
 	| AlertDescriptionIllegalParameter
 	| AlertDescriptionUnknownCa
 	| AlertDescriptionDecodeError
+	| AlertDescriptionDecryptError
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
@@ -93,6 +94,7 @@ alertDescriptionToWord8 AlertDescriptionCertificateUnknown = 46
 alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
 alertDescriptionToWord8 AlertDescriptionUnknownCa = 48
 alertDescriptionToWord8 AlertDescriptionDecodeError = 50
+alertDescriptionToWord8 AlertDescriptionDecryptError = 51
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 
