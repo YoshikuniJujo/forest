@@ -245,7 +245,10 @@ setVersion v = do
 	tlss <- get
 	case CT.versionToVersion v of
 		Just v' -> put tlss { tlssVersion = Just v' }
-		_ -> throwError "setVersion: Not implemented"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionProtocolVersion
+			"setVersion: Not implemented"
 
 setClientRandom, setServerRandom :: CT.Random -> TlsIo cnt ()
 setClientRandom (CT.Random cr) = do
@@ -342,7 +345,17 @@ encryptMessage ct v msg = do
 				put tlss{ tlssRandomGen = gen' }
 				return ret
 		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return msg
-		_ -> throwError $ "encryptMessage:\n\bNo keys or not implemented cipher suite"
+		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
+		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
+		(Just CT.TLS12, _, _, _) -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionIllegalParameter
+			"encryptMessage: not implemented cipher suite"
+		(Just vsn, _, _, _) -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionProtocolVersion
+			("encryptMessage: not support the version: " ++ show vsn)
+		(_, _, _, _) -> throwError "no version"
 
 decryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptMessage ct v enc = do
