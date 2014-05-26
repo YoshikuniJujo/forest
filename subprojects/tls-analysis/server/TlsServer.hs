@@ -71,7 +71,10 @@ emCSuite = Alert
 	AlertLevelFatal
 	AlertDescriptionIllegalParameter
 	"No supported Cipher Suites"
-emCMethod = "No supported Compression Method"
+emCMethod = Alert
+	AlertLevelFatal
+	AlertDescriptionDecodeError
+	"No supported Compression Method"
 
 serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
 serverHello cc mcs = do
