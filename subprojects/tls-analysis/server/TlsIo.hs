@@ -116,10 +116,10 @@ alertVersion = Alert AlertLevelFatal AlertDescriptionProtocolVersion
 	"readByteString: bad Version"
 
 instance Error Alert where
-	strMsg err = NotDetected err
+	strMsg = NotDetected
 
 instance IsString Alert where
-	fromString err = NotDetected err
+	fromString = NotDetected
 
 data TlsState cnt = TlsState {
 	tlssClientHandle :: Handle,
@@ -231,7 +231,7 @@ read n = do
 	r <- liftIO . flip BS.hGet n =<< gets tlssClientHandle
 	if BS.length r == n
 		then return r
-		else throwError $ strMsg $ "Basic.read: bad reading: " ++
+		else throwError . strMsg $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
 write :: BS.ByteString -> TlsIo cnt ()
@@ -277,7 +277,7 @@ decryptRSA e = do
 	put tlss{ tlssRandomGen = gen' }
 	case ret of
 		Right d -> return d
-		Left err -> throwError $ strMsg $ show err
+		Left err -> throwError . strMsg $ show err
 
 generateKeys :: BS.ByteString -> TlsIo cnt ()
 generateKeys pms = do

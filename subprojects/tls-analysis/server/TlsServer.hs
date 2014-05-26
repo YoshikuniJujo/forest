@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openClient,
@@ -99,7 +99,7 @@ clientCertificate ::
 clientCertificate hn cs = do
 	hs <- readHandshake (== version)
 	case hs of
-		HandshakeCertificate cc@(CertificateChain (c : _)) -> do
+		HandshakeCertificate cc@(CertificateChain (c : _)) ->
 			case certPubKey $ getCertificate c of
 				PubKeyRSA pub -> chk cc >> return pub
 				p -> throwError $ Alert
@@ -182,7 +182,7 @@ clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
 		ContentChangeCipherSpec v ChangeCipherSpec -> do
-			unless (v == version) $ throwError $ Alert
+			unless (v == version) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"bad version"
@@ -198,11 +198,11 @@ clientFinished = do
 	cnt <- readContent (== version)
 	case cnt of
 		ContentHandshake v (HandshakeFinished f) -> do
-			unless (v == version) $ throwError $ Alert
+			unless (v == version) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"bad version"
-			unless (f == fhc) $ throwError $ Alert
+			unless (f == fhc) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError
 				"Finished error"

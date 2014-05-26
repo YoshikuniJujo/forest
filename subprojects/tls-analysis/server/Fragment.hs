@@ -37,13 +37,11 @@ readBufferContentType vc =
 
 readByteString ::
 	(Version -> Bool) -> Int -> TlsIo cnt (ContentType, BS.ByteString)
-readByteString vc n = do
---	liftIO $ putStrLn $ "LENGTH: " ++ show n
-	buffered n $ do
-		Fragment ct v bs <- readFragmentNoHash
-		liftIO $ putStrLn $ "VERSION: " ++ show v
-		unless (vc v) $ throwError alertVersion
-		return (ct, bs)
+readByteString vc n = buffered n $ do
+	Fragment ct v bs <- readFragmentNoHash
+	liftIO . putStrLn $ "VERSION: " ++ show v
+	unless (vc v) $ throwError alertVersion
+	return (ct, bs)
 
 readFragment :: TlsIo cnt Fragment
 readFragment = do
