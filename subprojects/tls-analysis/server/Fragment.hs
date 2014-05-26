@@ -18,7 +18,6 @@ module Fragment (
 	throwError, catchError,
 	updateSequenceNumber,
 	randomByteString,
-	readCached,
 	clientVerifyHash,
 
 	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
@@ -30,7 +29,7 @@ import Control.Applicative
 import Control.Monad
 import qualified Data.ByteString as BS
 
-import TlsIo
+import OpenClient
 
 readBufferContentType :: (Version -> Bool) -> TlsIo cnt ContentType
 readBufferContentType vc =
@@ -50,7 +49,7 @@ readFragment :: TlsIo cnt Fragment
 readFragment = do
 	RawFragment ct v ebody <- readRawFragment
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
-	body <- decryptMessage ct v ebody
+	body <- tlsDecryptMessage ct v ebody
 	case ct of
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
@@ -59,7 +58,7 @@ readFragment = do
 readFragmentNoHash :: TlsIo cnt Fragment
 readFragmentNoHash = do
 	RawFragment ct v ebody <- readRawFragment
-	body <- decryptMessage ct v ebody
+	body <- tlsDecryptMessage ct v ebody
 	return $ Fragment ct v body
 
 fragmentUpdateHash :: Fragment -> TlsIo cnt ()
@@ -68,7 +67,7 @@ fragmentUpdateHash _ = return ()
 
 writeFragment :: Fragment -> TlsIo cnt ()
 writeFragment (Fragment ct v bs) =
-	writeRawFragment . RawFragment ct v =<< encryptMessage ct v bs
+	writeRawFragment . RawFragment ct v =<< tlsEncryptMessage ct v bs
 
 readRawFragment :: TlsIo cnt RawFragment
 readRawFragment = RawFragment <$> readContentType <*> readVersion <*> readLen 2
