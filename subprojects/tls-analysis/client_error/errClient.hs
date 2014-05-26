@@ -23,13 +23,21 @@ options = [
 		"start by change cipher spec",
 	Option "f" ["start-by-finished"]
 		(NoArg OptStartByFinished)
-		"start by finished"
+		"start by finished",
+	Option "" ["client-version"]
+		(ReqArg readOptClientVersion "version [major].[minor]")
+		"client version"
  ]
 
 readOptHelloVersion :: String -> Option
 readOptHelloVersion (mjr : '.' : mnr : "") =
 	OptHelloVersion (read [mjr]) (read [mnr])
 readOptHelloVersion _ = error "readOptHelloVersion: bad version expression"
+
+readOptClientVersion :: String -> Option
+readOptClientVersion (mjr : '.' : mnr : "") =
+	OptClientVersion (read [mjr]) (read [mnr])
+readOptClientVersion _ = error "readOptHelloVersion: bad version expression"
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append

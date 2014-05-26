@@ -36,6 +36,11 @@ helloVersionFromOptions =
 	maybe (3, 3) (\(OptHelloVersion mjr mnr) -> (mjr, mnr)) .
 		find isOptHelloVersion
 
+clientVersionFromOptions :: [Option] -> (Word8, Word8)
+clientVersionFromOptions =
+	maybe (3, 3) (\(OptClientVersion mjr mnr) -> (mjr, mnr)) .
+		find isOptClientVersion
+
 handshake :: [(PrivateKey, CertificateChain)] -> CertificateStore
 	-> [Option] -> TlsIo Content ()
 handshake ccs certStore opts = do
@@ -44,7 +49,9 @@ handshake ccs certStore opts = do
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	let ch = clientHello cr $ helloVersionFromOptions opts
+	let ch = clientHello cr
+		(helloVersionFromOptions opts)
+		(clientVersionFromOptions opts)
 	case (OptStartByChangeCipherSpec `elem` opts,
 		OptStartByFinished `elem` opts) of
 		(True, _) -> writeContent changeCipherSpec

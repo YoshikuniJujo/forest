@@ -55,10 +55,10 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 		CompressionMethodNull
 		Nothing
 
-clientHello :: Random -> (Word8, Word8) -> Content
-clientHello cr (vmjr, vmnr) =
+clientHello :: Random -> (Word8, Word8) -> (Word8, Word8) -> Content
+clientHello cr (vmjr, vmnr) (cvmjr, cvmnr) =
 	ContentHandshake (Version vmjr vmnr) . HandshakeClientHello $
-		ClientHello (Version 3 3) cr (SessionId "")
+		ClientHello (Version cvmjr cvmnr) cr (SessionId "")
 			[TLS_RSA_WITH_AES_128_CBC_SHA]
 			[CompressionMethodNull]
 			Nothing
