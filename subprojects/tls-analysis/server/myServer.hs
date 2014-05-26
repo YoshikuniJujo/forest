@@ -20,15 +20,14 @@ main = do
 	port <- (PortNumber . fromIntegral <$>) $ (readIO :: String -> IO Int) pn
 	pk <- readRsaKey "localhost.key"
 	cc <- readCertificateChain "localhost.crt"
-	cs <- readCertificateStore ["cacert.pem"]
+	mcs <- if OptDisableClientCert `elem` opts
+		then return Nothing
+		else Just <$> readCertificateStore ["cacert.pem"]
 	soc <- listenOn port
 	forever $ do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
-			cl <- openClient h pk cc $
-				if OptDisableClientCert `elem` opts
-					then Nothing
-					else Just ("hogera", cs)
+			cl <- openClient h pk cc mcs
 			print $ tCheckName cl "Yoshikuni"
 			print $ tCheckName cl "Yoshio"
 			hlGetLine cl >>= print

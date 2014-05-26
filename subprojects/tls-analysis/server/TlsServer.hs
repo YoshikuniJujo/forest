@@ -28,16 +28,15 @@ version = Version 3 3
 mkhs :: Handshake -> Content
 mkhs = ContentHandshake version
 
-openClient :: Handle -> RSA.PrivateKey ->
-	CertificateChain -> Maybe (String, CertificateStore) -> IO TlsClient
+openClient :: Handle -> RSA.PrivateKey
+	-> CertificateChain -> Maybe CertificateStore -> IO TlsClient
 openClient cl pk = (runOpen cl pk .) . handshake
 
-handshake :: CertificateChain -> Maybe (String, CertificateStore)
-	-> TlsIo Content [String]
+handshake :: CertificateChain -> Maybe CertificateStore -> TlsIo Content [String]
 handshake cc mcs = do
 	cv <- clientHello
-	serverHello cc $ snd <$> mcs
-	mpub <- maybe (return Nothing) ((Just <$>) . uncurry clientCertificate) mcs
+	serverHello cc mcs
+	mpub <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	clientKeyExchange cv
 	maybe (return ()) (certificateVerify . fst) mpub
 	clientChangeCipherSuite
@@ -99,10 +98,8 @@ serverHello cc mcs = do
 		. map (certIssuerDN . signedObject . getSigned) . listCertificates
 	cert = mkhs $ HandshakeCertificate cc
 
-clientCertificate ::
-	HostName -> CertificateStore -> TlsIo Content (RSA.PublicKey, [String])
---	HostName -> CertificateStore -> TlsIo Content RSA.PublicKey
-clientCertificate hn cs = do
+clientCertificate :: CertificateStore -> TlsIo Content (RSA.PublicKey, [String])
+clientCertificate cs = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeCertificate cc@(CertificateChain (c : _)) ->
@@ -125,7 +122,7 @@ clientCertificate hn cs = do
 	chk cc = do
 		liftIO . putStrLn $ "NAMES: " ++ show (names cc)
 		v <- liftIO $ validate HashSHA256 defaultHooks
-			defaultChecks{ checkFQHN = False } cs vc (hn, "") cc
+			defaultChecks{ checkFQHN = False } cs vc ("", "") cc
 		unless (null v) . throwError $ Alert
 			AlertLevelFatal
 			(selectAlert v)
