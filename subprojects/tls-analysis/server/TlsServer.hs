@@ -104,8 +104,14 @@ clientCertificate hn cs = do
 		HandshakeCertificate cc@(CertificateChain (c : _)) -> do
 			case certPubKey $ getCertificate c of
 				PubKeyRSA pub -> chk cc >> return pub
-				p -> throwError $ strMsg $ "Not implemented: " ++ show p
-		_ -> throwError "Not Certificate"
+				p -> throwError $ Alert
+					AlertLevelFatal
+					AlertDescriptionUnsupportedCertificate
+					("Not implemented: " ++ show p)
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Certificate"
 	where
 	vc = ValidationCache
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())

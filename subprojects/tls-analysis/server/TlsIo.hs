@@ -73,6 +73,7 @@ data AlertDescription
 	= AlertDescriptionCloseNotify
 	| AlertDescriptionUnexpectedMessage
 	| AlertDescriptionBadRecordMac
+	| AlertDescriptionUnsupportedCertificate
 	| AlertDescriptionIllegalParameter
 	| AlertDescriptionDecodeError
 	| AlertDescriptionProtocolVersion
@@ -83,6 +84,7 @@ alertDescriptionToWord8 :: AlertDescription -> Word8
 alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
 alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionUnsupportedCertificate = 43
 alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
 alertDescriptionToWord8 AlertDescriptionDecodeError = 50
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
