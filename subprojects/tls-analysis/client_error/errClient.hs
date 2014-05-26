@@ -42,7 +42,9 @@ options = [
 		"not certificate verify",
 	Option "" ["not-exist-hash-and-signature"]
 		(NoArg OptNotExistHashAndSignature)
-		"not exist hash and signature"
+		"not exist hash and signature",
+	Option "" ["not-application-data"] (NoArg OptNotApplicationData)
+		"not application data"
  ]
 
 readOptHelloVersion :: String -> Option
@@ -71,17 +73,29 @@ main = do
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
 	tls <- openTlsServer [(pkys, certChain)] certStore sv opts
-	hlPut tls $
-		"GET / HTTP/1.1\r\n" +++
-		"Host: localhost:4492\r\n" +++
-		"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
-			"Gecko/20140415 Firefox/24.0\r\n" +++
-		"Accept: text/html,application/xhtml+xml,application/xml;" +++
-			"q=0.9,*/*;q=0.8\r\n" +++
-		"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
-		"Accept-Encoding: gzip, deflate\r\n" +++
-		"Connection: keep-alive\r\n" +++
-		"Cache-Control: max-age=0\r\n\r\n"
+	if OptNotApplicationData `elem` opts
+		then tPutWithCT tls ContentTypeHandshake $
+			"GET / HTTP/1.1\r\n" +++
+			"Host: localhost:4492\r\n" +++
+			"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
+				"Gecko/20140415 Firefox/24.0\r\n" +++
+			"Accept: text/html,application/xhtml+xml," +++
+				"application/xml;q=0.9,*/*;q=0.8\r\n" +++
+			"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
+			"Accept-Encoding: gzip, deflate\r\n" +++
+			"Connection: keep-alive\r\n" +++
+			"Cache-Control: max-age=0\r\n\r\n"
+		else hlPut tls $
+			"GET / HTTP/1.1\r\n" +++
+			"Host: localhost:4492\r\n" +++
+			"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
+				"Gecko/20140415 Firefox/24.0\r\n" +++
+			"Accept: text/html,application/xhtml+xml," +++
+				"application/xml;q=0.9,*/*;q=0.8\r\n" +++
+			"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
+			"Accept-Encoding: gzip, deflate\r\n" +++
+			"Connection: keep-alive\r\n" +++
+			"Cache-Control: max-age=0\r\n\r\n"
 	hlGetHeaders tls >>= print
 	hlGetContent tls >>= print
 --	tGet tls 10 >>= print

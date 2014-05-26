@@ -5,6 +5,11 @@ module TlsClient (
 	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	Option(..),
+	tPutWithCT,
+	Content(..),
+	ContentType(..),
+	Handshake(..),
+	Version(..),
 ) where
 
 import System.IO

@@ -19,6 +19,8 @@ module TlsIo (
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	debugPrintKeys, Option(..), isOptHelloVersion, isOptClientVersion,
+
+	tPutWithCT,
 ) where
 
 import Prelude hiding (read)
@@ -57,6 +59,7 @@ data Option
 	| OptBadSignature
 	| OptNotCertificateVerify
 	| OptNotExistHashAndSignature
+	| OptNotApplicationData
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool
@@ -431,7 +434,7 @@ tGetWhole ts = do
 			tPutWithCT ts ContentTypeAlert "\SOH\NUL"
 			ioError $ mkIOError
 				eofErrorType "tGetWhole" (Just h) Nothing
-		_ -> error "not impolemented yet"
+		_ -> error $ "tGetWhole: not implemented yet: " ++ show ret
 	where
 	h = tlsHandle ts
 
