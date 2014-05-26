@@ -18,7 +18,7 @@ main :: IO ()
 main = do
 	(opts, pn : _, errs) <- getOpt Permute options <$> getArgs
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
-	port <- (PortNumber . fromIntegral <$>) $ (readIO :: String -> IO Int) pn
+	port <- (PortNumber . fromIntegral <$>) (readIO pn :: IO Int)
 	pk <- readRsaKey "localhost.key"
 	cc <- readCertificateChain "localhost.crt"
 	mcs <- if OptDisableClientCert `elem` opts

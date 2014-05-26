@@ -137,8 +137,8 @@ getNames :: Certificate -> [String]
 getNames cert = maybe [] (: altNames) $ commonName >>= asn1CharacterToString
 	where
 	commonName = getDnElement DnCommonName $ certSubjectDN cert
-	altNames = maybe [] toAltName $ extensionGet $ certExtensions cert
-	toAltName (ExtSubjectAltName names) = catMaybes $ map unAltName names
+	altNames = maybe [] toAltName . extensionGet $ certExtensions cert
+	toAltName (ExtSubjectAltName names) = mapMaybe unAltName names
 	unAltName (AltNameDNS s) = Just s
 	unAltName _ = Nothing
 
