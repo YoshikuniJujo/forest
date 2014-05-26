@@ -140,6 +140,7 @@ data AlertDescription
 	| AlertDescriptionBadRecordMac
 	| AlertDescriptionIllegalParameter
 	| AlertDescriptionDecodeError
+	| AlertDescriptionDecryptError
 	| AlertDescriptionProtocolVersion
 	| AlertDescriptionRaw Word8
 	deriving Show
@@ -172,6 +173,7 @@ parseAlertDescription = do
 		20 -> AlertDescriptionBadRecordMac
 		47 -> AlertDescriptionIllegalParameter
 		50 -> AlertDescriptionDecodeError
+		51 -> AlertDescriptionDecryptError
 		70 -> AlertDescriptionProtocolVersion
 		_ -> AlertDescriptionRaw ad
 
@@ -190,6 +192,7 @@ alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
 alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
 alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
 alertDescriptionToWord8 AlertDescriptionDecodeError = 50
+alertDescriptionToWord8 AlertDescriptionDecryptError = 51
 alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
 alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 

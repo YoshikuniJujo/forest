@@ -138,7 +138,7 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			signed <- clientVerifySign pk
+			signed <- clientVerifySign pk $ OptBadSignature `elem` opts
 			writeContent $ makeVerify signed
 			fragmentUpdateHash . contentToFragment $ makeVerify signed
 		_ -> return ()

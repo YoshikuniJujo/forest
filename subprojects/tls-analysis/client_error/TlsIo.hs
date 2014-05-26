@@ -54,6 +54,7 @@ data Option
 	| OptEmptyCompressionMethod
 	| OptNotClientCertificate
 	| OptNotClientKeyExchange
+	| OptBadSignature
 	deriving (Show, Eq)
 
 isOptHelloVersion :: Option -> Bool
@@ -294,9 +295,10 @@ finishedHash partner = do
 			Server -> CT.generateFinished CT.TLS12 False ms sha256
 		_ -> throwError "finishedHash: No version / No master secrets"
 
-clientVerifySign :: RSA.PrivateKey -> TlsIo cnt BS.ByteString
-clientVerifySign pkys = do
-	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
+clientVerifySign :: RSA.PrivateKey -> Bool -> TlsIo cnt BS.ByteString
+clientVerifySign pkys bad = do
+	sha256 <- gets $ SHA256.finalize .
+		(if bad then flip SHA256.update "hogeru" else id) . tlssSha256Ctx
 	let Right hashed = RSA.padSignature
 		(RSA.public_size $ RSA.private_pub pkys)
 		(RSA.digestToASN1 RSA.hashDescrSHA256 sha256)

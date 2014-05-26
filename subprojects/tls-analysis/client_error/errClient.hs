@@ -36,7 +36,8 @@ options = [
 	Option "" ["not-client-certificate"] (NoArg OptNotClientCertificate)
 		"not client certificate",
 	Option "" ["not-client-key-exchange"] (NoArg OptNotClientKeyExchange)
-		"not client key exchange"
+		"not client key exchange",
+	Option "" ["bad-signature"] (NoArg OptBadSignature) "bad signature"
  ]
 
 readOptHelloVersion :: String -> Option
