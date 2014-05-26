@@ -135,7 +135,10 @@ clientKeyExchange (Version cvmjr cvmnr) = do
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
 			generateKeys pms
-		_ -> throwError "Not Client Key Exchange"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Client Key Exchange"
 	where
 	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
 	mkpms epms = do
