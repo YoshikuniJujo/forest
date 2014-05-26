@@ -114,7 +114,8 @@ clientCertificate hn cs = do
 	vc = ValidationCache
 		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
 	chk cc = do
-		v <- liftIO $ validateDefault cs vc (hn, "") cc
+		v <- liftIO $ validate HashSHA256
+			defaultHooks defaultChecks cs vc (hn, "") cc
 		unless (null v) . throwError $ Alert
 			AlertLevelFatal
 			(selectAlert v)
