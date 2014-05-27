@@ -162,25 +162,20 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
 			generateKeys pms
-		_ -> throwError $ Alert
-			AlertLevelFatal
+		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
-			"Not Client Key Exchange"
+			"TlsServer.clientKeyExchange: not client key exchange"
 	where
 	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
 	mkpms epms = do
 		pms <- decryptRSA sk epms
-		case BS.uncons pms of
-			Just (pmsvmjr, pmstail) -> case BS.uncons pmstail of
-				Just (pmsvmnr, _) -> do
-					unless (pmsvmjr == cvmjr &&
-						pmsvmnr == cvmnr) $
-						throwError "bad: version"
-					unless (BS.length pms == 48) $
-						throwError "bad: length"
-					return pms
-				_ -> throwError "bad length"
-			_ -> throwError "bad length"
+		unless (BS.length pms == 48) $ throwError "bad: length"
+		case BS.unpack $ BS.take 2 pms of
+			[pmsvmjr, pmsvmnr] -> do
+				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
+					throwError "bad: version"
+			_ -> throwError "bad: never occur"
+		return pms
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
