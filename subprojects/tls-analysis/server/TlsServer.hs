@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
-	TlsClient, openClient,
-	readRsaKey, readCertificateChain, readCertificateStore,
-	checkName) where
+	TlsClient, openClient, withClient, checkName,
+	readRsaKey, readCertificateChain, readCertificateStore
+) where
 
 import Control.Applicative
 import Control.Monad
@@ -15,6 +15,7 @@ import Data.X509
 import Data.X509.File
 import Data.X509.Validation
 import Data.X509.CertificateStore
+import Data.HandleLike
 import System.IO
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
@@ -22,11 +23,17 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import Content
 import Fragment
 
+import Control.Exception
+
 version :: Version
 version = Version 3 3
 
 mkhs :: Handshake -> Content
 mkhs = ContentHandshake version
+
+withClient :: Handle -> RSA.PrivateKey -> CertificateChain ->
+	Maybe CertificateStore -> (TlsClient -> IO a) -> IO a
+withClient cl pk cc mcs = bracket (openClient cl pk cc mcs) hlClose
 
 openClient :: Handle -> RSA.PrivateKey
 	-> CertificateChain -> Maybe CertificateStore -> IO TlsClient

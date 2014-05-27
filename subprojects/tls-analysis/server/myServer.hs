@@ -27,14 +27,12 @@ main = do
 	soc <- listenOn port
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO $ do
-			cl <- openClient h pk cc mcs
+		void . forkIO . withClient h pk cc mcs $ \cl -> do
 			unless (checkName cl "Yoshikuni") $ do
 				putStrLn "This client is not accepted."
 				exitFailure
 			doUntil BS.null (hlGetLine cl) >>= mapM_ BSC.putStrLn
 			hlPut cl answer
-			hlClose cl
 
 data Option = OptDisableClientCert deriving (Show, Eq)
 
@@ -44,10 +42,8 @@ options = [Option "d" ["disable-client-cert"]
 			
 answer :: BS.ByteString
 answer = BS.concat [
-	"HTTP/1.1 200 OK\r\n",
-	"Transfer-Encoding: chunked\r\n",
-	"Date: Wed, 07 May 2014 02:27:34 GMT\r\n",
-	"Server: Warp/2.1.4\r\n",
+	"HTTP/1.1 200 OK\r\n", "Transfer-Encoding: chunked\r\n",
+	"Date: Wed, 07 May 2014 02:27:34 GMT\r\n", "Server: Warp/2.1.4\r\n",
 	"Content-Type: text/plain\r\n\r\n",
 	"004\r\n", "PONC\r\n", "003\r\n", "abc\r\n", "0\r\n\r\n" ]
 
