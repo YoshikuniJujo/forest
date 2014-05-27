@@ -42,6 +42,14 @@ clientCertificateType = ClientCertificateTypeRsaSign
 clientCertificateAlgorithm :: (HashAlgorithm, SignatureAlgorithm)
 clientCertificateAlgorithm = (HashAlgorithmSha256, SignatureAlgorithmRsa)
 
+validationCache :: ValidationCache
+validationCache = ValidationCache
+	(\_ _ _ -> return ValidationCacheUnknown)
+	(\_ _ _ -> return ())
+
+validationChecks :: ValidationChecks
+validationChecks = defaultChecks{ checkFQHN = False }
+
 openClient :: Handle
 	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> IO TlsClient
@@ -115,41 +123,36 @@ clientCertificate cs = do
 	case hs of
 		HandshakeCertificate cc@(CertificateChain (c : _)) ->
 			case certPubKey $ getCertificate c of
-				PubKeyRSA pub ->
-					chk cc >> return (pub, names cc)
-				p -> throwError $ Alert
-					AlertLevelFatal
+				PubKeyRSA pub -> chk cc >> return (pub, names cc)
+				p -> throwError $ Alert AlertLevelFatal
 					AlertDescriptionUnsupportedCertificate
-					("Not implemented: " ++ show p)
+					("TlsServer.clientCertificate: " ++
+						"not implemented: " ++ show p)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
-			"Not Certificate"
+			"TlsServer.clientCertificate: not certificate"
 	where
-	vc = ValidationCache
-		(\_ _ _ -> return ValidationCacheUnknown) (\_ _ _ -> return ())
-	names (CertificateChain (t : _)) = getNames $ getCertificate t
-	names _ = error "names: bad certificate chain"
 	chk cc = do
-		v <- liftIO $ validate HashSHA256 defaultHooks
-			defaultChecks{ checkFQHN = False } cs vc ("", "") cc
-		unless (null v) . throwError $ Alert
-			AlertLevelFatal
-			(selectAlert v)
-			("Validate Failure: " ++ show v)
+		rs <- liftIO $ validate HashSHA256 defaultHooks validationChecks
+			cs validationCache ("", "") cc
+		unless (null rs) . throwError $ Alert AlertLevelFatal
+			(selectAlert rs)
+			("TlsServer.clientCertificate: Validate Failure: "
+				++ show rs)
 	selectAlert rs
 		| Expired `elem` rs = AlertDescriptionCertificateExpired
 		| InFuture `elem` rs = AlertDescriptionCertificateExpired
 		| UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
-
-getNames :: Certificate -> [String]
-getNames cert = maybe [] (: altNames) $ commonName >>= asn1CharacterToString
-	where
-	commonName = getDnElement DnCommonName $ certSubjectDN cert
-	altNames = maybe [] toAltName . extensionGet $ certExtensions cert
-	toAltName (ExtSubjectAltName names) = mapMaybe unAltName names
-	unAltName (AltNameDNS s) = Just s
-	unAltName _ = Nothing
+	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>= asn1CharacterToString
+	cn = getDnElement DnCommonName . certSubjectDN
+	ans = maybe [] (\(ExtSubjectAltName ns) -> mapMaybe uan ns)
+		. extensionGet . certExtensions
+	crt cc = case cc of
+		CertificateChain (t : _) -> getCertificate t
+		_ -> error "TlsServer.clientCertificate: empty certificate chain"
+	uan (AltNameDNS s) = Just s
+	uan _ = Nothing
 
 clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
