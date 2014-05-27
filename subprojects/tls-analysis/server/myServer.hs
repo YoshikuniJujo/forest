@@ -2,17 +2,20 @@
 
 module Main (main) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Concurrent
-import Data.HandleLike
-import System.Environment
-import System.Console.GetOpt
-import System.Exit
+import Control.Applicative ((<$>))
+import Control.Monad (forever, unless, void)
+import Control.Concurrent (forkIO)
+import Data.HandleLike (HandleLike(..))
+import System.Environment (getArgs)
+import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
+import System.Exit (exitFailure)
+import Network (PortID(..), listenOn, accept)
+import TlsServer (
+	withClient, checkName,
+	readRsaKey, readCertificateChain, readCertificateStore)
+
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
-import Network
-import TlsServer
 
 main :: IO ()
 main = do
