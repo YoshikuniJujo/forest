@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
-	TlsClient, openClient, withClient, checkName,
+	TlsClient, openClient, withClient, checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
 
@@ -23,6 +23,15 @@ import Fragment
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
+
+version :: Version
+version = Version 3 3
+
+cipherSuite :: CipherSuite
+cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
+
+compressionMethod :: CompressionMethod
+compressionMethod = CompressionMethodNull
 
 openClient :: Handle
 	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
@@ -52,59 +61,50 @@ clientHello :: TlsIo Version
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
 	case hs of
-		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
-			setClientRandom rnd >> err ch >> return vsn
-		_ -> throwError $ Alert
-			AlertLevelFatal
+		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
+			err vsn css cms >> setClientRandom rnd >> return vsn
+		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
-			"Not Client Hello"
+			"TlsServer.clientHello: not client hello"
 	where
-	err (ClientHello vsn _ _ css cms _)
-		| vsn < version = throwError emCVersion
-		| TLS_RSA_WITH_AES_128_CBC_SHA `notElem` css = throwError emCSuite
-		| CompressionMethodNull `notElem` cms = throwError emCMethod
+	err vsn css cms
+		| vsn < version = throwError $ Alert
+			AlertLevelFatal AlertDescriptionProtocolVersion
+			"TlsServer.clientHello: client version should 3.3 or more"
+		| cipherSuite `notElem` css = throwError $ Alert
+			AlertLevelFatal AlertDescriptionIllegalParameter
+			"TlsServer.clientHello: no supported cipher suites"
+		| compressionMethod `notElem` cms = throwError $ Alert
+			AlertLevelFatal AlertDescriptionDecodeError
+			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
-	err _ = throwError "Never occur"
-
-version :: Version
-version = Version 3 3
-
-mkhs :: Handshake -> Content
-mkhs = ContentHandshake version
-
-emCVersion, emCSuite, emCMethod :: Alert
-emCVersion = Alert
-	AlertLevelFatal
-	AlertDescriptionProtocolVersion
-	"Client Version should 3.3 or more"
-emCSuite = Alert
-	AlertLevelFatal
-	AlertDescriptionIllegalParameter
-	"No supported Cipher Suites"
-emCMethod = Alert
-	AlertLevelFatal
-	AlertDescriptionDecodeError
-	"No supported Compression Method"
 
 serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo ()
 serverHello cc mcs = do
 	sr <- Random <$> randomByteString 32
 	setVersion version
 	setServerRandom sr
-	cacheCipherSuite TLS_RSA_WITH_AES_128_CBC_SHA
-	writeContentList $ [mksh sr, cert] ++ maybe [] ((: []) . certReq) mcs
-		++ [ContentHandshake version HandshakeServerHelloDone]
+	cacheCipherSuite cipherSuite
+	let	sc = [mksh sr, cert]
+		shd = mkHandshake HandshakeServerHelloDone
+	writeContentList $ sc ++ maybe [] ((: []) . certReq) mcs ++ [shd]
 	where
-	mksh sr = mkhs . HandshakeServerHello $ ServerHello version sr
-		(SessionId "")
-		TLS_RSA_WITH_AES_128_CBC_SHA
-		CompressionMethodNull Nothing
-	certReq = mkhs . HandshakeCertificateRequest
+	mksh sr = mkHandshake . HandshakeServerHello $ ServerHello
+		version sr (SessionId "") cipherSuite compressionMethod Nothing
+	certReq = mkHandshake . HandshakeCertificateRequest
 		. CertificateRequest
 			[ClientCertificateTypeRsaSign]
 			[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
 		. map (certIssuerDN . signedObject . getSigned) . listCertificates
-	cert = mkhs $ HandshakeCertificate cc
+	cert = mkHandshake $ HandshakeCertificate cc
+	writeContentList cs = do
+		let f = contentListToFragment cs
+		updateSequenceNumber Client
+		writeFragment f
+		fragmentUpdateHash f
+
+mkHandshake :: Handshake -> Content
+mkHandshake = ContentHandshake version
 
 clientCertificate :: CertificateStore -> TlsIo (RSA.PublicKey, [String])
 clientCertificate cs = do
@@ -266,13 +266,6 @@ readContent vc = do
 		<* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
-
-writeContentList :: [Content] -> TlsIo ()
-writeContentList cs = do
-	let f = contentListToFragment cs
-	updateSequenceNumber Client
-	writeFragment f
-	fragmentUpdateHash f
 
 readCertificateChain :: FilePath -> IO CertificateChain
 readCertificateChain = (CertificateChain <$>) . readSignedObject
