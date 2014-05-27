@@ -8,54 +8,49 @@ module TlsServer (
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
-import qualified Data.ByteString as BS
+import Control.Exception
 import Data.Maybe
+import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
 import Data.X509.File
 import Data.X509.Validation
 import Data.X509.CertificateStore
-import Data.HandleLike
 import System.IO
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
-
 import Content
 import Fragment
 
-import Control.Exception
+import qualified Data.ByteString as BS
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.Prim as RSA
 
-version :: Version
-version = Version 3 3
+openClient :: Handle
+	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
+	-> IO TlsClient
+openClient h = ((runOpen h .) .) . handshake
 
-mkhs :: Handshake -> Content
-mkhs = ContentHandshake version
+withClient :: Handle
+	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
+	-> (TlsClient -> IO a) -> IO a
+withClient = (((flip bracket hlClose .) .) .) . openClient
 
-withClient :: Handle -> RSA.PrivateKey -> CertificateChain ->
-	Maybe CertificateStore -> (TlsClient -> IO a) -> IO a
-withClient cl pk cc mcs = bracket (openClient cl pk cc mcs) hlClose
-
-openClient :: Handle -> RSA.PrivateKey
-	-> CertificateChain -> Maybe CertificateStore -> IO TlsClient
-openClient cl pk = (runOpen cl pk .) . handshake
-
-handshake :: CertificateChain -> Maybe CertificateStore -> TlsIo Content [String]
-handshake cc mcs = do
+handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
+	-> TlsIo [String]
+handshake sk cc mcs = do
 	cv <- clientHello
 	serverHello cc mcs
-	mpub <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
-	clientKeyExchange cv
-	maybe (return ()) (certificateVerify . fst) mpub
+	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
+	clientKeyExchange sk cv
+	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
 	serverChangeCipherSuite
 	serverFinished
-	return $ maybe [] snd mpub
+	return $ maybe [] snd mpn
 
-clientHello :: TlsIo Content Version
+clientHello :: TlsIo Version
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
---	liftIO $ print hs
 	case hs of
 		HandshakeClientHello ch@(ClientHello vsn rnd _ _ _ _) ->
 			setClientRandom rnd >> err ch >> return vsn
@@ -71,6 +66,12 @@ clientHello = do
 		| otherwise = return ()
 	err _ = throwError "Never occur"
 
+version :: Version
+version = Version 3 3
+
+mkhs :: Handshake -> Content
+mkhs = ContentHandshake version
+
 emCVersion, emCSuite, emCMethod :: Alert
 emCVersion = Alert
 	AlertLevelFatal
@@ -85,7 +86,7 @@ emCMethod = Alert
 	AlertDescriptionDecodeError
 	"No supported Compression Method"
 
-serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo Content ()
+serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo ()
 serverHello cc mcs = do
 	sr <- Random <$> randomByteString 32
 	setVersion version
@@ -105,7 +106,7 @@ serverHello cc mcs = do
 		. map (certIssuerDN . signedObject . getSigned) . listCertificates
 	cert = mkhs $ HandshakeCertificate cc
 
-clientCertificate :: CertificateStore -> TlsIo Content (RSA.PublicKey, [String])
+clientCertificate :: CertificateStore -> TlsIo (RSA.PublicKey, [String])
 clientCertificate cs = do
 	hs <- readHandshake (== version)
 	case hs of
@@ -149,8 +150,8 @@ getNames cert = maybe [] (: altNames) $ commonName >>= asn1CharacterToString
 	unAltName (AltNameDNS s) = Just s
 	unAltName _ = Nothing
 
-clientKeyExchange :: Version -> TlsIo Content ()
-clientKeyExchange (Version cvmjr cvmnr) = do
+clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
+clientKeyExchange sk (Version cvmjr cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
@@ -164,7 +165,7 @@ clientKeyExchange (Version cvmjr cvmnr) = do
 	where
 	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
 	mkpms epms = do
-		pms <- decryptRSA epms
+		pms <- decryptRSA sk epms
 		case BS.uncons pms of
 			Just (pmsvmjr, pmstail) -> case BS.uncons pmstail of
 				Just (pmsvmnr, _) -> do
@@ -177,7 +178,7 @@ clientKeyExchange (Version cvmjr cvmnr) = do
 				_ -> throwError "bad length"
 			_ -> throwError "bad length"
 
-certificateVerify :: RSA.PublicKey -> TlsIo Content ()
+certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== version)
@@ -201,7 +202,7 @@ certificateVerify pub = do
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
 
-clientChangeCipherSuite :: TlsIo Content ()
+clientChangeCipherSuite :: TlsIo ()
 clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
@@ -216,7 +217,7 @@ clientChangeCipherSuite = do
 			AlertDescriptionUnexpectedMessage
 			"Not Change Cipher Spec"
 
-clientFinished :: TlsIo Content ()
+clientFinished :: TlsIo ()
 clientFinished = do
 	fhc <- finishedHash Client
 	cnt <- readContent (== version)
@@ -235,17 +236,17 @@ clientFinished = do
 			AlertDescriptionUnexpectedMessage
 			"Not Finished"
 
-serverChangeCipherSuite :: TlsIo Content ()
+serverChangeCipherSuite :: TlsIo ()
 serverChangeCipherSuite = do
 	writeFragment . contentToFragment $
 		ContentChangeCipherSpec version ChangeCipherSpec
 	flushCipherSuite Server
 
-serverFinished :: TlsIo Content ()
+serverFinished :: TlsIo ()
 serverFinished = writeFragment . contentToFragment .
 	ContentHandshake version . HandshakeFinished =<< finishedHash Server
 
-readHandshake :: (Version -> Bool) -> TlsIo Content Handshake
+readHandshake :: (Version -> Bool) -> TlsIo Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -259,14 +260,14 @@ readHandshake ck = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: (Version -> Bool) -> TlsIo Content Content
+readContent :: (Version -> Bool) -> TlsIo Content
 readContent vc = do
 	c <- getContent (readBufferContentType vc) (readByteString (== version))
 		<* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
-writeContentList :: [Content] -> TlsIo Content ()
+writeContentList :: [Content] -> TlsIo ()
 writeContentList cs = do
 	let f = contentListToFragment cs
 	updateSequenceNumber Client
@@ -277,7 +278,7 @@ readCertificateChain :: FilePath -> IO CertificateChain
 readCertificateChain = (CertificateChain <$>) . readSignedObject
 
 readRsaKey :: FilePath -> IO RSA.PrivateKey
-readRsaKey fp = do [PrivKeyRSA pk] <- readKeyFile fp; return pk
+readRsaKey fp = do [PrivKeyRSA sk] <- readKeyFile fp; return sk
 
 readCertificateStore :: [FilePath] -> IO CertificateStore
 readCertificateStore fps =

@@ -46,7 +46,7 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified CryptoTools as CT
 
-runTlsIo :: TlsIo cnt a -> TlsState cnt -> IO (a, TlsState cnt)
+runTlsIo :: TlsIo a -> TlsState -> IO (a, TlsState)
 runTlsIo io st = do
 	(ret, st') <- runErrorT (io `catchError` processAlert)
 		`runStateT` st
@@ -54,12 +54,12 @@ runTlsIo io st = do
 		Right r -> return (r, st')
 		Left err -> error $ show err
 
-processAlert :: Alert -> TlsIo cnt a
+processAlert :: Alert -> TlsIo a
 processAlert alt = do
 	write $ alertToByteString alt
 	throwError alt
 
-type TlsIo cnt = ErrorT Alert (StateT (TlsState cnt) IO)
+type TlsIo = ErrorT Alert (StateT TlsState IO)
 
 data Alert
 	= Alert AlertLevel AlertDescription String
@@ -121,12 +121,11 @@ instance Error Alert where
 instance IsString Alert where
 	fromString = NotDetected
 
-data TlsState cnt = TlsState {
+data TlsState = TlsState {
 	tlssClientHandle :: Handle,
 	tlssByteStringBuffer :: (Maybe CT.ContentType, BS.ByteString),
 
 	tlssVersion :: Maybe CT.MSVersion,
-	tlssPrivateKey :: RSA.PrivateKey,
 	tlssClientWriteCipherSuite :: CT.CipherSuite,
 	tlssServerWriteCipherSuite :: CT.CipherSuite,
 	tlssCachedCipherSuite :: Maybe CT.CipherSuite,
@@ -145,13 +144,12 @@ data TlsState cnt = TlsState {
 	tlssServerSequenceNumber :: Word64
  }
 
-initTlsState :: EntropyPool -> Handle -> RSA.PrivateKey -> TlsState cnt
-initTlsState ep cl pk = TlsState {
+initTlsState :: EntropyPool -> Handle -> TlsState
+initTlsState ep cl = TlsState {
 	tlssClientHandle = cl,
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssVersion = Nothing,
-	tlssPrivateKey = pk,
 	tlssClientWriteCipherSuite = CT.TLS_NULL_WITH_NULL_NULL,
 	tlssServerWriteCipherSuite = CT.TLS_NULL_WITH_NULL_NULL,
 	tlssCachedCipherSuite = Nothing,
@@ -171,8 +169,8 @@ initTlsState ep cl pk = TlsState {
  }
 
 getContentType :: (CT.Version -> Bool)
-	-> TlsIo cnt (CT.ContentType, CT.Version, BS.ByteString)
-	-> TlsIo cnt CT.ContentType
+	-> TlsIo (CT.ContentType, CT.Version, BS.ByteString)
+	-> TlsIo CT.ContentType
 getContentType vc rd = do
 	mct <- fst <$> gets tlssByteStringBuffer
 	(\gt -> maybe gt return mct) $ do
@@ -182,8 +180,8 @@ getContentType vc rd = do
 		put tlss{ tlssByteStringBuffer = (Just ct, bf) }
 		return ct
 
-buffered :: Int -> TlsIo cnt (CT.ContentType, BS.ByteString) ->
-	TlsIo cnt (CT.ContentType, BS.ByteString)
+buffered :: Int -> TlsIo (CT.ContentType, BS.ByteString) ->
+	TlsIo (CT.ContentType, BS.ByteString)
 buffered n rd = do
 	tlss@TlsState{ tlssByteStringBuffer = (mct, bf) } <- get
 	if BS.length bf >= n
@@ -199,7 +197,7 @@ buffered n rd = do
 		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
 		(ct' ,) . (bf `BS.append`) . snd <$> buffered (n - BS.length bf) rd
 
-randomByteString :: Int -> TlsIo cnt BS.ByteString
+randomByteString :: Int -> TlsIo BS.ByteString
 randomByteString len = do
 	tlss@TlsState{ tlssRandomGen = gen } <- get
 	let (r, gen') = cprgGenerate len gen
@@ -208,25 +206,25 @@ randomByteString len = do
 
 data Partner = Server | Client deriving (Show, Eq)
 
-readContentType :: TlsIo cnt CT.ContentType
+readContentType :: TlsIo CT.ContentType
 readContentType = CT.byteStringToContentType <$> read 1
 
-writeContentType :: CT.ContentType -> TlsIo cnt ()
+writeContentType :: CT.ContentType -> TlsIo ()
 writeContentType = write . CT.contentTypeToByteString
 
-readVersion :: TlsIo cnt CT.Version
+readVersion :: TlsIo CT.Version
 readVersion = CT.byteStringToVersion <$> read 2
 
-writeVersion :: CT.Version -> TlsIo cnt ()
+writeVersion :: CT.Version -> TlsIo ()
 writeVersion = write . CT.versionToByteString
 
-readLen :: Int -> TlsIo cnt BS.ByteString
+readLen :: Int -> TlsIo BS.ByteString
 readLen n = read . CT.byteStringToInt =<< read n
 
-writeLen :: Int -> BS.ByteString -> TlsIo cnt ()
+writeLen :: Int -> BS.ByteString -> TlsIo ()
 writeLen n bs = write (CT.intToByteString n $ BS.length bs) >> write bs
 
-read :: Int -> TlsIo cnt BS.ByteString
+read :: Int -> TlsIo BS.ByteString
 read n = do
 	r <- liftIO . flip BS.hGet n =<< gets tlssClientHandle
 	if BS.length r == n
@@ -234,10 +232,10 @@ read n = do
 		else throwError . strMsg $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
-write :: BS.ByteString -> TlsIo cnt ()
+write :: BS.ByteString -> TlsIo ()
 write dat = liftIO . flip BS.hPut dat =<< gets tlssClientHandle
 
-setVersion :: CT.Version -> TlsIo cnt ()
+setVersion :: CT.Version -> TlsIo ()
 setVersion v = do
 	tlss <- get
 	case CT.versionToVersion v of
@@ -247,7 +245,7 @@ setVersion v = do
 			AlertDescriptionProtocolVersion
 			"setVersion: Not implemented"
 
-setClientRandom, setServerRandom :: CT.Random -> TlsIo cnt ()
+setClientRandom, setServerRandom :: CT.Random -> TlsIo ()
 setClientRandom (CT.Random cr) = do
 	tlss <- get
 	put $ tlss { tlssClientRandom = Just cr }
@@ -255,12 +253,12 @@ setServerRandom (CT.Random sr) = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
 
-cacheCipherSuite :: CT.CipherSuite -> TlsIo cnt ()
+cacheCipherSuite :: CT.CipherSuite -> TlsIo ()
 cacheCipherSuite cs = do
 	tlss <- get
 	put $ tlss { tlssCachedCipherSuite = Just cs }
 
-flushCipherSuite :: Partner -> TlsIo cnt ()
+flushCipherSuite :: Partner -> TlsIo ()
 flushCipherSuite p = do
 	tlss <- get
 	case tlssCachedCipherSuite tlss of
@@ -269,9 +267,8 @@ flushCipherSuite p = do
 			Server -> put tlss { tlssServerWriteCipherSuite = cs }
 		_ -> throwError "No cached cipher suites"
 
-decryptRSA :: BS.ByteString -> TlsIo cnt BS.ByteString
-decryptRSA e = do
-	pk <- gets tlssPrivateKey
+decryptRSA :: RSA.PrivateKey -> BS.ByteString -> TlsIo BS.ByteString
+decryptRSA pk e = do
 	tlss@TlsState{ tlssRandomGen = gen } <- get
 	let (ret, gen') = RSA.decryptSafer gen pk e
 	put tlss{ tlssRandomGen = gen' }
@@ -279,7 +276,7 @@ decryptRSA e = do
 		Right d -> return d
 		Left err -> throwError . strMsg $ show err
 
-generateKeys :: BS.ByteString -> TlsIo cnt ()
+generateKeys :: BS.ByteString -> TlsIo ()
 generateKeys pms = do
 	tlss@TlsState{
 		tlssVersion = mv,
@@ -303,12 +300,12 @@ generateKeys pms = do
 		| bs == BS.empty = []
 		| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
 
-updateHash :: BS.ByteString -> TlsIo cnt ()
+updateHash :: BS.ByteString -> TlsIo ()
 updateHash bs = do
 	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
-finishedHash :: Partner -> TlsIo cnt BS.ByteString
+finishedHash :: Partner -> TlsIo BS.ByteString
 finishedHash partner = do
 	mms <- gets tlssMasterSecret
 	sha256 <- SHA256.finalize <$> gets tlssSha256Ctx
@@ -318,14 +315,14 @@ finishedHash partner = do
 			CT.generateFinished CT.TLS12 (partner == Client) ms sha256
 		_ -> throwError "No master secrets"
 
-clientVerifyHash :: RSA.PublicKey -> TlsIo cnt BS.ByteString
+clientVerifyHash :: RSA.PublicKey -> TlsIo BS.ByteString
 clientVerifyHash pub = do
 	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
 	let Right hashed = RSA.padSignature (RSA.public_size pub) $
 		RSA.digestToASN1 RSA.hashDescrSHA256 sha256
 	return hashed
 
-tlsEncryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+tlsEncryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo BS.ByteString
 tlsEncryptMessage ct v msg = do
 	version <- gets tlssVersion
 	cs <- cipherSuite Server
@@ -354,7 +351,7 @@ tlsEncryptMessage ct v msg = do
 			("encryptMessage: not support the version: " ++ show vsn)
 		(_, _, _, _) -> throwError "no version"
 
-tlsDecryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo cnt BS.ByteString
+tlsDecryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo BS.ByteString
 tlsDecryptMessage ct v enc = do
 	version <- gets tlssVersion
 	cs <- cipherSuite Client
@@ -373,12 +370,12 @@ tlsDecryptMessage ct v enc = do
 		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return enc
 		_ -> throwError "decryptMessage: No keys or bad cipher suite"
 
-sequenceNumber :: Partner -> TlsIo cnt Word64
+sequenceNumber :: Partner -> TlsIo Word64
 sequenceNumber partner = gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
 
-updateSequenceNumber :: Partner -> TlsIo cnt ()
+updateSequenceNumber :: Partner -> TlsIo ()
 updateSequenceNumber partner = do
 	cs <- gets $ case partner of
 		Client -> tlssClientWriteCipherSuite
@@ -394,17 +391,17 @@ updateSequenceNumber partner = do
 		CT.TLS_NULL_WITH_NULL_NULL -> return ()
 		_ -> throwError "not implemented"
 
-cipherSuite :: Partner -> TlsIo cnt CT.CipherSuite
+cipherSuite :: Partner -> TlsIo CT.CipherSuite
 cipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
 
-writeKey :: Partner -> TlsIo cnt (Maybe BS.ByteString)
+writeKey :: Partner -> TlsIo (Maybe BS.ByteString)
 writeKey partner = gets $ case partner of
 	Client -> tlssClientWriteKey
 	Server -> tlssServerWriteKey
 
-macKey :: Partner -> TlsIo cnt (Maybe BS.ByteString)
+macKey :: Partner -> TlsIo (Maybe BS.ByteString)
 macKey partner = gets $ case partner of
 	Client -> tlssClientWriteMacKey
 	Server -> tlssServerWriteMacKey

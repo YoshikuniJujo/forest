@@ -35,7 +35,6 @@ import qualified Data.ByteString.Char8 as BSC
 import System.IO
 import System.IO.Error
 import "crypto-random" Crypto.Random
-import qualified Crypto.PubKey.RSA as RSA
 
 import Data.HandleLike
 
@@ -64,10 +63,10 @@ instance HandleLike TlsClient where
 	hlGetContent = tGetContent
 	hlClose = tClose
 
-runOpen :: Handle -> RSA.PrivateKey -> TlsIo cnt [String] -> IO TlsClient
-runOpen cl pk opn = do
+runOpen :: Handle -> TlsIo [String] -> IO TlsClient
+runOpen cl opn = do
 	ep <- createEntropyPool
-	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl pk
+	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl
 	tvgen <- atomically . newTVar $ tlssRandomGen tlss
 	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
 	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
