@@ -27,11 +27,20 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 version :: Version
 version = Version 3 3
 
+sessionId :: SessionId
+sessionId = SessionId ""
+
 cipherSuite :: CipherSuite
 cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
 
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
+
+clientCertificateType :: ClientCertificateType
+clientCertificateType = ClientCertificateTypeRsaSign
+
+clientCertificateAlgorithm :: (HashAlgorithm, SignatureAlgorithm)
+clientCertificateAlgorithm = (HashAlgorithmSha256, SignatureAlgorithmRsa)
 
 openClient :: Handle
 	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
@@ -85,26 +94,20 @@ serverHello cc mcs = do
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite cipherSuite
-	let	sc = [mksh sr, cert]
-		shd = mkHandshake HandshakeServerHelloDone
-	writeContentList $ sc ++ maybe [] ((: []) . certReq) mcs ++ [shd]
-	where
-	mksh sr = mkHandshake . HandshakeServerHello $ ServerHello
-		version sr (SessionId "") cipherSuite compressionMethod Nothing
-	certReq = mkHandshake . HandshakeCertificateRequest
-		. CertificateRequest
-			[ClientCertificateTypeRsaSign]
-			[(HashAlgorithmSha256, SignatureAlgorithmRsa)]
-		. map (certIssuerDN . signedObject . getSigned) . listCertificates
-	cert = mkHandshake $ HandshakeCertificate cc
-	writeContentList cs = do
-		let f = contentListToFragment cs
-		updateSequenceNumber Client
-		writeFragment f
-		fragmentUpdateHash f
-
-mkHandshake :: Handshake -> Content
-mkHandshake = ContentHandshake version
+	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
+		map (ContentHandshake version) $ catMaybes [
+		Just $ HandshakeServerHello $ ServerHello
+			version sr sessionId cipherSuite compressionMethod Nothing,
+		Just $ HandshakeCertificate cc,
+		case mcs of
+			Just cs -> Just $ HandshakeCertificateRequest
+				. CertificateRequest
+					[clientCertificateType]
+					[clientCertificateAlgorithm]
+				. map (certIssuerDN . signedObject . getSigned)
+				$ listCertificates cs
+			_ -> Nothing,
+		Just HandshakeServerHelloDone]
 
 clientCertificate :: CertificateStore -> TlsIo (RSA.PublicKey, [String])
 clientCertificate cs = do
@@ -118,8 +121,7 @@ clientCertificate cs = do
 					AlertLevelFatal
 					AlertDescriptionUnsupportedCertificate
 					("Not implemented: " ++ show p)
-		_ -> throwError $ Alert
-			AlertLevelFatal
+		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"Not Certificate"
 	where
@@ -128,7 +130,6 @@ clientCertificate cs = do
 	names (CertificateChain (t : _)) = getNames $ getCertificate t
 	names _ = error "names: bad certificate chain"
 	chk cc = do
---		liftIO . putStrLn $ "NAMES: " ++ show (names cc)
 		v <- liftIO $ validate HashSHA256 defaultHooks
 			defaultChecks{ checkFQHN = False } cs vc ("", "") cc
 		unless (null v) . throwError $ Alert
