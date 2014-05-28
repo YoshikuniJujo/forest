@@ -57,8 +57,9 @@ handshake ccs certStore opts = do
 	let ch = clientHello cr
 		(helloVersionFromOptions opts)
 		(clientVersionFromOptions opts)
-		(if OptEmptyCipherSuite `elem` opts then [] else
-			[TLS_RSA_WITH_AES_128_CBC_SHA])
+		(if OptEmptyCipherSuite `elem` opts then [] else [
+			TLS_RSA_WITH_AES_128_CBC_SHA256,
+			TLS_RSA_WITH_AES_128_CBC_SHA])
 		(if OptEmptyCompressionMethod `elem` opts
 			then []
 			else [CompressionMethodNull])
@@ -168,6 +169,7 @@ handshake ccs certStore opts = do
 	--     CLIENT FINISHED                   --
 	-------------------------------------------
 	fhc <- finishedHash Client
+	liftIO . putStrLn $ "CLIENT FINISHED: " ++ show fhc
 	writeContent $ finished fhc
 	fragmentUpdateHash . contentToFragment $ finished fhc
 
