@@ -53,8 +53,10 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 
 clientHello :: Random -> Content
 clientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
-	ClientHello (Version 3 3) cr (SessionId "")
-		[TLS_RSA_WITH_AES_128_CBC_SHA]
+	ClientHello (Version 3 3) cr (SessionId "") [
+			TLS_RSA_WITH_AES_128_CBC_SHA256,
+			TLS_RSA_WITH_AES_128_CBC_SHA
+		 ]
 		[CompressionMethodNull]
 		Nothing
 

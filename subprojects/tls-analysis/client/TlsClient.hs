@@ -47,7 +47,8 @@ handshake ccs certStore = do
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
-	liftIO . putStrLn $ "SERVER HELLO: " ++ take 60 (show sh) ++ "..."
+--	liftIO . putStrLn $ "SERVER HELLO: " ++ take 60 (show sh) ++ "..."
+	liftIO . putStrLn $ "SERVER HELLO: " ++ show sh
 
 	-------------------------------------------
 	--     SERVER CERTIFICATE                --
