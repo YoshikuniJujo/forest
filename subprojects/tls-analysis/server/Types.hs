@@ -49,7 +49,10 @@ contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]
 data Random = Random BS.ByteString
 
 data CipherSuiteKeyEx
-	= RSA | DHE_RSA | ECDHE_PSK | KeyExNULL
+	= RSA
+	| DHE_RSA
+	| ECDHE_PSK
+	| KeyExNULL
 	deriving (Show, Eq)
 
 data CipherSuiteMsgEnc
@@ -64,15 +67,3 @@ data CipherSuite
 	= CipherSuite CipherSuiteKeyEx CipherSuiteMsgEnc
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Eq)
-
-{-
-data CipherSuite
-	= TLS_NULL_WITH_NULL_NULL
-	| TLS_RSA_WITH_AES_128_CBC_SHA
-	| TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-	| TLS_ECDHE_PSK_WITH_NULL_SHA
-	| TLS_RSA_WITH_AES_128_CBC_SHA256
-	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
-	| CipherSuiteRaw Word8 Word8
-	deriving (Show, Eq)
-	-}
