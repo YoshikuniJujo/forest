@@ -30,8 +30,11 @@ version = Version 3 3
 sessionId :: SessionId
 sessionId = SessionId ""
 
-cipherSuite :: CipherSuite
-cipherSuite = TLS_RSA_WITH_AES_128_CBC_SHA
+cipherSuite :: [CipherSuite] -> CipherSuite
+cipherSuite css
+	| TLS_RSA_WITH_AES_128_CBC_SHA256 `elem` css =
+		TLS_RSA_WITH_AES_128_CBC_SHA256
+	| otherwise = TLS_RSA_WITH_AES_128_CBC_SHA
 
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
@@ -63,8 +66,8 @@ withClient = (((flip bracket hlClose .) .) .) . openClient
 handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
-	cv <- clientHello
-	serverHello cc mcs
+	(cv, css) <- clientHello
+	serverHello css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	clientKeyExchange sk cv
 	maybe (return ()) (certificateVerify . fst) mpn
@@ -74,12 +77,13 @@ handshake sk cc mcs = do
 	serverFinished
 	return $ maybe [] snd mpn
 
-clientHello :: TlsIo Version
+clientHello :: TlsIo (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
+	liftIO $ print hs
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
-			err vsn css cms >> setClientRandom rnd >> return vsn
+			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientHello: not client hello"
@@ -88,7 +92,7 @@ clientHello = do
 		| vsn < version = throwError $ Alert
 			AlertLevelFatal AlertDescriptionProtocolVersion
 			"TlsServer.clientHello: client version should 3.3 or more"
-		| cipherSuite `notElem` css = throwError $ Alert
+		| TLS_RSA_WITH_AES_128_CBC_SHA `notElem` css = throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
 		| compressionMethod `notElem` cms = throwError $ Alert
@@ -96,16 +100,16 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: CertificateChain -> Maybe CertificateStore -> TlsIo ()
-serverHello cc mcs = do
+serverHello :: [CipherSuite] -> CertificateChain -> Maybe CertificateStore -> TlsIo ()
+serverHello css cc mcs = do
 	sr <- Random <$> randomByteString 32
 	setVersion version
 	setServerRandom sr
-	cacheCipherSuite cipherSuite
+	cacheCipherSuite $ cipherSuite css
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
-		Just $ HandshakeServerHello $ ServerHello
-			version sr sessionId cipherSuite compressionMethod Nothing,
+		Just $ HandshakeServerHello $ ServerHello version sr sessionId
+			(cipherSuite css) compressionMethod Nothing,
 		Just $ HandshakeCertificate cc,
 		case mcs of
 			Just cs -> Just $ HandshakeCertificateRequest

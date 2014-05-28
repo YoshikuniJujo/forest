@@ -1,7 +1,7 @@
 {-# LANGUAGE PackageImports #-}
 
 module CryptoTools (
-	encryptMessage, decryptMessage,
+	encryptMessage, decryptMessage, hashSha1, hashSha256,
 
 	MS.MSVersion(..), MS.versionToVersion,
 	MS.ClientRandom(..), MS.ServerRandom(..),
@@ -20,36 +20,46 @@ import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
 import Tools
 
-encryptMessage :: SystemRNG -> BS.ByteString -> Word64 -> BS.ByteString ->
+type Hash = (BS.ByteString -> BS.ByteString, Int)
+
+hashSha1, hashSha256 :: Hash
+hashSha1 = (SHA1.hash, 20)
+hashSha256 = (SHA256.hash, 32)
+
+encryptMessage :: Hash ->
+	SystemRNG -> BS.ByteString -> Word64 -> BS.ByteString ->
 	MS.ContentType -> MS.Version -> BS.ByteString -> (BS.ByteString, SystemRNG)
-encryptMessage gen key sn mk ct v msg = 
+encryptMessage (hs, _) gen key sn mk ct v msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
-	mac = calcMac sn mk $ BS.concat [
+	mac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,
 		MS.versionToByteString v,
 		lenBodyToByteString 2 msg]
 
-decryptMessage :: BS.ByteString -> Word64 -> BS.ByteString ->
+decryptMessage :: Hash ->
+	BS.ByteString -> Word64 -> BS.ByteString ->
 	MS.ContentType -> MS.Version -> BS.ByteString -> Either String BS.ByteString
-decryptMessage key sn mk ct v enc = if mac == cmac then Right body else
+decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 	Left "decryptMessage: bad MAC"
 	where
 	bm = unpadd $ decrypt key enc
-	(body, mac) = BS.splitAt (BS.length bm - 20) bm
-	cmac = calcMac sn mk $ BS.concat [
+	(body, mac) = BS.splitAt (BS.length bm - ml) bm
+	cmac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,
 		MS.versionToByteString v,
 		lenBodyToByteString 2 body]
 
-calcMac :: Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
-calcMac sn mk inp =
-	MS.hmac SHA1.hash 64 mk $ word64ToByteString sn `BS.append` inp
+calcMac :: (BS.ByteString -> BS.ByteString) ->
+	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
+calcMac hs sn mk inp =
+	MS.hmac hs 64 mk $ word64ToByteString sn `BS.append` inp
 
 padd :: BS.ByteString -> BS.ByteString
 padd bs = bs `BS.append` pd

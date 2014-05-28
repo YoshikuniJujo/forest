@@ -101,7 +101,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 		ebody <- atomically $ do
 			gen <- readTVar tvgen
 			sn <- readTVar tvsn
-			let (e, gen') = enc gen sn
+			let (e, gen') = enc hashSha1 gen sn
 			writeTVar tvgen gen'
 			writeTVar tvsn $ succ sn
 			return e
@@ -109,7 +109,19 @@ tPutWithCT ts ct msg = case (vr, cs) of
 			contentTypeToByteString ct,
 			versionToByteString v,
 			lenBodyToByteString 2 ebody ]
-	_ -> error "tPut: not implemented"
+	(TLS12, TLS_RSA_WITH_AES_128_CBC_SHA256) -> do
+		ebody <- atomically $ do
+			gen <- readTVar tvgen
+			sn <- readTVar tvsn
+			let (e, gen') = enc hashSha256 gen sn
+			writeTVar tvgen gen'
+			writeTVar tvsn $ succ sn
+			return e
+		BS.hPut h $ BS.concat [
+			contentTypeToByteString ct,
+			versionToByteString v,
+			lenBodyToByteString 2 ebody ]
+	_ -> error "tPutWithCT: not implemented"
 	where
 	(vr, cs, h) = vrcsh ts
 	key = tlsServerWriteKey ts
@@ -117,7 +129,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 	v = Version 3 3
 	tvsn = tlsServerSequenceNumber ts
 	tvgen = tlsRandomGen ts
-	enc gen sn = encryptMessage gen key sn mk ct v msg
+	enc hs gen sn = encryptMessage hs gen key sn mk ct v msg
 
 vrcsh :: TlsClient -> (MSVersion, CipherSuite, Handle)
 vrcsh tc = (tlsVersion tc, tlsCipherSuite tc, tlsHandle tc)
@@ -146,7 +158,19 @@ tGetWholeWithCT ts = case (vr, cs) of
 			n <- readTVar tvsn
 			writeTVar tvsn $ succ n
 			return n
-		ret <- case dec sn ct v enc of
+		ret <- case dec hashSha1 sn ct v enc of
+			Right r -> return r
+			Left err -> error err
+		return (ct, ret)
+	(TLS12, TLS_RSA_WITH_AES_128_CBC_SHA256) -> do
+		ct <- byteStringToContentType <$> BS.hGet h 1
+		v <- byteStringToVersion <$> BS.hGet h 2
+		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
+		sn <- atomically $ do
+			n <- readTVar tvsn
+			writeTVar tvsn $ succ n
+			return n
+		ret <- case dec hashSha256 sn ct v enc of
 			Right r -> return r
 			Left err -> error err
 		return (ct, ret)
@@ -156,7 +180,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 	key = tlsClientWriteKey ts
 	mk = tlsClientWriteMacKey ts
 	tvsn = tlsClientSequenceNumber ts
-	dec sn = decryptMessage key sn mk
+	dec hs sn = decryptMessage hs key sn mk
 
 tGet :: TlsClient -> Int -> IO BS.ByteString
 tGet tc n = do
