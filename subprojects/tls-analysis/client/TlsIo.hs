@@ -295,7 +295,7 @@ encryptMessage partner ct v msg = do
 	case (version, cs, mwk, mmk) of
 		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just wk, Just mk)
 			-> do	let (ret, gen') =
-					CT.encryptMessage gen wk sn mk ct v msg
+					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
 				tlss <- get
 				put tlss{ tlssRandomGen = gen' }
 				return ret
@@ -313,7 +313,7 @@ decryptMessage partner ct v enc = do
 	mmk <- macKey partner
 	case (version, cs, mwk, mmk) of
 		(Just CT.TLS12, TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just mk)
-			-> do	let emsg = CT.decryptMessage key sn mk ct v enc
+			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
 					Left err -> throwError err
@@ -377,7 +377,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 		ebody <- atomically $ do
 			gen <- readTVar tvgen
 			sn <- readTVar tvsn
-			let (e, gen') = enc gen sn
+			let (e, gen') = enc CT.hashSha1 gen sn
 			writeTVar tvgen gen'
 			writeTVar tvsn $ succ sn
 			return e
@@ -396,7 +396,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 	v = Version 3 3
 	tvsn = tlsClientSequenceNumber ts
 	tvgen = tlsRandomGen ts
-	enc gen sn = CT.encryptMessage gen key sn mk ct v msg
+	enc hs gen sn = CT.encryptMessage hs gen key sn mk ct v msg
 
 tGetWhole :: TlsServer -> IO BS.ByteString
 tGetWhole ts = do
@@ -421,7 +421,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 			n <- readTVar tvsn
 			writeTVar tvsn $ succ n
 			return n
-		case dec sn ct v enc of
+		case dec CT.hashSha1 sn ct v enc of
 			Right r -> return (ct, r)
 			Left err -> error err
 	_ -> error "tPut: not implemented"
@@ -432,7 +432,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 	key = tlsServerWriteKey ts
 	mk = tlsServerWriteMacKey ts
 	tvsn = tlsServerSequenceNumber ts
-	dec sn = CT.decryptMessage key sn mk
+	dec hs sn = CT.decryptMessage hs key sn mk
 
 tGetByte :: TlsServer -> IO Word8
 tGetByte ts = do
