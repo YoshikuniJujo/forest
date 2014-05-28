@@ -150,8 +150,8 @@ initTlsState ep cl = TlsState {
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssVersion = Nothing,
-	tlssClientWriteCipherSuite = CT.TLS_NULL_WITH_NULL_NULL,
-	tlssServerWriteCipherSuite = CT.TLS_NULL_WITH_NULL_NULL,
+	tlssClientWriteCipherSuite = CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL,
+	tlssServerWriteCipherSuite = CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL,
 	tlssCachedCipherSuite = Nothing,
 
 	tlssClientRandom = Nothing,
@@ -284,8 +284,8 @@ generateKeys pms = do
 		tlssClientRandom = mcr,
 		tlssServerRandom = msr } <- get
 	mkl <- case cs of
-		Just CT.TLS_RSA_WITH_AES_128_CBC_SHA -> return 20
-		Just CT.TLS_RSA_WITH_AES_128_CBC_SHA256 -> return 32
+		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA) -> return 20
+		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA256) -> return 32
 		_ -> throwError "generateKeys: not implemented"
 	case (mv, CT.ClientRandom <$> mcr, CT.ServerRandom <$> msr) of
 		(Just v, Just cr, Just sr) -> do
@@ -338,19 +338,19 @@ tlsEncryptMessage ct v msg = do
 	mmk <- macKey Server
 	gen <- gets tlssRandomGen
 	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.TLS_RSA_WITH_AES_128_CBC_SHA, Just wk, Just mk)
+		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
 				tlss <- get
 				put tlss{ tlssRandomGen = gen' }
 				return ret
-		(Just CT.TLS12, CT.TLS_RSA_WITH_AES_128_CBC_SHA256, Just wk, Just mk)
+		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
 				tlss <- get
 				put tlss{ tlssRandomGen = gen' }
 				return ret
-		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return msg
+		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
 		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
 		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
 		(Just CT.TLS12, _, _, _) -> throwError $ Alert
@@ -371,7 +371,7 @@ tlsDecryptMessage ct v enc = do
 	sn <- sequenceNumber Client
 	mmk <- macKey Client
 	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.TLS_RSA_WITH_AES_128_CBC_SHA, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -379,7 +379,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(Just CT.TLS12, CT.TLS_RSA_WITH_AES_128_CBC_SHA256, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -387,7 +387,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(_, CT.TLS_NULL_WITH_NULL_NULL, _, _) -> return enc
+		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return enc
 		_ -> throwError "tlsDecryptMessage: No keys or bad cipher suite"
 
 sequenceNumber :: Partner -> TlsIo Word64
@@ -405,13 +405,13 @@ updateSequenceNumber partner = do
 		Server -> tlssServerSequenceNumber
 	tlss <- get
 	case cs of
-		CT.TLS_RSA_WITH_AES_128_CBC_SHA -> put $ case partner of
+		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.TLS_RSA_WITH_AES_128_CBC_SHA256 -> put $ case partner of
+		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256 -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.TLS_NULL_WITH_NULL_NULL -> return ()
+		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return ()
 		_ -> throwError . strMsg $ "generateKeys: not implemented: " ++ show cs
 
 cipherSuite :: Partner -> TlsIo CT.CipherSuite

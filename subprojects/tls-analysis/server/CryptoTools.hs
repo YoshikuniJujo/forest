@@ -11,7 +11,7 @@ module CryptoTools (
 	MS.Version(..), MS.ContentType(..),
 	MS.byteStringToVersion, MS.byteStringToContentType,
 	MS.versionToByteString, MS.contentTypeToByteString,
-	MS.CipherSuite(..),
+	MS.CipherSuite(..), MS.CipherSuiteKeyEx(..), MS.CipherSuiteMsgEnc(..),
 	MS.Random(..),
 	MS.Fragment(..),
 ) where

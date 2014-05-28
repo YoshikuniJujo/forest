@@ -32,9 +32,9 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
-	| TLS_RSA_WITH_AES_128_CBC_SHA256 `elem` css =
-		TLS_RSA_WITH_AES_128_CBC_SHA256
-	| otherwise = TLS_RSA_WITH_AES_128_CBC_SHA
+	| CipherSuite RSA AES_128_CBC_SHA256 `elem` css =
+		CipherSuite RSA AES_128_CBC_SHA256
+	| otherwise = CipherSuite RSA AES_128_CBC_SHA
 
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
@@ -92,7 +92,7 @@ clientHello = do
 		| vsn < version = throwError $ Alert
 			AlertLevelFatal AlertDescriptionProtocolVersion
 			"TlsServer.clientHello: client version should 3.3 or more"
-		| TLS_RSA_WITH_AES_128_CBC_SHA `notElem` css = throwError $ Alert
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
 		| compressionMethod `notElem` cms = throwError $ Alert
