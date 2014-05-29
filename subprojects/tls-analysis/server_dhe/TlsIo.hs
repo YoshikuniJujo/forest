@@ -362,7 +362,7 @@ tlsEncryptMessage ct v msg = do
 				tlss <- get
 				put tlss{ tlssRandomGen = gen' }
 				return ret
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just wk, Just mk)
+		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
 				tlss <- get
@@ -405,7 +405,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -431,16 +431,16 @@ updateSequenceNumber partner = do
 		Server -> tlssServerSequenceNumber
 	tlss <- get
 	case cs of
+		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return ()
 		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
 		CT.CipherSuite CT.DHE_RSA CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256 -> put $ case partner of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return ()
 		_ -> throwError . strMsg $ "updateSequenceNumber: not implemented: " ++ show cs
 
 cipherSuite :: Partner -> TlsIo CT.CipherSuite

@@ -37,6 +37,8 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
+	| CipherSuite DHE_RSA AES_128_CBC_SHA256 `elem` css =
+		CipherSuite DHE_RSA AES_128_CBC_SHA256
 	| CipherSuite DHE_RSA AES_128_CBC_SHA `elem` css =
 		CipherSuite DHE_RSA AES_128_CBC_SHA
 	| CipherSuite RSA AES_128_CBC_SHA256 `elem` css =

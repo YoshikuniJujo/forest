@@ -110,7 +110,7 @@ tPutWithCT ts ct msg = case (vr, cs) of
 			contentTypeToByteString ct,
 			versionToByteString v,
 			lenBodyToByteString 2 ebody ]
-	(TLS12, CipherSuite RSA AES_128_CBC_SHA256) -> do
+	(TLS12, CipherSuite _ AES_128_CBC_SHA256) -> do
 		ebody <- atomically $ do
 			gen <- readTVar tvgen
 			sn <- readTVar tvsn
@@ -163,7 +163,7 @@ tGetWholeWithCT ts = case (vr, cs) of
 			Right r -> return r
 			Left err -> error err
 		return (ct, ret)
-	(TLS12, CipherSuite RSA AES_128_CBC_SHA256) -> do
+	(TLS12, CipherSuite _ AES_128_CBC_SHA256) -> do
 		ct <- byteStringToContentType <$> BS.hGet h 1
 		v <- byteStringToVersion <$> BS.hGet h 2
 		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2

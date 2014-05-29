@@ -65,6 +65,7 @@ parseCipherSuite = do
 		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
 		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
+		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
 parseCipherSuite' :: Monad m => (Int -> m BS.ByteString) -> m CipherSuite
@@ -77,6 +78,7 @@ parseCipherSuite' rd = do
 		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
 		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
+		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
 instance Parsable' CipherSuite where
@@ -89,6 +91,7 @@ cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA) = "\x00\x33"
 cipherSuiteToByteString (CipherSuite ECDHE_PSK NULL_SHA) = "\x00\x39"
 cipherSuiteToByteString (CipherSuite RSA AES_128_CBC_SHA256) = "\x00\x3c"
 cipherSuiteToByteString (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
+cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA256) = "\x00\x67"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
 
