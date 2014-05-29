@@ -131,6 +131,7 @@ serverHello pk css cc mcs = do
 				2 1 "hogeru" ""
 	liftIO $ print ske
 	liftIO $ print $ contentToFragment $ ContentHandshake version ske
+	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 --	setRandomGen g''
 	setVersion version
 	setServerRandom $ Random sr
