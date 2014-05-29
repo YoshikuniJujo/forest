@@ -74,7 +74,7 @@ handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
 	(cv, css) <- clientHello
-	serverHello css cc mcs
+	serverHello sk css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	clientKeyExchange sk cv
 	maybe (return ()) (certificateVerify . fst) mpn
@@ -109,28 +109,34 @@ clientHello = do
 
 (dhParams, dhPrivate) = unsafePerformIO $ do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, g') = generateParams g 8 2
+	let	(ps, g') = generateParams g 512 2
+--	let	(ps, g') = generateParams g 128 2
 		(pr, g'') = generatePrivate g' ps
 	return (ps, pr)
 	
 
-serverHello :: [CipherSuite] -> CertificateChain -> Maybe CertificateStore -> TlsIo ()
-serverHello css cc mcs = do
-	sr <- Random <$> randomByteString 32
+serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
+	Maybe CertificateStore -> TlsIo ()
+serverHello pk css cc mcs = do
+	sr <- randomByteString 32
+	Just cr <- getClientRandom
 --	g <- getRandomGen
 --	let	(ps, g') = generateParams g 8 2
 --		(pr, g'') = generatePrivate g' ps
-	let	ske = HandshakeServerKeyExchange $ ServerKeyExchange
-			dhParams (calculatePublic dhParams dhPrivate) 2 1 "hogeru" ""
+	let	ske = HandshakeServerKeyExchange $ addSign pk cr sr $
+			ServerKeyExchange
+				dhParams (calculatePublic dhParams dhPrivate)
+				2 1 "hogeru" ""
 	liftIO $ print ske
 	liftIO $ print $ contentToFragment $ ContentHandshake version ske
 --	setRandomGen g''
 	setVersion version
-	setServerRandom sr
+	setServerRandom $ Random sr
 	cacheCipherSuite $ cipherSuite css
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
-		Just $ HandshakeServerHello $ ServerHello version sr sessionId
+		Just $ HandshakeServerHello $ ServerHello version (Random sr)
+			sessionId
 			(cipherSuite css) compressionMethod Nothing,
 		Just $ HandshakeCertificate cc,
 		case mcs of
@@ -292,7 +298,8 @@ readHandshake ck = do
 				"Not supported layer version"
 		_ -> throwError $ Alert
 			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage "Not Handshake"
+			AlertDescriptionUnexpectedMessage $
+			"Not Handshake: " ++ show cnt
 
 readContent :: (Version -> Bool) -> TlsIo Content
 readContent vc = do

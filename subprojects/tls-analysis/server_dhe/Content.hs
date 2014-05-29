@@ -17,6 +17,7 @@ module Content (
 	ServerKeyExchange(..),
 	byteStringToPublicNumber,
 	integerToByteString,
+	addSign,
 ) where
 
 import Control.Monad

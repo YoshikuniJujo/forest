@@ -42,6 +42,7 @@ module Handshake (
 	ServerKeyExchange(..),
 	byteStringToPublicNumber,
 	integerToByteString,
+	addSign,
 ) where
 
 import Prelude hiding (head, take, concat)

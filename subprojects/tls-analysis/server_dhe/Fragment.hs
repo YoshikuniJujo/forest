@@ -7,6 +7,7 @@ module Fragment (
 	readRawFragment, writeRawFragment,
 
 	setClientRandom, setServerRandom, setVersion,
+	getClientRandom,
 	cacheCipherSuite, flushCipherSuite,
 	generateKeys,
 

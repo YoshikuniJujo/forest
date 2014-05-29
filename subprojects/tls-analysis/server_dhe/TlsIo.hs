@@ -11,6 +11,7 @@ module TlsIo (
 	readLen, writeLen,
 
 	setVersion, setClientRandom, setServerRandom,
+	getClientRandom,
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
@@ -262,6 +263,9 @@ setServerRandom (CT.Random sr) = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
 
+getClientRandom :: TlsIo (Maybe BS.ByteString)
+getClientRandom = gets tlssClientRandom
+
 cacheCipherSuite :: CT.CipherSuite -> TlsIo ()
 cacheCipherSuite cs = do
 	tlss <- get
@@ -318,11 +322,11 @@ generateKeys pms = do
 updateHash :: BS.ByteString -> TlsIo ()
 updateHash bs = do
 	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
-	liftIO . putStrLn $ "PRE SHA256CTX : " ++ show (SHA256.finalize sha256)
+--	liftIO . putStrLn $ "PRE SHA256CTX : " ++ show (SHA256.finalize sha256)
 --	liftIO . putStrLn $ "DATA          : " ++ take 50 (show bs)
-	liftIO . putStrLn $ "DATA          : " ++ (show bs)
-	liftIO . putStrLn $ "POST SHA256CTX: " ++
-		show (SHA256.finalize $ SHA256.update sha256 bs)
+--	liftIO . putStrLn $ "DATA          : " ++ (show bs)
+--	liftIO . putStrLn $ "POST SHA256CTX: " ++
+--		show (SHA256.finalize $ SHA256.update sha256 bs)
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
 finishedHash :: Partner -> TlsIo BS.ByteString
