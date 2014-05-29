@@ -285,7 +285,8 @@ generateKeys pms = do
 			TLS_RSA_WITH_AES_128_CBC_SHA -> return 20
 			TLS_RSA_WITH_AES_128_CBC_SHA256 -> return 32
 			TLS_DHE_RSA_WITH_AES_128_CBC_SHA -> return 20
-			_ -> throwError "not implemented"
+			TLS_DHE_RSA_WITH_AES_128_CBC_SHA256 -> return 32
+			_ -> throwError "TlsIo.generateKeys: not implemented"
 	case (mv, mcr, msr) of
 		(Just v, Just cr, Just sr) -> do
 			let	ms = CT.generateMasterSecret v pms cr sr
@@ -373,6 +374,18 @@ encryptMessage partner ct v msg = do
 				tlss <- get
 				put tlss{ tlssRandomGen = gen' }
 				return ret
+		(Just CT.TLS12, TLS_DHE_RSA_WITH_AES_128_CBC_SHA256, Just wk, Just mk)
+			-> do	let (ret, gen') =
+					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
+				let (retSha1, _) =
+					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
+				liftIO . putStrLn $ "DECRYPTED MESSAGE: " ++
+					show (CT.decryptMessage CT.hashSha256 wk sn mk ct v ret)
+				liftIO . putStrLn $ "DECRPYTED MESSAGE: " ++
+					show (CT.decryptMessage CT.hashSha1 wk sn mk ct v retSha1)
+				tlss <- get
+				put tlss{ tlssRandomGen = gen' }
+				return ret
 		_ -> throwError $ "TlsIo.encryptMessage:\n" ++
 			"\tNo keys or not implemented cipher suite"
 
@@ -401,7 +414,12 @@ decryptMessage partner ct v enc = do
 				case emsg of
 					Right msg -> return msg
 					Left err -> throwError err
-		_ -> throwError "decryptMessage: No keys or Bad cipher suite"
+		(Just CT.TLS12, TLS_DHE_RSA_WITH_AES_128_CBC_SHA256, Just key, Just mk)
+			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
+				case emsg of
+					Right msg -> return msg
+					Left err -> throwError err
+		_ -> throwError "TlsIo.decryptMessage: No keys or Bad cipher suite"
 
 cipherSuite :: Partner -> TlsIo cnt CipherSuite
 cipherSuite partner = gets $ case partner of
@@ -492,7 +510,18 @@ tPutWithCT ts ct msg = case (vr, cs) of
 			contentTypeToByteString ct,
 			versionToByteString v,
 			lenBodyToByteString 2 ebody]
-		
+	(CT.TLS12, TLS_DHE_RSA_WITH_AES_128_CBC_SHA256) -> do
+		ebody <- atomically $ do
+			gen <- readTVar tvgen
+			sn <- readTVar tvsn
+			let (e, gen') = enc CT.hashSha256 gen sn
+			writeTVar tvgen gen'
+			writeTVar tvsn $ succ sn
+			return e
+		BS.hPut h $ BS.concat [
+			contentTypeToByteString ct,
+			versionToByteString v,
+			lenBodyToByteString 2 ebody]
 	_ -> error "tPutWithCT: not implemented"
 	where
 	vr = tlsVersion ts
@@ -553,7 +582,18 @@ tGetWholeWithCT ts = case (vr, cs) of
 		case dec CT.hashSha256 sn ct v enc of
 			Right r -> return (ct, r)
 			Left err -> error err
-	_ -> error "tGetWhole: not implemented"
+	(CT.TLS12, TLS_DHE_RSA_WITH_AES_128_CBC_SHA256) -> do
+		ct <- byteStringToContentType <$> BS.hGet h 1
+		v <- byteStringToVersion <$> BS.hGet h 2
+		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
+		sn <- atomically $ do
+			n <- readTVar tvsn
+			writeTVar tvsn $ succ n
+			return n
+		case dec CT.hashSha256 sn ct v enc of
+			Right r -> return (ct, r)
+			Left err -> error err
+	_ -> error "tGetWholeWithCT: not implemented"
 	where
 	vr = tlsVersion ts
 	cs = tlsCipherSuite ts
