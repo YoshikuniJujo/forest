@@ -142,6 +142,7 @@ serverHello pk css cc mcs = do
 			sessionId
 			(cipherSuite css) compressionMethod Nothing,
 		Just $ HandshakeCertificate cc,
+		Just $ ske,
 		case mcs of
 			Just cs -> Just $ HandshakeCertificateRequest
 				. CertificateRequest
@@ -150,7 +151,6 @@ serverHello pk css cc mcs = do
 				. map (certIssuerDN . signedObject . getSigned)
 				$ listCertificates cs
 			_ -> Nothing,
-		Just $ ske,
 		Just HandshakeServerHelloDone]
 
 clientCertificate :: CertificateStore -> TlsIo (RSA.PublicKey, [String])

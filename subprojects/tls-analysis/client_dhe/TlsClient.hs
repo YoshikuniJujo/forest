@@ -209,12 +209,12 @@ serverHelloDone pub = do
 	-------------------------------------------
 	--     CERTIFICATE REQUEST               --
 	-------------------------------------------
-	crtReq <- readContent
+	cske <- readContent
 	liftIO . putStrLn $
 --		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
-		"CERTIFICATE REQUEST: " ++ show crtReq
+		"CERTIFICATE REQUEST: " ++ show cske
 
-	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = crtReq
+	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
 		ServerKeyExchange ps ys _ _ _ _ = ske
 
 	cr <- getClientRandom
@@ -227,6 +227,8 @@ serverHelloDone pub = do
 	setRandomGen g'
 	liftIO . putStrLn $ "PRIVATE NUMBER: " ++ show pr
 	liftIO . putStrLn $ "SHARED KEY    : " ++ show dhsk
+
+	crtReq <- readContent
 
 	unless (doesServerHelloDone crtReq) $ do
 
