@@ -21,7 +21,7 @@ import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.CertificateStore
 import Data.X509.Validation
-import Crypto.PubKey.RSA
+import qualified Crypto.PubKey.RSA as RSA
 
 import Fragment
 import Content
@@ -31,11 +31,11 @@ import Crypto.PubKey.DH
 
 import Data.Ratio
 
-openTlsServer :: [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle
+openTlsServer :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore -> Handle
 	-> [Option] -> IO TlsServer
 openTlsServer ccs certStore sv opts = runOpen (handshake ccs certStore opts) sv
 
-isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
+isIncluded :: (RSA.PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
@@ -50,7 +50,7 @@ clientVersionFromOptions =
 	maybe (3, 3) (\(OptClientVersion mjr mnr) -> (mjr, mnr)) .
 		find isOptClientVersion
 
-handshake :: [(PrivateKey, CertificateChain)] -> CertificateStore
+handshake :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore
 	-> [Option] -> TlsIo Content ()
 handshake ccs certStore opts = do
 
@@ -203,7 +203,7 @@ handshake ccs certStore opts = do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
 
-serverHelloDone :: PublicKey -> TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString)
+serverHelloDone :: RSA.PublicKey -> TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString)
 serverHelloDone pub = do
 
 	-------------------------------------------
