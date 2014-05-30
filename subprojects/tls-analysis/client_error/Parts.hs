@@ -57,6 +57,7 @@ parseCipherSuite = do
 		(0x00, 0x39) -> TLS_ECDHE_PSK_WITH_NULL_SHA
 		(0x00, 0x3c) -> TLS_RSA_WITH_AES_128_CBC_SHA256
 		(0x00, 0x45) -> TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+		(0xc0, 0x23) -> TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
@@ -66,6 +67,7 @@ cipherSuiteToByteString TLS_DHE_RSA_WITH_AES_128_CBC_SHA = "\x00\x33"
 cipherSuiteToByteString TLS_ECDHE_PSK_WITH_NULL_SHA = "\x00\x39"
 cipherSuiteToByteString TLS_RSA_WITH_AES_128_CBC_SHA256 = "\x00\x3c"
 cipherSuiteToByteString TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = "\x00\x45"
+cipherSuiteToByteString TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = "\xc0\x23"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 
 data HashAlgorithm
