@@ -21,7 +21,7 @@ main = do
 --	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	certStore <- makeCertificateStore . concat <$> mapM readSignedObject [
 		"cacert.pem",
-		"../verisign/veri_test_root_3.pem"
+		"../verisign/rsa/veri_test_root_3.pem"
 	 ]
 	sv <- connectTo "localhost" . PortNumber . fromIntegral =<<
 		(readIO svpna :: IO Int)
