@@ -15,12 +15,17 @@ import Data.HandleLike
 
 main :: IO ()
 main = do
-	(svpn :: Int) : _ <- mapM readIO =<< getArgs
+	svpna : name : _ <- getArgs
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
-	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
-	sv <- connectTo "localhost" . PortNumber $ fromIntegral svpn
-	tls <- openTlsServer [(pkys, certChain)] certStore sv
+--	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
+	certStore <- makeCertificateStore . concat <$> mapM readSignedObject [
+		"cacert.pem",
+		"../verisign/veri_test_root_3.pem"
+	 ]
+	sv <- connectTo "localhost" . PortNumber . fromIntegral =<<
+		(readIO svpna :: IO Int)
+	tls <- openTlsServer name [(pkys, certChain)] certStore sv
 	hlPut tls $
 		"GET / HTTP/1.1\r\n" +++
 		"Host: localhost:4492\r\n" +++

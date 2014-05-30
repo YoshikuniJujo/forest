@@ -18,8 +18,8 @@ import Fragment
 import Content
 import Basic
 
-openTlsServer :: [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> IO TlsServer
-openTlsServer ccs certStore sv = runOpen (handshake ccs certStore) sv
+openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> IO TlsServer
+openTlsServer name ccs certStore sv = runOpen (handshake name ccs certStore) sv
 
 isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
@@ -27,9 +27,9 @@ isIncluded (_, CertificateChain certs) dns = let
 	idn `elem` dns
 	
 
-handshake ::
+handshake :: String ->
 	[(PrivateKey, CertificateChain)] -> CertificateStore -> TlsIo Content ()
-handshake ccs certStore = do
+handshake name ccs certStore = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -57,7 +57,8 @@ handshake ccs certStore = do
 	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
 		PubKeyRSA pub = certPubKey $ getCertificate cert
 	v <- liftIO $ validateDefault certStore
-		(ValidationCache query add) ("localhost", "localhost da") scc
+		(ValidationCache query add) (name, "localhost da") scc
+--	liftIO . putStrLn $ "CERTIFICATE CHAIN: " ++ show scc
 	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
 	unless (null v) $ throwError "SERVER VALIDATION FAILURE"
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
