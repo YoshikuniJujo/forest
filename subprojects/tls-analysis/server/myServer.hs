@@ -20,11 +20,11 @@ import qualified Data.ByteString.Char8 as BSC
 
 main :: IO ()
 main = do
-	(opts, pn : _, errs) <- getOpt Permute options <$> getArgs
+	(opts, pn : kfp : cfp: _, errs) <- getOpt Permute options <$> getArgs
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
 	port <- (PortNumber . fromIntegral <$>) (readIO pn :: IO Int)
-	pk <- readRsaKey "localhost.key"
-	cc <- readCertificateChain "localhost.crt"
+	pk <- readRsaKey kfp
+	cc <- readCertificateChain cfp
 	mcs <- if OptDisableClientCert `elem` opts
 		then return Nothing
 		else Just <$> readCertificateStore ["cacert.pem"]
