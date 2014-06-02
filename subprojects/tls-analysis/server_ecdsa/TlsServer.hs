@@ -45,6 +45,8 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
+	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA `elem` css =
+		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 `elem` css =
 		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
 	| CipherSuite ECDHE_RSA AES_128_CBC_SHA `elem` css =
@@ -148,7 +150,7 @@ serverHello pk css cc mcs = do
 				4
 				public
 				2
-				1
+				3
 				"\x00\x05 defg"
 				""
 			{-
