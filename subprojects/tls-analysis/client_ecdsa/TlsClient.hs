@@ -22,6 +22,7 @@ import Data.X509
 import Data.X509.CertificateStore
 import Data.X509.Validation
 import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Numeric
 
@@ -106,7 +107,18 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	crt <- readContent
 	let	Just scc@(CertificateChain (cert : _)) = certificateChain crt
---		PubKeyRSA pub = certPubKey $ getCertificate cert
+		PubKeyECDSA cn pub = certPubKey $ getCertificate cert
+	case cn of
+		SEC_p256r1 -> return ()
+		_ -> throwError "NOW, only SEC_p256r1"
+	liftIO . putStrLn $
+		"KEY: curve name = " ++ show cn ++ " pub key = " ++ show pub
+	let	(bspubx, bspuby) = BS.splitAt 32 $ BS.tail pub
+		[pubx, puby] = map byteStringToInteger [bspubx, bspuby]
+	liftIO . putStrLn $
+		"X = " ++ show pubx
+	liftIO . putStrLn $
+		"Y = " ++ show puby
 	v <- liftIO $ validateDefault certStore
 		(ValidationCache query add) ("localhost", "localhost da") scc
 	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
@@ -121,7 +133,9 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-	(crtReq, epms, pms) <- serverHelloDone (error "no pub key") -- pub
+--	(crtReq, epms, pms) <- serverHelloDone (error "no pub key") -- pub
+	(crtReq, epms, pms) <- serverHelloDone $
+		ECDSA.PublicKey secp256r1 (Point pubx puby)
 
 	liftIO . putStrLn $ "PMS: " ++ show pms
 
@@ -223,7 +237,7 @@ handshake ccs certStore opts = do
 private :: Integer
 private = 500
 
-serverHelloDone :: RSA.PublicKey -> TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString)
+serverHelloDone :: ECDSA.PublicKey -> TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString)
 serverHelloDone pub = do
 
 	-------------------------------------------

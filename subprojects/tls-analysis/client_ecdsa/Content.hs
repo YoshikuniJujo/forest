@@ -30,6 +30,7 @@ module Content (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+	byteStringToInteger,
 
 	Extension(..),
 	EcPointFormat(..),

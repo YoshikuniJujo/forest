@@ -40,6 +40,7 @@ module Handshake (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+	byteStringToInteger,
 
 	Extension(..),
 	EcPointFormat(..),

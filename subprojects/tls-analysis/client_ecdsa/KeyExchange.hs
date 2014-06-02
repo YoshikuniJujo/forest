@@ -5,6 +5,7 @@ module KeyExchange (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+	byteStringToInteger,
 	secp256r1,
 	encodePoint,
 ) where
@@ -14,6 +15,7 @@ import GHC.Real
 import Control.Applicative
 import Control.Arrow
 import ByteStringMonad
+import Data.Maybe
 import qualified Data.ByteString as BS
 
 import qualified Crypto.PubKey.RSA as RSA
@@ -32,6 +34,9 @@ import Data.Bits
 import Parts
 import Crypto.Types.PubKey.ECC
 
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import Crypto.PubKey.HashDescr
+
 secp256r1 :: Curve
 secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 	where
@@ -44,16 +49,47 @@ secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 	n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
 	h = 0x01
 
-verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
-	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
+data EcdsaSign
+	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
+	deriving Show
+
+decodeEcdsaSign :: BS.ByteString -> EcdsaSign
+decodeEcdsaSign bs = fromJust $ do
+	(rt, rest) <- BS.uncons rs
+	(rl, rest') <- BS.uncons rest
+	let (rb, rest'') = BS.splitAt (fromIntegral rl) rest'
+	(st, rest''') <- BS.uncons rest''
+	(sl, rest'''') <- BS.uncons rest'''
+	let (sb, "") = BS.splitAt (fromIntegral sl) rest''''
+	return $ EcdsaSign t
+		(rt, byteStringToInteger rb)
+		(st, byteStringToInteger sb)
+	where
+	(h, rs) = BS.splitAt 2 bs
+	[t, _l] = BS.unpack h
+
+decodeSignature :: BS.ByteString -> ECDSA.Signature
+decodeSignature bs = let EcdsaSign _ (_, r) (_, s) = decodeEcdsaSign bs in
+	ECDSA.Signature r s
+
+verifyServerKeyExchange :: ECDSA.PublicKey -> BS.ByteString -> BS.ByteString ->
+	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1], ECDSA.Signature, Bool)
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
 	let	body = BS.concat $ [cr, sr, getBody ske]
-		hash = SHA1.hash body in
+		hash = SHA1.hash body
 --		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
-		(hash, Right []) -- decodeASN1' BER unSign)
-	
+--		ret = verify SHA1.hash pub 
+		sign = decodeSignature s in
+		(hash, Right [], sign, ECDSA.verify SHA1.hash pub sign body) -- decodeASN1' BER unSign)
 verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
+-- hashMessage :: HashFunction -> ECDSA.PublicKey -> BS.ByteString -> BS.ByteString
+-- hashMessage hash pk@(PublicKey curve q) msg = 
+
+-- unSign :: HashFunction -> ECDSA.PublicKey -> ECDSA.Signature -> BS.ByteString
+-- unSign hash pk@(PublicKey curve q) (Signature r s) =
+	
+	
 getBody :: ServerKeyExchange -> BS.ByteString
 {-
 getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
@@ -139,6 +175,9 @@ serverKeyExchangeToByteString ske@(ServerKeyExchangeEc _ _ _ _ ha sa sn rst) =
 		rst
 	 ]
 serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
+
+byteStringToInteger :: BS.ByteString -> Integer
+byteStringToInteger = toI . BS.unpack
 
 toI :: [Word8] -> Integer
 toI ws = wordsToInteger $ reverse ws
