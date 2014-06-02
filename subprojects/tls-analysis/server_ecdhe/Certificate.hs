@@ -144,11 +144,11 @@ showH w = replicate (2 - length s) '0' ++ s
 	s = showHex w ""
 
 parseEncryptedPreMasterSecret :: ByteStringM EncryptedPreMasterSecret
-parseEncryptedPreMasterSecret = EncryptedPreMasterSecret <$> takeLen 2
+parseEncryptedPreMasterSecret = EncryptedPreMasterSecret <$> takeLen 1
 
 encryptedPreMasterSecretToByteString :: EncryptedPreMasterSecret -> ByteString
 encryptedPreMasterSecretToByteString (EncryptedPreMasterSecret epms) =
-	lenBodyToByteString 2 epms
+	lenBodyToByteString 1 epms
 
 data DigitallySigned
 	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) ByteString

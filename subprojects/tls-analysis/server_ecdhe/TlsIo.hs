@@ -322,11 +322,11 @@ generateKeys pms = do
 updateHash :: BS.ByteString -> TlsIo ()
 updateHash bs = do
 	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
-	liftIO . putStrLn $ "PRE SHA256CTX : " ++ show (SHA256.finalize sha256)
+--	liftIO . putStrLn $ "PRE SHA256CTX : " ++ show (SHA256.finalize sha256)
 --	liftIO . putStrLn $ "DATA          : " ++ take 50 (show bs) ++ "..."
-	liftIO . putStrLn $ "DATA          : " ++ (show bs)
-	liftIO . putStrLn $ "POST SHA256CTX: " ++
-		show (SHA256.finalize $ SHA256.update sha256 bs)
+--	liftIO . putStrLn $ "DATA          : " ++ (show bs)
+--	liftIO . putStrLn $ "POST SHA256CTX: " ++
+--		show (SHA256.finalize $ SHA256.update sha256 bs)
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
 finishedHash :: Partner -> TlsIo BS.ByteString
@@ -397,7 +397,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(Just CT.TLS12, CT.CipherSuite CT.DHE_RSA CT.AES_128_CBC_SHA, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -435,7 +435,7 @@ updateSequenceNumber partner = do
 		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite CT.DHE_RSA CT.AES_128_CBC_SHA -> put $ case partner of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
 		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> put $ case partner of

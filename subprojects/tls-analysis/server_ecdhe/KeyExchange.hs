@@ -4,10 +4,12 @@
 module KeyExchange (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
+	byteStringToInteger,
 	integerToByteString,
 	secp256r1,
 	encodePoint,
 	EcCurveType(..),
+	addSign,
 ) where
 
 import GHC.Real
@@ -16,6 +18,7 @@ import Control.Applicative
 import Control.Arrow
 import ByteStringMonad
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
@@ -47,29 +50,31 @@ secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
-	{-
-verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ps _ys _ha _sa s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
-		hash = SHA1.hash body
-		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
-		(hash, decodeASN1' BER unSign)
-		-}
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
 	let	body = BS.concat $ [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
-	
 verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
+addSign :: RSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
+	ServerKeyExchange -> ServerKeyExchange
+addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
+	hash = SHA1.hash $ BS.concat $ [cr, sr, getBody ske]
+	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
+		End Sequence, OctetString hash, End Sequence]
+	bs = encodeASN1' DER asn1
+	pd = BSC.concat [
+		"\x00\x01",
+		BSC.replicate (125 - BS.length bs) '\xff',
+		"\NUL",
+		bs
+	 ]
+	sn = RSA.dp Nothing pk pd in
+	ServerKeyExchangeEc ct nc t p ha sa sn ""
+addSign _ _ _ _ = error "addSign: bad"
+
 getBody :: ServerKeyExchange -> BS.ByteString
-{-
-getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
-	BS.concat $ map (lenBodyToByteString 2) [
-		BS.pack $ toWords p,
-		BS.pack $ toWords g,
-		BS.pack $ toWords $ fromIntegral ys ]
-		-}
 getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
 	BS.concat $ [
 		toByteString ct,
@@ -78,11 +83,6 @@ getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
 getBody _ = error "bad"
 
 data ServerKeyExchange
-{-
-	= ServerKeyExchange Params PublicNumber
-		Word8 Word8 BS.ByteString
-		BS.ByteString
-		-}
 	= ServerKeyExchangeEc EcCurveType NamedCurve Word8 Point
 		Word8 Word8 BS.ByteString
 		BS.ByteString
@@ -115,38 +115,19 @@ parseServerKeyExchange = do
 	sign <- takeLen 2
 	rest <- whole
 	return $ ServerKeyExchangeEc ct nc t p ha sa sign rest
-{- do
-	(dhPl, dhP) <- toI . BS.unpack <$> takeLen 2
-	(dhGl, dhG) <- toI . BS.unpack <$> takeLen 2
-	(dhYsl, dhYs) <- toI . BS.unpack <$> takeLen 2
-	hashA <- headBS
-	sigA <- headBS
-	sign <- takeLen 2
-	rest <- whole
-	return $ ServerKeyExchange
-		(Params dhP dhG) (fromInteger dhYs) hashA sigA sign rest
-		-}
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-{-
-serverKeyExchangeToByteString
-	(ServerKeyExchange (Params dhP dhG) dhYs hashA sigA sign rest) =
-	BS.concat [
-		lenBodyToByteString 2 . BS.pack $ toWords dhP,
-		lenBodyToByteString 2 . BS.pack $ toWords dhG,
-		lenBodyToByteString 2 . BS.pack . toWords $ fromIntegral dhYs]
-	`BS.append`
-	BS.pack [hashA, sigA] `BS.append`
-	BS.concat [lenBodyToByteString 2 sign, rest]
-	-}
 serverKeyExchangeToByteString ske@(ServerKeyExchangeEc _ _ _ _ ha sa sn rst) =
 	BS.concat [
 		getBody ske,
 		BS.pack [ha, sa],
-		sn,
+		lenBodyToByteString 2 sn,
 		rst
 	 ]
 serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
+
+byteStringToInteger :: BS.ByteString -> Integer
+byteStringToInteger = toI . BS.unpack
 
 toI :: [Word8] -> Integer
 toI ws = wordsToInteger $ reverse ws

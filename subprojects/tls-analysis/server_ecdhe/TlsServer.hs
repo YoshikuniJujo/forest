@@ -33,6 +33,9 @@ import Crypto.PubKey.DH
 
 import Types
 
+import Crypto.PubKey.ECC.Prim
+import Crypto.Types.PubKey.ECC
+
 version :: Version
 version = Version 3 3
 
@@ -123,6 +126,9 @@ clientHello = do
 	return (ps, pr)
 	
 
+private :: Integer
+private = 0x1234567890
+
 serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 	Maybe CertificateStore -> TlsIo ()
 serverHello pk css cc mcs = do
@@ -131,14 +137,15 @@ serverHello pk css cc mcs = do
 --	g <- getRandomGen
 --	let	(ps, g') = generateParams g 8 2
 --		(pr, g'') = generatePrivate g' ps
-	let	ske = HandshakeServerKeyExchange $ -- addSign pk cr sr $
+	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
+		ske = HandshakeServerKeyExchange $ addSign pk cr sr $
 			ServerKeyExchangeEc
 				NamedCurve
 				Secp256r1
 				4
-				(Point 888 888)
-				10
-				15
+				public
+				2
+				1
 				"\x00\x05 defg"
 				""
 			{-
@@ -146,7 +153,7 @@ serverHello pk css cc mcs = do
 				2 1 "hogeru" ""
 				-}
 	liftIO $ print ske
-	liftIO $ print $ contentToFragment $ ContentHandshake version ske
+--	liftIO $ print $ contentToFragment $ ContentHandshake version ske
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 --	setRandomGen g''
 	setVersion version
@@ -212,12 +219,20 @@ clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
-			liftIO $ putStrLn $ "CLIENT KEY: " ++ show epms
-			let pms = ""
+		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
+			liftIO $ putStrLn $ "CLIENT KEY: " ++ show point
+			let	(x, y) = BS.splitAt 32 $ BS.tail point
+				p = Point
+					(byteStringToInteger x)
+					(byteStringToInteger y)
+				pms = let
+					Point x' _ = pointMul secp256r1 private p in
+					integerToByteString x'
+			liftIO . putStrLn $ "PMS: " ++ show pms
 --			let pms = getShared dhParams dhPrivate $
 --				byteStringToPublicNumber epms
 --			generateKeys $ integerToByteString $ fromIntegral pms
+			generateKeys pms
 			return ()
 			{-
 			r <- randomByteString 46

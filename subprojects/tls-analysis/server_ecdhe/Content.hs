@@ -16,10 +16,12 @@ module Content (
 
 	ServerKeyExchange(..),
 --	byteStringToPublicNumber,
+	byteStringToInteger,
 	integerToByteString,
 	EcCurveType(..),
---	addSign,
+	addSign,
 	Extension(..), EcPointFormat(..),
+	secp256r1,
 ) where
 
 import Control.Monad
