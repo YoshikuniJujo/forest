@@ -123,6 +123,8 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	(crtReq, epms, pms) <- serverHelloDone pub
 
+	liftIO . putStrLn $ "PMS: " ++ show pms
+
 	let	Just (CertificateRequest _ _ sdn) = crtReq
 		(pk, cc) = case filter (`isIncluded` sdn) ccs of
 			(p, c) : _ -> (p, c)
