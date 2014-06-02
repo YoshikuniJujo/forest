@@ -16,6 +16,7 @@ module Hello (
 	evalByteStringM, lenBodyToByteString, takeBS, section',
 
 	Parsable'(..),
+	Extension(..), EcPointFormat(..),
  ) where
 
 import Prelude hiding (concat, take)

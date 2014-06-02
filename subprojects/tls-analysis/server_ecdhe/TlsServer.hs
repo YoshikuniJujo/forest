@@ -156,7 +156,9 @@ serverHello pk css cc mcs = do
 		map (ContentHandshake version) $ catMaybes [
 		Just $ HandshakeServerHello $ ServerHello version (Random sr)
 			sessionId
-			(cipherSuite css) compressionMethod Nothing,
+			(cipherSuite css) compressionMethod $ Just [
+				ExtensionEcPointFormat [EcPointFormatUncompressed]
+			 ],
 		Just $ HandshakeCertificate cc,
 		Just $ ske,
 		case mcs of

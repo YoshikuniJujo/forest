@@ -4,6 +4,7 @@ module Extension (
 	concat, emptyBS, ByteStringM, takeBS, section',
 
 	Parsable'(..),
+	Extension(..), EcPointFormat(..),
 ) where
 
 import Prelude hiding (head, concat)

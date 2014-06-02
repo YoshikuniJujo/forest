@@ -19,6 +19,7 @@ module Content (
 	integerToByteString,
 	EcCurveType(..),
 --	addSign,
+	Extension(..), EcPointFormat(..),
 ) where
 
 import Control.Monad

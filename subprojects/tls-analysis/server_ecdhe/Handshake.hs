@@ -44,6 +44,7 @@ module Handshake (
 	integerToByteString,
 	EcCurveType(..),
 --	addSign,
+	Extension(..), EcPointFormat(..),
 ) where
 
 import Prelude hiding (head, take, concat)
