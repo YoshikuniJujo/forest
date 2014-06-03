@@ -1,1 +1,25 @@
-runhaskell -i../../http-analysis -Wall myServer.hs 4492
+鍵交換部分の共通部分をくくり出してみる。
+
+まずはベースとなる共通部分を作成する。
+generateBase :: Base b => RandomGen -> b
+
+秘密値を生成する。
+generateSecret :: Secret s => RandomGen -> s
+
+共通部と秘密値から自分の公開値を計算する。
+calculatePublic :: (Base b, Secret s, Public p) => b -> s -> p
+
+自分の秘密値と相手の公開値から共有値を計算する。
+calculateCommon :: (Secret s, Public p, Common c) => s -> p -> c
+
+全体のアルゴリズムを示す型を作成し、それはDHクラスのインスタンスとする。
+
+class DH d where
+	type Base d
+	type Secret d
+	type Public d
+	type Common d
+	generateBase :: CPRG g => d -> g -> Base d
+	generateSecret :: CPRG g => d -> g -> Secret d
+	calculatePublic :: d -> Base d -> Secret d -> Public d
+	calculateCommon :: d -> Secret d -> Public d -> Common d
