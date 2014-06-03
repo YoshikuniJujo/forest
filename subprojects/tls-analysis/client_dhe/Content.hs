@@ -30,6 +30,8 @@ module Content (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+
+	CipherSuite(..),
 ) where
 
 import Prelude hiding (concat, head)

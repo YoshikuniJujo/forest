@@ -58,9 +58,9 @@ instance Parsable ServerKeyExchange where
 
 parseServerKeyExchange :: ByteStringM ServerKeyExchange
 parseServerKeyExchange = do
-	(dhPl, dhP) <- toI . BS.unpack <$> takeLen 2
-	(dhGl, dhG) <- toI . BS.unpack <$> takeLen 2
-	(dhYsl, dhYs) <- toI . BS.unpack <$> takeLen 2
+	(_dhPl, dhP) <- toI . BS.unpack <$> takeLen 2
+	(_dhGl, dhG) <- toI . BS.unpack <$> takeLen 2
+	(_dhYsl, dhYs) <- toI . BS.unpack <$> takeLen 2
 	hashA <- headBS
 	sigA <- headBS
 	sign <- takeLen 2
