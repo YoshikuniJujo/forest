@@ -1,0 +1,8 @@
+<stream:stream to="localhost" xml:lang="en" version="1.0"
+	xmlns="jabber:client" xmlns:stream="http://etherx.jabber.org/streams">
+<auth mechanism="DIGEST-MD5" xmlns="urn:ietf:params:xml:ns:xmpp-sasl"/>
+<response xmlns="urn:ietf:params:xml:ns:xmpp-sasl">dXNlcm5bbWU...</response>
+<message id="prof_5" to="yoshio@localhost" type="chat"><body>hello</body></message>
+
+
+</stream:stream>
