@@ -1,0 +1,4 @@
+certtool --generate-privkey --outfile client_ecdsa.key --sec-param high --ecc
+--hash=sha1
+certtool --generate-request --load-privkey client_ecdsa.key --outfile client_ecdsa.csr
+certtool -c --load-request client_ecdsa.csr --load-ca-certificate cacert.pem --load-ca-privkey private/cakey.pem --outfile client_ecdsa.cert

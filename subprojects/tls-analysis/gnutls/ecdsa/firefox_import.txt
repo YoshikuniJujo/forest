@@ -1,0 +1,1 @@
+certtool --to-p12 --outder --load-certificate client_ecdsa.cert --outfile client_ecdsa.p12
