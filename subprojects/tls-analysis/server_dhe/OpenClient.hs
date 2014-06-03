@@ -97,34 +97,24 @@ tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts ContentTypeApplicationData
 
 tPutWithCT :: TlsClient -> ContentType -> BS.ByteString -> IO ()
-tPutWithCT ts ct msg = case (vr, cs) of
-	(TLS12, CipherSuite _ AES_128_CBC_SHA) -> do
-		ebody <- atomically $ do
-			gen <- readTVar tvgen
-			sn <- readTVar tvsn
-			let (e, gen') = enc hashSha1 gen sn
-			writeTVar tvgen gen'
-			writeTVar tvsn $ succ sn
-			return e
-		BS.hPut h $ BS.concat [
-			contentTypeToByteString ct,
-			versionToByteString v,
-			lenBodyToByteString 2 ebody ]
-	(TLS12, CipherSuite _ AES_128_CBC_SHA256) -> do
-		ebody <- atomically $ do
-			gen <- readTVar tvgen
-			sn <- readTVar tvsn
-			let (e, gen') = enc hashSha256 gen sn
-			writeTVar tvgen gen'
-			writeTVar tvsn $ succ sn
-			return e
-		BS.hPut h $ BS.concat [
-			contentTypeToByteString ct,
-			versionToByteString v,
-			lenBodyToByteString 2 ebody ]
-	_ -> error "tPutWithCT: not implemented"
+tPutWithCT ts ct msg = do
+	hs <- case cs of
+		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
+		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
+		_ -> error "OpenClient.tPutWithCT"
+	ebody <- atomically $ do
+		gen <- readTVar tvgen
+		sn <- readTVar tvsn
+		let (e, gen') = enc hs gen sn
+		writeTVar tvgen gen'
+		writeTVar tvsn $ succ sn
+		return e
+	BS.hPut h $ BS.concat [
+		contentTypeToByteString ct,
+		versionToByteString v,
+		lenBodyToByteString 2 ebody ]
 	where
-	(vr, cs, h) = vrcsh ts
+	(_vr, cs, h) = vrcsh ts
 	key = tlsServerWriteKey ts
 	mk = tlsServerWriteMacKey ts
 	v = Version 3 3
@@ -149,35 +139,28 @@ tGetWhole ts = do
 	where
 	h = tlsHandle ts
 
+getModifyTVar :: TVar a -> (a -> a) -> STM a
+getModifyTVar tv m = do
+	x <- readTVar tv
+	writeTVar tv $ m x
+	return x
+
 tGetWholeWithCT :: TlsClient -> IO (ContentType, BS.ByteString)
-tGetWholeWithCT ts = case (vr, cs) of
-	(TLS12, CipherSuite _ AES_128_CBC_SHA) -> do
-		ct <- byteStringToContentType <$> BS.hGet h 1
-		v <- byteStringToVersion <$> BS.hGet h 2
-		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
-		sn <- atomically $ do
-			n <- readTVar tvsn
-			writeTVar tvsn $ succ n
-			return n
-		ret <- case dec hashSha1 sn ct v enc of
-			Right r -> return r
-			Left err -> error err
-		return (ct, ret)
-	(TLS12, CipherSuite _ AES_128_CBC_SHA256) -> do
-		ct <- byteStringToContentType <$> BS.hGet h 1
-		v <- byteStringToVersion <$> BS.hGet h 2
-		enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
-		sn <- atomically $ do
-			n <- readTVar tvsn
-			writeTVar tvsn $ succ n
-			return n
-		ret <- case dec hashSha256 sn ct v enc of
-			Right r -> return r
-			Left err -> error err
-		return (ct, ret)
-	_ -> error "tGetWhole: not implemented"
+tGetWholeWithCT ts = do
+	hs <- case cs of
+		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
+		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
+		_ -> error "bad hash"
+	ct <- byteStringToContentType <$> BS.hGet h 1
+	v <- byteStringToVersion <$> BS.hGet h 2
+	enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
+	sn <- atomically $ getModifyTVar tvsn succ
+	ret <- case dec hs sn ct v enc of
+		Right r -> return r
+		Left err -> error err
+	return (ct, ret)
 	where
-	(vr, cs, h) = vrcsh ts
+	(_vr, cs, h) = vrcsh ts
 	key = tlsClientWriteKey ts
 	mk = tlsClientWriteMacKey ts
 	tvsn = tlsClientSequenceNumber ts

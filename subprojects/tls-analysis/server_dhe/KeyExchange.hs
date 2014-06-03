@@ -33,7 +33,7 @@ import Crypto.PubKey.DH
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ps _ys _ha _sa s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
@@ -42,7 +42,7 @@ verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 addSign :: RSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> ServerKeyExchange
 addSign pk cr sr ske@(ServerKeyExchange ps ys ha sa _ "") = let
-	hash = SHA1.hash $ BS.concat $ [cr, sr, getBody ske]
+	hash = SHA1.hash $ BS.concat [cr, sr, getBody ske]
 	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
 		End Sequence, OctetString hash, End Sequence]
 	bs = encodeASN1' DER asn1
@@ -61,7 +61,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 	BS.concat $ map (lenBodyToByteString 2) [
 		BS.pack $ toWords p,
 		BS.pack $ toWords g,
-		BS.pack $ toWords $ fromIntegral ys ]
+		BS.pack . toWords $ fromIntegral ys ]
 getBody _ = error "bad"
 
 data ServerKeyExchange
@@ -78,9 +78,9 @@ instance Parsable ServerKeyExchange where
 
 parseServerKeyExchange :: ByteStringM ServerKeyExchange
 parseServerKeyExchange = do
-	(dhPl, dhP) <- toI . BS.unpack <$> takeLen 2
-	(dhGl, dhG) <- toI . BS.unpack <$> takeLen 2
-	(dhYsl, dhYs) <- toI . BS.unpack <$> takeLen 2
+	(_dhPl, dhP) <- toI . BS.unpack <$> takeLen 2
+	(_dhGl, dhG) <- toI . BS.unpack <$> takeLen 2
+	(_dhYsl, dhYs) <- toI . BS.unpack <$> takeLen 2
 	hashA <- headBS
 	sigA <- headBS
 	sign <- takeLen 2

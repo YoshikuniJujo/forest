@@ -346,6 +346,11 @@ clientVerifyHash pub = do
 		RSA.digestToASN1 RSA.hashDescrSHA256 sha256
 	return hashed
 
+tlsSetRandomGen :: SystemRNG -> TlsIo ()
+tlsSetRandomGen g = do
+	tlss <- get
+	put tlss{ tlssRandomGen = g }
+
 tlsEncryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo BS.ByteString
 tlsEncryptMessage ct v msg = do
 	version <- gets tlssVersion
@@ -359,14 +364,12 @@ tlsEncryptMessage ct v msg = do
 		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
+				tlsSetRandomGen gen'
 				return ret
 		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
+				tlsSetRandomGen gen'
 				return ret
 		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
 		(_, _, Nothing, _) -> throwError "encryptMessage: No key"

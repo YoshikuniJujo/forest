@@ -23,7 +23,6 @@ import System.IO
 import Content
 import Fragment
 
-import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
@@ -109,11 +108,13 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
+dhParams :: Params
+dhPrivate :: PrivateNumber
 (dhParams, dhPrivate) = unsafePerformIO $ do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	let	(ps, g') = generateParams g 512 2
 --	let	(ps, g') = generateParams g 128 2
-		(pr, g'') = generatePrivate g' ps
+		(pr, _g'') = generatePrivate g' ps
 	return (ps, pr)
 	
 
@@ -125,12 +126,12 @@ serverHello pk css cc mcs = do
 --	g <- getRandomGen
 --	let	(ps, g') = generateParams g 8 2
 --		(pr, g'') = generatePrivate g' ps
-	let	ske = HandshakeServerKeyExchange $ addSign pk cr sr $
+	let	ske = HandshakeServerKeyExchange . addSign pk cr sr $
 			ServerKeyExchange
 				dhParams (calculatePublic dhParams dhPrivate)
 				2 1 "hogeru" ""
 	liftIO $ print ske
-	liftIO $ print $ contentToFragment $ ContentHandshake version ske
+	liftIO . print . contentToFragment $ ContentHandshake version ske
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 --	setRandomGen g''
 	setVersion version
@@ -138,13 +139,13 @@ serverHello pk css cc mcs = do
 	cacheCipherSuite $ cipherSuite css
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
-		Just $ HandshakeServerHello $ ServerHello version (Random sr)
+		Just . HandshakeServerHello $ ServerHello version (Random sr)
 			sessionId
 			(cipherSuite css) compressionMethod Nothing,
 		Just $ HandshakeCertificate cc,
-		Just $ ske,
+		Just ske,
 		case mcs of
-			Just cs -> Just $ HandshakeCertificateRequest
+			Just cs -> Just . HandshakeCertificateRequest
 				. CertificateRequest
 					[clientCertificateType]
 					[clientCertificateAlgorithm]
@@ -191,33 +192,17 @@ clientCertificate cs = do
 	uan _ = Nothing
 
 clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
-clientKeyExchange sk (Version cvmjr cvmnr) = do
+clientKeyExchange _sk (Version _cvmjr _cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
-			liftIO $ putStrLn $ "CLIENT KEY: " ++ show epms
+			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let pms = getShared dhParams dhPrivate $
 				byteStringToPublicNumber epms
-			generateKeys $ integerToByteString $ fromIntegral pms
-			{-
-			r <- randomByteString 46
-			pms <- mkpms epms `catchError` const (return $ dummy r)
-			generateKeys pms
-			-}
+			generateKeys . integerToByteString $ fromIntegral pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
-	where
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
-	mkpms epms = do
-		pms <- decryptRSA sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
-		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] -> do
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
-		return pms
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
@@ -268,7 +253,7 @@ clientFinished = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"bad version"
-			unless (f == fhc) . throwError $ Alert
+			unless (f == fhc) . throwError . Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError $
 				"Finished error:\n\t" ++
@@ -299,7 +284,7 @@ readHandshake ck = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"Not supported layer version"
-		_ -> throwError $ Alert
+		_ -> throwError . Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage $
 			"Not Handshake: " ++ show cnt
