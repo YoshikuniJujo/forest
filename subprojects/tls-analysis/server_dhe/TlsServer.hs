@@ -1,18 +1,16 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
 
-import System.IO.Unsafe
-import "crypto-random" Crypto.Random
-
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Exception
 import Data.Maybe
+import qualified Data.ByteString as BS
 import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
@@ -27,6 +25,8 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import Crypto.PubKey.DH
+
+import DH
 
 version :: Version
 version = Version 3 3
@@ -108,32 +108,10 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-dhParams :: Params
-dhPrivate :: PrivateNumber
-(dhParams, dhPrivate) = unsafePerformIO $ do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, g') = generateParams g 512 2
---	let	(ps, g') = generateParams g 128 2
-		(pr, _g'') = generatePrivate g' ps
-	return (ps, pr)
-	
-
 serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 	Maybe CertificateStore -> TlsIo ()
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
-	Just cr <- getClientRandom
---	g <- getRandomGen
---	let	(ps, g') = generateParams g 8 2
---		(pr, g'') = generatePrivate g' ps
-	let	ske = HandshakeServerKeyExchange . addSign pk cr sr $
-			ServerKeyExchange
-				dhParams (calculatePublic dhParams dhPrivate)
-				2 1 "hogeru" ""
-	liftIO $ print ske
-	liftIO . print . contentToFragment $ ContentHandshake version ske
-	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
---	setRandomGen g''
 	setVersion version
 	setServerRandom $ Random sr
 	cacheCipherSuite $ cipherSuite css
@@ -142,8 +120,11 @@ serverHello pk css cc mcs = do
 		Just . HandshakeServerHello $ ServerHello version (Random sr)
 			sessionId
 			(cipherSuite css) compressionMethod Nothing,
-		Just $ HandshakeCertificate cc,
-		Just ske,
+		Just $ HandshakeCertificate cc
+	 ]
+	sendServerKeyExchange pk sr
+	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
+		map (ContentHandshake version) $ catMaybes [
 		case mcs of
 			Just cs -> Just . HandshakeCertificateRequest
 				. CertificateRequest
@@ -197,7 +178,7 @@ clientKeyExchange _sk (Version _cvmjr _cvmnr) = do
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
-			let pms = getShared dhParams dhPrivate $
+			let pms = getShared dhparams dhprivate $
 				byteStringToPublicNumber epms
 			generateKeys . integerToByteString $ fromIntegral pms
 		_ -> throwError $ Alert AlertLevelFatal
