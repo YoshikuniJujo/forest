@@ -18,8 +18,9 @@ import Fragment
 import Content
 import Basic
 
-openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> IO TlsServer
-openTlsServer name ccs certStore sv = runOpen (handshake name ccs certStore) sv
+openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
+openTlsServer name ccs certStore sv cs =
+	runOpen (handshake name ccs certStore cs) sv
 
 isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
@@ -27,15 +28,15 @@ isIncluded (_, CertificateChain certs) dns = let
 	idn `elem` dns
 	
 
-handshake :: String ->
-	[(PrivateKey, CertificateChain)] -> CertificateStore -> TlsIo Content ()
-handshake name ccs certStore = do
+handshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
+	[CipherSuite] -> TlsIo Content ()
+handshake name ccs certStore cs = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	let ch = clientHello cr
+	let ch = clientHello cr cs
 	writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch

@@ -51,12 +51,9 @@ serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 		CompressionMethodNull
 		Nothing
 
-clientHello :: Random -> Content
-clientHello cr = ContentHandshake (Version 3 3) . HandshakeClientHello $
-	ClientHello (Version 3 3) cr (SessionId "") [
-			TLS_RSA_WITH_AES_128_CBC_SHA256,
-			TLS_RSA_WITH_AES_128_CBC_SHA
-		 ]
+clientHello :: Random -> [CipherSuite] -> Content
+clientHello cr cs = ContentHandshake (Version 3 3) . HandshakeClientHello $
+	ClientHello (Version 3 3) cr (SessionId "") cs
 		[CompressionMethodNull]
 		Nothing
 

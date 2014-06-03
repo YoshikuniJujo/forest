@@ -10,12 +10,39 @@ import Network
 import TlsClient
 import Data.HandleLike
 
+import Control.Monad
+import System.Exit
+import System.Console.GetOpt
+
+import Basic
+
+data Option
+	= SHA1
+	| SHA256
+	deriving (Show, Eq)
+
+optDescr :: [OptDescr Option]
+optDescr = [
+	Option "" ["sha1"] (NoArg SHA1) "Use SHA1",
+	Option "" ["sha256"] (NoArg SHA256) "Use SHA256"
+ ]
+
+getCipherSuites :: [Option] -> [CipherSuite]
+getCipherSuites opts = case (SHA1 `elem` opts, SHA256 `elem` opts) of
+	(True, False) -> [TLS_RSA_WITH_AES_128_CBC_SHA]
+--	(False, True) -> [TLS_RSA_WITH_AES_128_CBC_SHA256]
+	_ -> [	TLS_RSA_WITH_AES_128_CBC_SHA256,
+		TLS_RSA_WITH_AES_128_CBC_SHA ]
+
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
 
 main :: IO ()
 main = do
-	svpna : name : _ <- getArgs
+	(opts, svpna : name : _, errs) <- getOpt Permute optDescr <$> getArgs
+	unless (null errs) $ do
+		mapM_ putStr errs
+		exitFailure
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
 --	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
@@ -25,7 +52,8 @@ main = do
 	 ]
 	sv <- connectTo "localhost" . PortNumber . fromIntegral =<<
 		(readIO svpna :: IO Int)
-	tls <- openTlsServer name [(pkys, certChain)] certStore sv
+	let suit = getCipherSuites opts
+	tls <- openTlsServer name [(pkys, certChain)] certStore sv suit
 	hlPut tls $
 		"GET / HTTP/1.1\r\n" +++
 		"Host: localhost:4492\r\n" +++
