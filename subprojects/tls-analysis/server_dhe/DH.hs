@@ -2,6 +2,7 @@
 
 module DH (
 	dhparams, dhprivate, sendServerKeyExchange,
+	clientKeyExchange,
 ) where
 
 import Control.Applicative
@@ -41,3 +42,38 @@ sendServerKeyExchange pk sr = do
 		map (ContentHandshake version) $ catMaybes [
 		Just ske
 	 ]
+
+clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
+clientKeyExchange _sk (Version _cvmjr _cvmnr) = do
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
+			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
+			let pms = getShared dhparams dhprivate $
+				byteStringToPublicNumber epms
+			generateKeys . integerToByteString $ fromIntegral pms
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientKeyExchange: not client key exchange"
+
+readHandshake :: (Version -> Bool) -> TlsIo Handshake
+readHandshake ck = do
+	cnt <- readContent ck
+	case cnt of
+		ContentHandshake v hs
+			| ck v -> return hs
+			| otherwise -> throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionProtocolVersion
+				"Not supported layer version"
+		_ -> throwError . Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage $
+			"Not Handshake: " ++ show cnt
+
+readContent :: (Version -> Bool) -> TlsIo Content
+readContent vc = do
+	c <- getContent (readBufferContentType vc) (readByteString (== version))
+		<* updateSequenceNumber Client
+	fragmentUpdateHash $ contentToFragment c
+	return c

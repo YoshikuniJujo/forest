@@ -10,7 +10,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Exception
 import Data.Maybe
-import qualified Data.ByteString as BS
 import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
@@ -23,8 +22,6 @@ import Fragment
 
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
-
-import Crypto.PubKey.DH
 
 import DH
 
@@ -171,19 +168,6 @@ clientCertificate cs = do
 		_ -> error "TlsServer.clientCertificate: empty certificate chain"
 	uan (AltNameDNS s) = Just s
 	uan _ = Nothing
-
-clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
-clientKeyExchange _sk (Version _cvmjr _cvmnr) = do
-	hs <- readHandshake (== version)
-	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
-			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
-			let pms = getShared dhparams dhprivate $
-				byteStringToPublicNumber epms
-			generateKeys . integerToByteString $ fromIntegral pms
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
