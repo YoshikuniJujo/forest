@@ -1,12 +1,12 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
 
-import System.IO.Unsafe
-import "crypto-random" Crypto.Random
+-- import System.IO.Unsafe
+-- import "crypto-random" Crypto.Random
 
 import Control.Applicative
 import Control.Monad
@@ -29,12 +29,12 @@ import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import Crypto.PubKey.DH
+-- import Crypto.PubKey.DH
 
 import Types
 
 import Crypto.PubKey.ECC.Prim
-import Crypto.Types.PubKey.ECC
+-- import Crypto.Types.PubKey.ECC
 
 version :: Version
 version = Version 3 3
@@ -86,10 +86,10 @@ withClient = (((flip bracket hlClose .) .) .) . openClient
 handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
-	(cv, css) <- clientHello
+	css <- clientHello
 	serverHello sk css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
-	clientKeyExchange sk cv
+	clientKeyExchange
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -97,13 +97,13 @@ handshake sk cc mcs = do
 	serverFinished
 	return $ maybe [] snd mpn
 
-clientHello :: TlsIo (Version, [CipherSuite])
+clientHello :: TlsIo [CipherSuite]
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
 	liftIO $ print hs
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
-			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
+			err vsn css cms >> setClientRandom rnd >> return css
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientHello: not client hello"
@@ -119,13 +119,6 @@ clientHello = do
 			AlertLevelFatal AlertDescriptionDecodeError
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
-
-(dhParams, dhPrivate) = unsafePerformIO $ do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, g') = generateParams g 512 2
---	let	(ps, g') = generateParams g 128 2
-		(pr, g'') = generatePrivate g' ps
-	return (ps, pr)
 	
 
 private :: Integer
@@ -136,11 +129,8 @@ serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
 	Just cr <- getClientRandom
---	g <- getRandomGen
---	let	(ps, g') = generateParams g 8 2
---		(pr, g'') = generatePrivate g' ps
 	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
-		ske = HandshakeServerKeyExchange $ addSign pk cr sr $
+		ske = HandshakeServerKeyExchange . addSign pk cr sr $
 			ServerKeyExchangeEc
 				NamedCurve
 				Secp256r1
@@ -150,28 +140,22 @@ serverHello pk css cc mcs = do
 				1
 				"\x00\x05 defg"
 				""
-			{-
-				dhParams (calculatePublic dhParams dhPrivate)
-				2 1 "hogeru" ""
-				-}
 	liftIO $ print ske
---	liftIO $ print $ contentToFragment $ ContentHandshake version ske
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
---	setRandomGen g''
 	setVersion version
 	setServerRandom $ Random sr
 	cacheCipherSuite $ cipherSuite css
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
-		Just $ HandshakeServerHello $ ServerHello version (Random sr)
+		Just . HandshakeServerHello . ServerHello version (Random sr)
 			sessionId
 			(cipherSuite css) compressionMethod $ Just [
 				ExtensionEcPointFormat [EcPointFormatUncompressed]
 			 ],
 		Just $ HandshakeCertificate cc,
-		Just $ ske,
+		Just ske,
 		case mcs of
-			Just cs -> Just $ HandshakeCertificateRequest
+			Just cs -> Just . HandshakeCertificateRequest
 				. CertificateRequest
 					[clientCertificateType]
 					[clientCertificateAlgorithm]
@@ -217,12 +201,12 @@ clientCertificate cs = do
 	uan (AltNameDNS s) = Just s
 	uan _ = Nothing
 
-clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
-clientKeyExchange sk (Version cvmjr cvmnr) = do
+clientKeyExchange :: TlsIo ()
+clientKeyExchange = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
-			liftIO $ putStrLn $ "CLIENT KEY: " ++ show point
+			liftIO . putStrLn $ "CLIENT KEY: " ++ show point
 			let	(x, y) = BS.splitAt 32 $ BS.tail point
 				p = Point
 					(byteStringToInteger x)
@@ -231,30 +215,11 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 					Point x' _ = pointMul secp256r1 private p in
 					integerToByteString x'
 			liftIO . putStrLn $ "PMS: " ++ show pms
---			let pms = getShared dhParams dhPrivate $
---				byteStringToPublicNumber epms
---			generateKeys $ integerToByteString $ fromIntegral pms
 			generateKeys pms
 			return ()
-			{-
-			r <- randomByteString 46
-			pms <- mkpms epms `catchError` const (return $ dummy r)
-			generateKeys pms
-			-}
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
-	where
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
-	mkpms epms = do
-		pms <- decryptRSA sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
-		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] -> do
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
-		return pms
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
@@ -305,7 +270,7 @@ clientFinished = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"bad version"
-			unless (f == fhc) . throwError $ Alert
+			unless (f == fhc) . throwError . Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError $
 				"Finished error:\n\t" ++
@@ -336,7 +301,7 @@ readHandshake ck = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"Not supported layer version"
-		_ -> throwError $ Alert
+		_ -> throwError . Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage $
 			"Not Handshake: " ++ show cnt

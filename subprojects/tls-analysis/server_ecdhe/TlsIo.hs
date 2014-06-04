@@ -355,26 +355,24 @@ tlsEncryptMessage ct v msg = do
 	updateSequenceNumber Server
 	mmk <- macKey Server
 	gen <- gets tlssRandomGen
-	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
-		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
-		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
-		(Just CT.TLS12, _, _, _) -> throwError $ Alert
+	hs <- case cs of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA -> return CT.hashSha1
+		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> return CT.hashSha256
+		CT.CipherSuite _ CT.MsgEncNULL -> return undefined
+		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionIllegalParameter
 			"tlsEncryptMessage: not implemented cipher suite"
+	case (version, cs, mwk, mmk) of
+		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
+		(Just CT.TLS12, _, Just wk, Just mk)
+			-> do	let (ret, gen') =
+					CT.encryptMessage hs gen wk sn mk ct v msg
+				tlss <- get
+				put tlss{ tlssRandomGen = gen' }
+				return ret
+		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
+		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
 		(Just vsn, _, _, _) -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion

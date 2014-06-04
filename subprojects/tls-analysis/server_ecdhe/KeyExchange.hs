@@ -12,10 +12,6 @@ module KeyExchange (
 	addSign,
 ) where
 
-import GHC.Real
-
-import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -51,7 +47,7 @@ secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
@@ -60,7 +56,7 @@ verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 addSign :: RSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> ServerKeyExchange
 addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
-	hash = SHA1.hash $ BS.concat $ [cr, sr, getBody ske]
+	hash = SHA1.hash $ BS.concat [cr, sr, getBody ske]
 	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
 		End Sequence, OctetString hash, End Sequence]
 	bs = encodeASN1' DER asn1
@@ -75,8 +71,8 @@ addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
 addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
-getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
-	BS.concat $ [
+getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
+	BS.concat [
 		toByteString ct,
 		toByteString nc,
 		lenBodyToByteString 1 $ encodePoint t p]
@@ -92,12 +88,13 @@ data ServerKeyExchange
 encodePoint :: Word8 -> Point -> BS.ByteString
 encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
+encodePoint _ _ = error "KeyExchange.encodePoint"
 
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of
 	Just (t, rest) -> let (x, y) = BS.splitAt 32 rest in
 		(t, Point (toI $ BS.unpack x) (toI $ BS.unpack y))
-	_ -> error "KeyExchange:readPoint"
+	_ -> error "KeyExchange.decodePoint"
 
 instance Parsable ServerKeyExchange where
 	parse = parseServerKeyExchange
