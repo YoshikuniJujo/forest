@@ -63,7 +63,7 @@ version = Version 3 3
 serverHello :: Random -> Content
 serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
 	ServerHello (Version 3 3) sr (SessionId "")
-		TLS_RSA_WITH_AES_128_CBC_SHA
+		(CipherSuite RSA AES_128_CBC_SHA)
 		CompressionMethodNull
 		Nothing
 

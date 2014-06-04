@@ -63,10 +63,10 @@ handshake ccs certStore opts = do
 		(helloVersionFromOptions opts)
 		(clientVersionFromOptions opts)
 		(if OptEmptyCipherSuite `elem` opts then [] else [
-			TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-			TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
-			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256])
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA256 ])
 --			TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
 --			TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
 --			TLS_RSA_WITH_AES_128_CBC_SHA256,
