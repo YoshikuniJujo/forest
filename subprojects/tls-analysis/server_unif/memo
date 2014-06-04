@@ -14,12 +14,18 @@ calculateCommon :: (Secret s, Public p, Common c) => s -> p -> c
 
 全体のアルゴリズムを示す型を作成し、それはDHクラスのインスタンスとする。
 
-class DH d where
-	type Base d
-	type Secret d
-	type Public d
-	type Common d
-	generateBase :: CPRG g => d -> g -> Base d
-	generateSecret :: CPRG g => d -> g -> Secret d
-	calculatePublic :: d -> Base d -> Secret d -> Public d
-	calculateCommon :: d -> Secret d -> Public d -> Common d
+class Base b where
+	type Param b
+	type Secret b
+	type Public b
+	generateBase :: CPRG g => g -> Param b -> (b, g)
+	generateSecret :: CPRG g => g -> b -> (Secret b, g)
+	calculatePublic :: b -> Secret b -> Public b
+	calculateCommon :: b -> Secret b -> Public b -> ByteString
+
+	encodeBase :: b -> ByteString
+	decodeBase :: ByteString -> b
+	encodePublic :: Public b -> ByteString
+	decodePublic :: ByteString -> Public b
+
+baseは

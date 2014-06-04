@@ -24,7 +24,7 @@ import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import qualified DH
+import qualified DiffieHellman as DH
 
 version :: Version
 version = Version 3 3
@@ -73,10 +73,12 @@ handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
 	(cv, css) <- clientHello
-	serverHello sk css cc mcs
+	let ps = DH.dhparams
+	pn <- liftIO $ DH.dhprivate ps
+	serverHello sk ps pn css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
-	if dhe then DH.clientKeyExchange sk cv else clientKeyExchange sk cv
+	if dhe then DH.clientKeyExchange ps pn cv else clientKeyExchange sk cv
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -107,8 +109,9 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain -> Maybe CertificateStore -> TlsIo ()
-serverHello sk css cc mcs = do
+serverHello :: DH.Base b => RSA.PrivateKey -> b -> DH.Secret b -> [CipherSuite] ->
+	CertificateChain -> Maybe CertificateStore -> TlsIo ()
+serverHello sk ps pn css cc mcs = do
 	sr@(Random rsr) <- Random <$> randomByteString 32
 	setVersion version
 	setServerRandom sr
@@ -121,7 +124,7 @@ serverHello sk css cc mcs = do
 	 ]
 	dh <- isEphemeralDH
 	liftIO $ print dh
-	when dh $ DH.sendServerKeyExchange sk rsr
+	when dh $ DH.sendServerKeyExchange ps pn sk rsr
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		case mcs of

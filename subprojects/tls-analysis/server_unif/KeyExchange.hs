@@ -5,8 +5,13 @@ module KeyExchange (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+	byteStringToInteger,
 	byteStringToPublicNumber,
 	addSign,
+
+	lenBodyToByteString,
+	takeLen,
+	evalByteStringM,
 ) where
 
 import GHC.Real
@@ -48,12 +53,23 @@ addSign pk cr sr ske@(ServerKeyExchange ps ys ha sa _ "") = let
 	bs = encodeASN1' DER asn1
 	pd = BSC.concat [
 		"\x00\x01",
---		BSC.replicate (1021 - BS.length bs) '\xff',
 		BSC.replicate (125 - BS.length bs) '\xff',
 		"\NUL",
 		bs ]
-	sn = RSA.dp Nothing pk pd in -- pd in
+	sn = RSA.dp Nothing pk pd in
 	ServerKeyExchange ps ys ha sa sn ""
+addSign sk cr sr (ServerKeyExchange' ps ys ha sa _) = let
+	hash = SHA1.hash $ BS.concat [cr, sr, ps, ys]
+	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
+		End Sequence, OctetString hash, End Sequence]
+	bs = encodeASN1' DER asn1
+	pd = BSC.concat [
+		"\x00\x01",
+		BSC.replicate (125 - BS.length bs) '\xff',
+		"\NUL",
+		bs ]
+	sn = RSA.dp Nothing sk pd in
+	ServerKeyExchange' ps ys ha sa sn
 addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
@@ -68,6 +84,8 @@ data ServerKeyExchange
 	= ServerKeyExchange Params PublicNumber
 		Word8 Word8 BS.ByteString
 		BS.ByteString
+	| ServerKeyExchange' ByteString ByteString
+		Word8 Word8 BS.ByteString
 	| ServerKeyExchangeRaw BS.ByteString
 	deriving Show
 
@@ -98,6 +116,13 @@ serverKeyExchangeToByteString
 		`BS.append`
 	BS.pack [hashA, sigA] `BS.append`
 	BS.concat [lenBodyToByteString 2 sign, rest]
+serverKeyExchangeToByteString
+	(ServerKeyExchange' params dhYs hashA sigA sign) =
+	BS.concat [
+		params,
+		dhYs,
+		BS.pack [hashA, sigA],
+		lenBodyToByteString 2 sign ]
 serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
 
 toI :: [Word8] -> (Int, Integer)
@@ -137,6 +162,9 @@ instance Integral SharedKey where
 
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . toWords
+
+byteStringToInteger :: BS.ByteString -> Integer
+byteStringToInteger = snd . toI . BS.unpack
 
 byteStringToPublicNumber :: BS.ByteString -> PublicNumber
 byteStringToPublicNumber = fromInteger . snd . toI . BS.unpack
