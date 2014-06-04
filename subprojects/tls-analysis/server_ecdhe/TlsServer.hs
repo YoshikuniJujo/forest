@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
@@ -29,12 +30,49 @@ import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
--- import Crypto.PubKey.DH
-
 import Types
 
 import Crypto.PubKey.ECC.Prim
--- import Crypto.Types.PubKey.ECC
+
+import qualified Base as B
+
+instance B.Base Curve where
+	type Param Curve = ()
+	type Secret Curve = Integer
+	type Public Curve = Point
+	generateBase g _ = (secp256r1, g)
+	generateSecret g _ = (0x1234567890, g)
+	calculatePublic = calculatePublicPoint
+	calculateCommon = calculateShared
+
+	encodeBase = encodeCurve
+	decodeBase = undefined
+	encodePublic = encodePublicPoint
+	decodePublic = decodePublicPoint
+
+calculateShared :: Curve -> Integer -> Point -> BS.ByteString
+calculateShared c sn pp =
+	let Point x _ = pointMul c sn pp in integerToByteString x
+
+encodePublicPoint :: Curve -> Point -> BS.ByteString
+encodePublicPoint _ (Point x y) = BS.cons 4 $ BS.append
+	(integerToByteString x) (integerToByteString y)
+encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
+
+decodePublicPoint :: Curve -> BS.ByteString -> Point
+decodePublicPoint _ bs = case BS.uncons bs of
+	Just (4, rest) -> let (x, y) = BS.splitAt 32 rest in
+		Point (byteStringToInteger x) (byteStringToInteger y)
+	_ -> error "TlsServer.decodePublicPoint"
+
+calculatePublicPoint :: Curve -> Integer -> Point
+calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
+
+encodeCurve :: Curve -> BS.ByteString
+encodeCurve c
+	| c == secp256r1 =
+		toByteString NamedCurve `BS.append` toByteString Secp256r1
+	| otherwise = error "TlsServer.encodeCurve: not implemented"
 
 version :: Version
 version = Version 3 3
@@ -119,7 +157,6 @@ clientHello = do
 			AlertLevelFatal AlertDescriptionDecodeError
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
-	
 
 private :: Integer
 private = 0x1234567890
@@ -129,17 +166,14 @@ serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
 	Just cr <- getClientRandom
-	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
+	let	public = B.calculatePublic secp256r1 private
 		ske = HandshakeServerKeyExchange . addSign pk cr sr $
-			ServerKeyExchangeEc
-				NamedCurve
-				Secp256r1
-				4
-				public
+			ServerKeyExchange
+				(B.encodeBase secp256r1)
+				(B.encodePublic secp256r1 public)
 				2
 				1
 				"\x00\x05 defg"
-				""
 	liftIO $ print ske
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 	setVersion version
@@ -207,13 +241,8 @@ clientKeyExchange = do
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
 			liftIO . putStrLn $ "CLIENT KEY: " ++ show point
-			let	(x, y) = BS.splitAt 32 $ BS.tail point
-				p = Point
-					(byteStringToInteger x)
-					(byteStringToInteger y)
-				pms = let
-					Point x' _ = pointMul secp256r1 private p in
-					integerToByteString x'
+			let	p = B.decodePublic secp256r1 point
+				pms = B.calculateCommon secp256r1 private p
 			liftIO . putStrLn $ "PMS: " ++ show pms
 			generateKeys pms
 			return ()

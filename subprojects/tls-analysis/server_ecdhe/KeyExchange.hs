@@ -27,26 +27,13 @@ import Data.ASN1.Error
 
 import Data.Bits
 
--- import Crypto.PubKey.DH
-
 import Parts
 import Crypto.Types.PubKey.ECC
-
-secp256r1 :: Curve
-secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
-	where
-	p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
-	a = 0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
-	b = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
-	g = Point gx gy
-	gx = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296
-	gy = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5
-	n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
-	h = 0x01
+import EcDhe
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
-verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
+verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ _ _ _ s) =
 	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
@@ -55,7 +42,7 @@ verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
 addSign :: RSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> ServerKeyExchange
-addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
+addSign pk cr sr ske@(ServerKeyExchange ctnc ecp ha sa _) = let
 	hash = SHA1.hash $ BS.concat [cr, sr, getBody ske]
 	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
 		End Sequence, OctetString hash, End Sequence]
@@ -67,21 +54,17 @@ addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
 		bs
 	 ]
 	sn = RSA.dp Nothing pk pd in
-	ServerKeyExchangeEc ct nc t p ha sa sn ""
+	ServerKeyExchange ctnc ecp ha sa sn
 addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
-getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
-	BS.concat [
-		toByteString ct,
-		toByteString nc,
-		lenBodyToByteString 1 $ encodePoint t p]
+getBody (ServerKeyExchange ctnc ecp _ha _sa _sign) =
+	BS.concat [ctnc, lenBodyToByteString 1 ecp]
 getBody _ = error "bad"
 
 data ServerKeyExchange
-	= ServerKeyExchangeEc EcCurveType NamedCurve Word8 Point
+	= ServerKeyExchange BS.ByteString BS.ByteString -- (Word8, Point)
 		Word8 Word8 BS.ByteString
-		BS.ByteString
 	| ServerKeyExchangeRaw BS.ByteString
 	deriving Show
 
@@ -90,11 +73,13 @@ encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
 encodePoint _ _ = error "KeyExchange.encodePoint"
 
+{-
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of
 	Just (t, rest) -> let (x, y) = BS.splitAt 32 rest in
 		(t, Point (toI $ BS.unpack x) (toI $ BS.unpack y))
 	_ -> error "KeyExchange.decodePoint"
+	-}
 
 instance Parsable ServerKeyExchange where
 	parse = parseServerKeyExchange
@@ -103,23 +88,23 @@ instance Parsable ServerKeyExchange where
 
 parseServerKeyExchange :: ByteStringM ServerKeyExchange
 parseServerKeyExchange = do
-	ct <- parse
-	nc <- parse
+	ct <- parse :: ByteStringM EcCurveType
+	nc <- parse :: ByteStringM NamedCurve
 	ecp <- takeLen 1
-	let (t, p) = decodePoint ecp
+--	let (t, p) = decodePoint ecp
 	ha <- headBS
 	sa <- headBS
 	sign <- takeLen 2
-	rest <- whole
-	return $ ServerKeyExchangeEc ct nc t p ha sa sign rest
+	"" <- whole
+	return $ ServerKeyExchange
+		(toByteString ct `BS.append` toByteString nc) ecp ha sa sign
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString ske@(ServerKeyExchangeEc _ _ _ _ ha sa sn rst) =
+serverKeyExchangeToByteString ske@(ServerKeyExchange _ _ ha sa sn) =
 	BS.concat [
 		getBody ske,
 		BS.pack [ha, sa],
-		lenBodyToByteString 2 sn,
-		rst
+		lenBodyToByteString 2 sn
 	 ]
 serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
 
@@ -139,22 +124,6 @@ toWords = reverse . integerToWords
 integerToWords :: Integer -> [Word8]
 integerToWords 0 = []
 integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
-
-{-
-instance Integral PublicNumber where
-	toInteger pn = case (numerator $ toRational pn, denominator $ toRational pn) of
-		(i, 1) -> i
-		_ -> error "bad"
-	quotRem pn1 pn2 = fromInteger *** fromInteger $
-		toInteger pn1 `quotRem` toInteger pn2
-
-instance Integral PrivateNumber where
-	toInteger pn = case (numerator $ toRational pn, denominator $ toRational pn) of
-		(i, 1) -> i
-		_ -> error "bad"
-	quotRem pn1 pn2 = fromInteger *** fromInteger $
-		toInteger pn1 `quotRem` toInteger pn2
-		-}
 
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . toWords

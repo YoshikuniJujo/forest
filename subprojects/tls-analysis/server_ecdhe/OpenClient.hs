@@ -22,6 +22,7 @@ module OpenClient (
 	TlsClient, runOpen, buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
 	checkName, getName,
+
 ) where
 
 import Prelude hiding (read)

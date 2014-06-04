@@ -22,6 +22,7 @@ module Content (
 	addSign,
 	Extension(..), EcPointFormat(..),
 	secp256r1,
+	toByteString,
 ) where
 
 import Control.Monad
