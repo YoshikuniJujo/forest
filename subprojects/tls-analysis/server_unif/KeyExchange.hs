@@ -79,7 +79,7 @@ parseServerKeyExchange = do
 	hashA <- headBS
 	sigA <- headBS
 	sign <- takeLen 2
-	rest <- whole
+	"" <- whole
 	return $ ServerKeyExchange prms (lenBodyToByteString 2 dhYs)
 		hashA sigA sign
 
