@@ -24,6 +24,7 @@ import Numeric
 
 import Control.Applicative
 import Data.ByteString (ByteString, pack, unpack)
+import qualified Data.ByteString as BS
 import Data.Word
 
 -- import Types
@@ -63,10 +64,11 @@ clientHelloClientVersion (ClientHello v _ _ _ _ _) = Just v
 clientHelloClientVersion _ = Nothing
 
 instance Parsable ClientHello where
-	parse = parseClientHello
+	parse = undefined -- parseClientHello
 	toByteString = clientHelloToByteString
 	listLength _ = Nothing
 
+{-
 parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
 	pv <- parse
@@ -78,9 +80,10 @@ parseClientHello = do
 	e <- emptyBS
 	mel <- if e then return Nothing else Just <$> parseExtensionList
 	return $ ClientHello pv r sid css cms mel
+	-}
 
 clientHelloToByteString :: ClientHello -> ByteString
-clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
+clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString pv,
 	toByteString r,
 	sessionIdToByteString sid,
@@ -126,7 +129,7 @@ parseServerHello = do
 	return $ ServerHello pv r sid cs cm me
 
 serverHelloToByteString :: ServerHello -> ByteString
-serverHelloToByteString (ServerHello pv r sid cs cm mes) = concat [
+serverHelloToByteString (ServerHello pv r sid cs cm mes) = BS.concat [
 	toByteString pv,
 	toByteString r,
 	sessionIdToByteString sid,

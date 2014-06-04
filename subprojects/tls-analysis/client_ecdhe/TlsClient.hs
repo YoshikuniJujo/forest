@@ -79,7 +79,7 @@ handshake ccs certStore opts = do
 	case (OptStartByChangeCipherSpec `elem` opts,
 		OptStartByFinished `elem` opts) of
 		(True, _) -> writeContent changeCipherSpec
-		(_, True) -> writeContent $ ContentHandshake version $
+		(_, True) -> writeContent . ContentHandshake version $
 			HandshakeFinished ""
 		_ -> writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
@@ -250,7 +250,7 @@ serverHelloDone pub = do
 		pms = let Point x _ = pointMul secp256r1 private p in integerToByteString x
 
 	liftIO . putStrLn $ "PUBLIC: " ++ show public
-	liftIO . putStrLn $ "EPMS  : " ++ concatMap (flip showHex "") (BS.unpack epms)
+	liftIO . putStrLn $ "EPMS  : " ++ concatMap (`showHex` "") (BS.unpack epms)
 
 --	g <- getRandomGen
 --	let	(pr, g') = generatePrivate g ps
@@ -271,7 +271,7 @@ serverHelloDone pub = do
 		shd <- readContent
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
-	return $ (getCertificateRequest crtReq, epms, pms)
+	return (getCertificateRequest crtReq, epms, pms)
 --		integerToByteString $ toInteger $ calculatePublic ps pr,
 --		integerToByteString $ numerator $ toRational dhsk)
 

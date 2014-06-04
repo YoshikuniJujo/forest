@@ -50,7 +50,7 @@ verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ps _ys _ha _sa s "") =
 		(hash, decodeASN1' BER unSign)
 		-}
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
@@ -66,7 +66,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 		BS.pack $ toWords $ fromIntegral ys ]
 		-}
 getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
-	BS.concat $ [
+	BS.concat [
 		toByteString ct,
 		toByteString nc,
 		lenBodyToByteString 1 $ encodePoint t p]
