@@ -29,10 +29,6 @@ import Fragment
 import Content
 import Basic
 
-import Crypto.PubKey.DH
-
-import Data.Ratio
-
 import Crypto.PubKey.ECC.Prim
 import Crypto.Types.PubKey.ECC
 
@@ -241,7 +237,7 @@ serverHelloDone pub = do
 	sr <- getServerRandom
 	liftIO . print $ verifyServerKeyExchange pub cr sr ske
 
-	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+--	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 
 	liftIO . putStrLn $ "NAMED CURVE: " ++ show nc
 	liftIO . putStrLn $ "(x, y) = " ++ show p

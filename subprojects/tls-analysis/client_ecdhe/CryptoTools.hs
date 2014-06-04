@@ -26,7 +26,7 @@ hashSha256 = (SHA256.hash, 32)
 
 encryptMessage :: Hash -> SystemRNG -> BS.ByteString -> Word64 -> BS.ByteString ->
 	ContentType -> Version -> BS.ByteString -> (BS.ByteString, SystemRNG)
-encryptMessage (hs, ml) gen key sn mk ct v msg = 
+encryptMessage (hs, _ml) gen key sn mk ct v msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac hs sn mk $ BS.concat [

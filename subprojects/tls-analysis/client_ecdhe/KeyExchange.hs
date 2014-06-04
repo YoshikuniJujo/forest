@@ -9,10 +9,6 @@ module KeyExchange (
 	encodePoint,
 ) where
 
-import GHC.Real
-
-import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import qualified Data.ByteString as BS
 
@@ -69,7 +65,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 		BS.pack $ toWords g,
 		BS.pack $ toWords $ fromIntegral ys ]
 		-}
-getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
+getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
 	BS.concat $ [
 		toByteString ct,
 		toByteString nc,
@@ -91,6 +87,7 @@ data ServerKeyExchange
 encodePoint :: Word8 -> Point -> BS.ByteString
 encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
+encodePoint _ PointO = error "KeyExchange.encodePoint: not implemented yet"
 
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of
