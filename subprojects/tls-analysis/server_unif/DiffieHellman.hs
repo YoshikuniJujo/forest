@@ -2,8 +2,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module DiffieHellman (
-	dhparams, dhprivate, sendServerKeyExchange,
-	clientKeyExchange,
+	dhparams, dhprivate,
+	sndServerKeyExchange,
+	rcvClientKeyExchange,
 	DH.PrivateNumber,
 	Base(..),
 ) where
@@ -11,12 +12,13 @@ module DiffieHellman (
 import Control.Applicative
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.DH as DH
 import System.IO.Unsafe
 import "crypto-random" Crypto.Random
 
 import KeyExchange
 
-import Base
+import ByteStringMonad
 
 dhparams :: DH.Params
 dhparams = unsafePerformIO $ do
@@ -46,7 +48,8 @@ encodeParams (DH.Params dhP dhG) = BS.concat [
  ]
 
 encodePublicNumber :: DH.PublicNumber -> BS.ByteString
-encodePublicNumber = lenBodyToByteString 2 . integerToByteString . fromIntegral
+encodePublicNumber =
+	lenBodyToByteString 2 . integerToByteString . \(DH.PublicNumber pn) -> pn
 
 instance Base DH.Params where
 	type Param DH.Params = (Int, Integer)
@@ -55,7 +58,8 @@ instance Base DH.Params where
 	generateBase rng (bits, gen) = DH.generateParams rng bits gen
 	generateSecret rng ps = DH.generatePrivate rng ps
 	calculatePublic ps sn = DH.calculatePublic ps sn
-	calculateCommon ps sn pn = integerToByteString . fromIntegral $ DH.getShared ps sn pn
+	calculateCommon ps sn pn = integerToByteString .
+		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
 	encodeBase = encodeParams
 	decodeBase bs = let Right ps = decodeParams bs in ps
 	encodePublic _ = encodePublicNumber

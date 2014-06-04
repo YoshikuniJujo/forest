@@ -26,6 +26,8 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import qualified DiffieHellman as DH
 
+-- import qualified EcDhe as ECDHE
+
 version :: Version
 version = Version 3 3
 
@@ -109,7 +111,7 @@ handshake ps cv sk mcs = do
 	serverToHelloDone mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
-	if dhe then DH.clientKeyExchange ps pn cv else clientKeyExchange sk cv
+	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange sk cv
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -157,7 +159,7 @@ serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 	liftIO $ print dh
 	Just rsr <- getServerRandom
-	when dh $ DH.sendServerKeyExchange ps pn sk rsr
+	when dh $ DH.sndServerKeyExchange ps pn sk rsr
 
 serverToHelloDone :: Maybe CertificateStore -> TlsIo ()
 serverToHelloDone mcs = do

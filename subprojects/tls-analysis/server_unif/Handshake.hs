@@ -55,13 +55,13 @@ import Data.ByteString(ByteString, pack)
 -- import ByteStringMonad
 -- import ToByteString
 -- import Parts
-import KeyExchange
+-- import KeyExchange
 
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
-	| HandshakeServerKeyExchange ServerKeyExchange
+	| HandshakeServerKeyExchange ByteString -- ServerKeyExchange
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
@@ -130,7 +130,7 @@ parseHandshake' rd = do
 		HandshakeTypeServerHello -> HandshakeServerHello `liftM` parse
 		HandshakeTypeCertificate -> HandshakeCertificate `liftM` parse
 		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange `liftM`
-			parse
+			whole
 		HandshakeTypeCertificateRequest ->
 			HandshakeCertificateRequest `liftM` parse
 		HandshakeTypeServerHelloDone ->
@@ -168,8 +168,8 @@ handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ toByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ toByteString crts
-handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeServerKeyExchange $ toByteString ske
+handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeServerKeyExchange ske
 handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
