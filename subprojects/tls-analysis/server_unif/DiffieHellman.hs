@@ -32,7 +32,7 @@ dhparams = unsafePerformIO $ do
 dhprivate :: Base b => b -> IO (Secret b)
 dhprivate b = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(pr, _g') = generateSecret g b -- DH.generatePrivate g dhparams
+	let	(pr, _g') = generateSecret g b
 	return pr
 	
 sendServerKeyExchange ::
@@ -40,33 +40,23 @@ sendServerKeyExchange ::
 sendServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . addSign pk cr sr $
-			ServerKeyExchange'
+			ServerKeyExchange
 				(encodeBase ps)
 				(encodePublic ps $ calculatePublic ps dhsk)
 				2 1 "hogeru"
-	{-
-			ServerKeyExchange
-				dhparams (DH.calculatePublic dhparams $
-					dhprivate {- dhparams -})
-				2 1 "hogeru" ""
-				-}
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		Just ske
 	 ]
 
--- clientKeyExchange :: RSA.PrivateKey -> DH.PrivateNumber -> Version -> TlsIo ()
 clientKeyExchange :: Base b => b -> Secret b -> Version -> TlsIo ()
 clientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
---			let pms = DH.getShared dhps dhpn $
---				byteStringToPublicNumber epms
 			let pms = calculateCommon dhps dhpn $ decodePublic dhps epms
 			generateKeys pms
---			generateKeys . integerToByteString $ fromIntegral pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
@@ -101,7 +91,6 @@ decodeParams = evalByteStringM $ do
 
 decodePublicNumber :: BS.ByteString -> Either String DH.PublicNumber
 decodePublicNumber = Right . fromInteger . byteStringToInteger
---	evalByteStringM $ fromInteger . byteStringToInteger <$> takeLen 2
 
 encodeParams :: DH.Params -> BS.ByteString
 encodeParams (DH.Params dhP dhG) = BS.concat [
