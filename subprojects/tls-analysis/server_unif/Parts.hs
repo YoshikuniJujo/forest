@@ -17,6 +17,8 @@ module Parts (
 	section, takeWords, takeLen, takeBS,
 
 	takeLen',
+
+	NamedCurve(..),
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -66,6 +68,8 @@ parseCipherSuite = do
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
 		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
+		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
+		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
 parseCipherSuite' :: Monad m => (Int -> m BS.ByteString) -> m CipherSuite
@@ -79,6 +83,8 @@ parseCipherSuite' rd = do
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
 		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
+		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
+		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
 instance Parsable' CipherSuite where
@@ -92,6 +98,8 @@ cipherSuiteToByteString (CipherSuite ECDHE_PSK NULL_SHA) = "\x00\x39"
 cipherSuiteToByteString (CipherSuite RSA AES_128_CBC_SHA256) = "\x00\x3c"
 cipherSuiteToByteString (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
 cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA256) = "\x00\x67"
+cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA) = "\xc0\x13"
+cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
 
@@ -166,3 +174,23 @@ instance Parsable' Version where
 	parse' rd = do
 		[vmjr, vmnr] <- takeWords' rd 2
 		return $ Version vmjr vmnr
+
+instance Parsable NamedCurve where
+	parse = parseNamedCurve
+	toByteString = namedCurveToByteString
+	listLength _ = Nothing
+
+parseNamedCurve :: ByteStringM NamedCurve
+parseNamedCurve = do
+	nc <- takeWord16
+	return $ case nc of
+		23 -> Secp256r1
+		24 -> Secp384r1
+		25 -> Secp521r1
+		_ -> NamedCurveRaw nc
+
+namedCurveToByteString :: NamedCurve -> ByteString
+namedCurveToByteString (Secp256r1) = word16ToByteString 23
+namedCurveToByteString (Secp384r1) = word16ToByteString 24
+namedCurveToByteString (Secp521r1) = word16ToByteString 25
+namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc

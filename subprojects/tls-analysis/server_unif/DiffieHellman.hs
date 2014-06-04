@@ -39,7 +39,7 @@ decodeParams = evalByteStringM $ do
 	return (DH.Params dhP dhG)
 
 decodePublicNumber :: BS.ByteString -> Either String DH.PublicNumber
-decodePublicNumber = Right . fromInteger . byteStringToInteger
+decodePublicNumber = Right . fromInteger . byteStringToInteger . BS.drop 2
 
 encodeParams :: DH.Params -> BS.ByteString
 encodeParams (DH.Params dhP dhG) = BS.concat [

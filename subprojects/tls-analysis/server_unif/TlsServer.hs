@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
@@ -20,13 +20,15 @@ import System.IO
 import Content
 import Fragment
 
+import "crypto-random" Crypto.Random
+
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import qualified DiffieHellman as DH
 
--- import qualified EcDhe as ECDHE
+import qualified EcDhe as ECDHE
 
 version :: Version
 version = Version 3 3
@@ -36,6 +38,10 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
+	| CipherSuite ECDHE_RSA AES_128_CBC_SHA256 `elem` css =
+		CipherSuite ECDHE_RSA AES_128_CBC_SHA256
+	| CipherSuite ECDHE_RSA AES_128_CBC_SHA `elem` css =
+		CipherSuite ECDHE_RSA AES_128_CBC_SHA
 	| CipherSuite DHE_RSA AES_128_CBC_SHA256 `elem` css =
 		CipherSuite DHE_RSA AES_128_CBC_SHA256
 	| CipherSuite DHE_RSA AES_128_CBC_SHA `elem` css =
@@ -71,6 +77,9 @@ withClient :: Handle
 	-> (TlsClient -> IO a) -> IO a
 withClient = (((flip bracket hlClose .) .) .) . openClient
 
+curve :: ECDHE.Curve
+curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
+
 helloHandshake :: RSA.PrivateKey -> CertificateChain ->
 	Maybe CertificateStore -> TlsIo [String]
 helloHandshake sk cc mcs = do
@@ -78,8 +87,9 @@ helloHandshake sk cc mcs = do
 	cs <- getCipherSuite
 	liftIO $ print cs
 	case cs of
-		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk mcs
 		Just (CipherSuite RSA _) -> handshake NoDH cv sk mcs
+		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk mcs
+		Just (CipherSuite ECDHE_RSA _) -> handshake curve cv sk mcs
 		_ -> error "bad"
 
 hello :: CertificateChain -> TlsIo Version
@@ -109,12 +119,17 @@ handshake ps cv sk mcs = do
 	pn <- liftIO $ DH.dhprivate ps
 	serverKeyExchange sk ps pn
 	serverToHelloDone mcs
+	liftIO . putStrLn $ "server hello done"
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
+	liftIO . putStrLn $ "is ephemeral DH?: " ++ show dhe
 	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange sk cv
 	maybe (return ()) (certificateVerify . fst) mpn
+	liftIO . putStrLn $ "client key exchange done"
 	clientChangeCipherSuite
+	liftIO . putStrLn $ "client change cipher suite done"
 	clientFinished
+	liftIO . putStrLn $ "client finished done"
 	serverChangeCipherSuite
 	serverFinished
 	return $ maybe [] snd mpn
@@ -216,7 +231,8 @@ clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
+		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms_) -> do
+			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
 			generateKeys pms

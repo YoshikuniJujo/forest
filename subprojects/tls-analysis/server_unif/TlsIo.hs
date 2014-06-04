@@ -160,9 +160,10 @@ isEphemeralDH :: TlsIo Bool
 isEphemeralDH = do
 	me <- ((\cs -> let CT.CipherSuite e _ = cs in e) <$>) <$>
 		gets tlssCachedCipherSuite
+	liftIO . putStrLn $ "isEphemeralDH: " ++ show me
 	case me of
 		Just CT.DHE_RSA -> return True
---		Just CT.ECDHE_RSA -> return True
+		Just CT.ECDHE_RSA -> return True
 --		Just CT.ECDHE_ECDSA -> return True
 		Just CT.RSA -> return False
 		_ -> throwError "TlsIo.isEphemeralDH: Unknown algorithm"
