@@ -6,7 +6,6 @@ module KeyExchange (
 	verifyServerKeyExchange,
 	byteStringToInteger,
 	integerToByteString,
-	secp256r1,
 	encodePoint,
 	EcCurveType(..),
 	addSign,
@@ -29,7 +28,7 @@ import Data.Bits
 
 import Parts
 import Crypto.Types.PubKey.ECC
-import EcDhe
+-- import EcDhe
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])

@@ -1,13 +1,10 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
-
--- import System.IO.Unsafe
--- import "crypto-random" Crypto.Random
 
 import Control.Applicative
 import Control.Monad
@@ -24,58 +21,18 @@ import System.IO
 import Content
 import Fragment
 
-import Crypto.Types.PubKey.ECC
-
-import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import Types
-
-import Crypto.PubKey.ECC.Prim
-
 import qualified Base as B
-
-instance B.Base Curve where
-	type Param Curve = ()
-	type Secret Curve = Integer
-	type Public Curve = Point
-	generateBase g _ = (secp256r1, g)
-	generateSecret g _ = (0x1234567890, g)
-	calculatePublic = calculatePublicPoint
-	calculateCommon = calculateShared
-
-	encodeBase = encodeCurve
-	decodeBase = undefined
-	encodePublic = encodePublicPoint
-	decodePublic = decodePublicPoint
-
-calculateShared :: Curve -> Integer -> Point -> BS.ByteString
-calculateShared c sn pp =
-	let Point x _ = pointMul c sn pp in integerToByteString x
-
-encodePublicPoint :: Curve -> Point -> BS.ByteString
-encodePublicPoint _ (Point x y) = BS.cons 4 $ BS.append
-	(integerToByteString x) (integerToByteString y)
-encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
-
-decodePublicPoint :: Curve -> BS.ByteString -> Point
-decodePublicPoint _ bs = case BS.uncons bs of
-	Just (4, rest) -> let (x, y) = BS.splitAt 32 rest in
-		Point (byteStringToInteger x) (byteStringToInteger y)
-	_ -> error "TlsServer.decodePublicPoint"
-
-calculatePublicPoint :: Curve -> Integer -> Point
-calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
-
-encodeCurve :: Curve -> BS.ByteString
-encodeCurve c
-	| c == secp256r1 =
-		toByteString NamedCurve `BS.append` toByteString Secp256r1
-	| otherwise = error "TlsServer.encodeCurve: not implemented"
+import EcDhe
+import "crypto-random" Crypto.Random
 
 version :: Version
 version = Version 3 3
+
+curve :: Curve
+(curve, _) = B.generateBase undefined () :: (Curve, SystemRNG)
 
 sessionId :: SessionId
 sessionId = SessionId ""
@@ -166,11 +123,11 @@ serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
 	Just cr <- getClientRandom
-	let	public = B.calculatePublic secp256r1 private
+	let	public = B.calculatePublic curve private
 		ske = HandshakeServerKeyExchange . addSign pk cr sr $
 			ServerKeyExchange
-				(B.encodeBase secp256r1)
-				(B.encodePublic secp256r1 public)
+				(B.encodeBase curve)
+				(B.encodePublic curve public)
 				2
 				1
 				"\x00\x05 defg"
@@ -241,8 +198,8 @@ clientKeyExchange = do
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
 			liftIO . putStrLn $ "CLIENT KEY: " ++ show point
-			let	p = B.decodePublic secp256r1 point
-				pms = B.calculateCommon secp256r1 private p
+			let	p = B.decodePublic curve point
+				pms = B.calculateCommon curve private p
 			liftIO . putStrLn $ "PMS: " ++ show pms
 			generateKeys pms
 			return ()

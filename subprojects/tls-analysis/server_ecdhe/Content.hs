@@ -21,7 +21,6 @@ module Content (
 	EcCurveType(..),
 	addSign,
 	Extension(..), EcPointFormat(..),
-	secp256r1,
 	toByteString,
 ) where
 

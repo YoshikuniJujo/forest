@@ -46,7 +46,6 @@ module Handshake (
 	EcCurveType(..),
 	addSign,
 	Extension(..), EcPointFormat(..),
-	secp256r1,
 ) where
 
 import Prelude hiding (head, take, concat)
