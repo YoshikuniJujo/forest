@@ -39,12 +39,12 @@ module Handshake (
 --	list1,
 	whole, ByteStringM, evalByteStringM,
 
-	ServerKeyExchange(..),
+--	ServerKeyExchange(..),
 --	byteStringToPublicNumber,
-	byteStringToInteger,
-	integerToByteString,
-	EcCurveType(..),
-	addSign,
+--	byteStringToInteger,
+--	integerToByteString,
+--	EcCurveType(..),
+--	addSign,
 	Extension(..), EcPointFormat(..),
 ) where
 
@@ -58,7 +58,6 @@ import qualified Data.ByteString as BS
 
 import Hello
 import Certificate
-import KeyExchange
 import Data.ByteString(ByteString, pack)
 -- import ByteStringMonad
 -- import ToByteString
@@ -68,7 +67,7 @@ data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
-	| HandshakeServerKeyExchange ServerKeyExchange
+	| HandshakeServerKeyExchange ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
@@ -137,7 +136,7 @@ parseHandshake' rd = do
 		HandshakeTypeServerHello -> HandshakeServerHello `liftM` parse
 		HandshakeTypeCertificate -> HandshakeCertificate `liftM` parse
 		HandshakeTypeServerKeyExchange ->
-			HandshakeServerKeyExchange `liftM` parse
+			HandshakeServerKeyExchange `liftM` whole
 		HandshakeTypeCertificateRequest ->
 			HandshakeCertificateRequest `liftM` parse
 		HandshakeTypeServerHelloDone ->
@@ -157,7 +156,7 @@ parseHandshake = do
 		HandshakeTypeServerHello -> HandshakeServerHello <$> parse
 		HandshakeTypeCertificate -> HandshakeCertificate <$> parse
 		HandshakeTypeServerKeyExchange ->
-			HandshakeServerKeyExchange <$> parse
+			HandshakeServerKeyExchange <$> whole
 		HandshakeTypeCertificateRequest ->
 			HandshakeCertificateRequest <$> parse
 		HandshakeTypeServerHelloDone ->
@@ -176,8 +175,8 @@ handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ toByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ toByteString crts
-handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeServerKeyExchange $ toByteString ske
+handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeServerKeyExchange ske
 handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $

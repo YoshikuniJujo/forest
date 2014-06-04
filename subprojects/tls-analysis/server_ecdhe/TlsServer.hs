@@ -23,16 +23,16 @@ import Fragment
 
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
-
-import qualified Base as B
 import EcDhe
 import "crypto-random" Crypto.Random
+-- import qualified Base as B
+import KeyExchange
 
 version :: Version
 version = Version 3 3
 
 curve :: Curve
-(curve, _) = B.generateBase undefined () :: (Curve, SystemRNG)
+(curve, _) = generateBase undefined () :: (Curve, SystemRNG)
 
 sessionId :: SessionId
 sessionId = SessionId ""
@@ -122,16 +122,6 @@ serverHello :: RSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 	Maybe CertificateStore -> TlsIo ()
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
-	Just cr <- getClientRandom
-	let	public = B.calculatePublic curve private
-		ske = HandshakeServerKeyExchange . addSign pk cr sr $
-			ServerKeyExchange
-				(B.encodeBase curve)
-				(B.encodePublic curve public)
-				2
-				1
-				"\x00\x05 defg"
-	liftIO $ print ske
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 	setVersion version
 	setServerRandom $ Random sr
@@ -143,8 +133,11 @@ serverHello pk css cc mcs = do
 			(cipherSuite css) compressionMethod $ Just [
 				ExtensionEcPointFormat [EcPointFormatUncompressed]
 			 ],
-		Just $ HandshakeCertificate cc,
-		Just ske,
+		Just $ HandshakeCertificate cc
+	 ]
+	sndServerKeyExchange curve private pk sr
+	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
+		map (ContentHandshake version) $ catMaybes [
 		case mcs of
 			Just cs -> Just . HandshakeCertificateRequest
 				. CertificateRequest
@@ -193,19 +186,7 @@ clientCertificate cs = do
 	uan _ = Nothing
 
 clientKeyExchange :: TlsIo ()
-clientKeyExchange = do
-	hs <- readHandshake (== version)
-	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
-			liftIO . putStrLn $ "CLIENT KEY: " ++ show point
-			let	p = B.decodePublic curve point
-				pms = B.calculateCommon curve private p
-			liftIO . putStrLn $ "PMS: " ++ show pms
-			generateKeys pms
-			return ()
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
+clientKeyExchange = rcvClientKeyExchange curve private version
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
