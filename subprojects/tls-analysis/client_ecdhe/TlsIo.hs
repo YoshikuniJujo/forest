@@ -19,7 +19,7 @@ module TlsIo (
 
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
-	debugPrintKeys, Option(..), isOptHelloVersion, isOptClientVersion,
+	debugPrintKeys, -- Option(..),
 
 	tPutWithCT,
 
@@ -49,8 +49,10 @@ import qualified CryptoTools as CT
 import Basic
 import Data.HandleLike
 
+{-
 data Option
 	= OptPmsVerErr
+	{-
 	| OptHelloVersion Word8 Word8
 	| OptStartByChangeCipherSpec
 	| OptStartByFinished
@@ -63,8 +65,11 @@ data Option
 	| OptNotCertificateVerify
 	| OptNotExistHashAndSignature
 	| OptNotApplicationData
+	-}
 	deriving (Show, Eq)
+	-}
 
+{-
 isOptHelloVersion :: Option -> Bool
 isOptHelloVersion (OptHelloVersion _ _) = True
 isOptHelloVersion _ = False
@@ -72,6 +77,7 @@ isOptHelloVersion _ = False
 isOptClientVersion :: Option -> Bool
 isOptClientVersion (OptClientVersion _ _) = True
 isOptClientVersion _ = False
+-}
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
 
