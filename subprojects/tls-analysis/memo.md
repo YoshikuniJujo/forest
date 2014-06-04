@@ -26,3 +26,19 @@ conduitの枠組みへの対応
 
 tlsClientSource :: Handle -> Source m ByteString
 tlsServerSource :: Handle -> Source m ByteString
+
+タイミング攻撃への対策
+----------------------
+
+https://www.ipa.go.jp/security/enc/smartcard/node50.html
+
+x = m ^ d `mod` n
+
+1. lm = (m * vi) `mod` n
+2. lx = (lm ^ d) `mod` n
+3. x = lx * vf `mod` n
+
+vf ^ -1 == vi ^ d
+
+vi = vi ^ 2 `mod` n
+vf = vf ^ 2 `mod` n

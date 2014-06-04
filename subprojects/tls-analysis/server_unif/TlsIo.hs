@@ -10,7 +10,7 @@ module TlsIo (
 	readLen, writeLen,
 
 	setVersion, setClientRandom, setServerRandom,
-	getClientRandom,
+	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
@@ -149,6 +149,12 @@ data TlsState = TlsState {
 
 getClientRandom :: TlsIo (Maybe BS.ByteString)
 getClientRandom = gets tlssClientRandom
+
+getServerRandom :: TlsIo (Maybe BS.ByteString)
+getServerRandom = gets tlssServerRandom
+
+getCipherSuite :: TlsIo (Maybe CT.CipherSuite)
+getCipherSuite = gets tlssCachedCipherSuite
 
 isEphemeralDH :: TlsIo Bool
 isEphemeralDH = do

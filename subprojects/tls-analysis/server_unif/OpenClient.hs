@@ -11,7 +11,7 @@ module OpenClient (
 	readLen, writeLen,
 
 	setVersion, setClientRandom, setServerRandom,
-	getClientRandom,
+	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,

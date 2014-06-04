@@ -29,7 +29,7 @@ dhparams = unsafePerformIO $ do
 	let	(ps, _g') = DH.generateParams g 512 2
 	return ps
 
--- dhprivate :: DH.Params -> IO DH.PrivateNumber
+dhprivate :: Base b => b -> IO (Secret b)
 dhprivate b = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	let	(pr, _g') = generateSecret g b -- DH.generatePrivate g dhparams

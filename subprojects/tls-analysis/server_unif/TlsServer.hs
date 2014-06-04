@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
@@ -62,20 +62,51 @@ validationChecks = defaultChecks{ checkFQHN = False }
 openClient :: Handle
 	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> IO TlsClient
-openClient h = ((runOpen h .) .) . handshake
+openClient h = ((runOpen h .) .) . helloHandshake
 
 withClient :: Handle
 	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> (TlsClient -> IO a) -> IO a
 withClient = (((flip bracket hlClose .) .) .) . openClient
 
-handshake :: RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
-	-> TlsIo [String]
-handshake sk cc mcs = do
+helloHandshake :: RSA.PrivateKey -> CertificateChain ->
+	Maybe CertificateStore -> TlsIo [String]
+helloHandshake sk cc mcs = do
+	cv <- hello cc
+	cs <- getCipherSuite
+	liftIO $ print cs
+	case cs of
+		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk mcs
+		Just (CipherSuite RSA _) -> handshake NoDH cv sk mcs
+		_ -> error "bad"
+
+hello :: CertificateChain -> TlsIo Version
+hello cc = do
 	(cv, css) <- clientHello
-	let ps = DH.dhparams
+	serverHello css cc
+	return cv
+
+data NoDH = NoDH deriving Show
+
+instance DH.Base NoDH where
+	type Param NoDH = ()
+	type Secret NoDH = ()
+	type Public NoDH = ()
+	generateBase = undefined
+	generateSecret = undefined
+	calculatePublic = undefined
+	calculateCommon = undefined
+	encodeBase = undefined
+	decodeBase = undefined
+	encodePublic = undefined
+	decodePublic = undefined
+
+handshake :: DH.Base b =>
+	b -> Version -> RSA.PrivateKey -> Maybe CertificateStore -> TlsIo [String]
+handshake ps cv sk mcs = do
 	pn <- liftIO $ DH.dhprivate ps
-	serverHello sk ps pn css cc mcs
+	serverKeyExchange sk ps pn
+	serverToHelloDone mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
 	if dhe then DH.clientKeyExchange ps pn cv else clientKeyExchange sk cv
@@ -109,10 +140,9 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: DH.Base b => RSA.PrivateKey -> b -> DH.Secret b -> [CipherSuite] ->
-	CertificateChain -> Maybe CertificateStore -> TlsIo ()
-serverHello sk ps pn css cc mcs = do
-	sr@(Random rsr) <- Random <$> randomByteString 32
+serverHello :: [CipherSuite] -> CertificateChain -> TlsIo ()
+serverHello css cc = do
+	sr <- Random <$> randomByteString 32
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite $ cipherSuite css
@@ -120,11 +150,17 @@ serverHello sk ps pn css cc mcs = do
 		map (ContentHandshake version) $ catMaybes [
 		Just $ HandshakeServerHello $ ServerHello version sr sessionId
 			(cipherSuite css) compressionMethod Nothing,
-		Just $ HandshakeCertificate cc
-	 ]
+		Just $ HandshakeCertificate cc ]
+
+serverKeyExchange :: DH.Base b => RSA.PrivateKey -> b -> DH.Secret b -> TlsIo ()
+serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 	liftIO $ print dh
+	Just rsr <- getServerRandom
 	when dh $ DH.sendServerKeyExchange ps pn sk rsr
+
+serverToHelloDone :: Maybe CertificateStore -> TlsIo ()
+serverToHelloDone mcs = do
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		case mcs of
