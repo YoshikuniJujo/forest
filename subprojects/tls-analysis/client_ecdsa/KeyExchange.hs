@@ -10,20 +10,12 @@ module KeyExchange (
 	encodePoint,
 ) where
 
-import GHC.Real
-
-import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import Data.Maybe
 import qualified Data.ByteString as BS
 
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import Data.ASN1.Encoding
-import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
 import Data.ASN1.Error
 
@@ -35,7 +27,6 @@ import Parts
 import Crypto.Types.PubKey.ECC
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-import Crypto.PubKey.HashDescr
 
 secp256r1 :: Curve
 secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
@@ -75,42 +66,21 @@ decodeSignature bs = let EcdsaSign _ (_, r) (_, s) = decodeEcdsaSign bs in
 verifyServerKeyExchange :: ECDSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1], ECDSA.Signature, Bool)
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
---		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
---		ret = verify SHA1.hash pub 
 		sign = decodeSignature s in
-		(hash, Right [], sign, ECDSA.verify SHA1.hash pub sign body) -- decodeASN1' BER unSign)
+		(hash, Right [], sign, ECDSA.verify SHA1.hash pub sign body)
 verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
--- hashMessage :: HashFunction -> ECDSA.PublicKey -> BS.ByteString -> BS.ByteString
--- hashMessage hash pk@(PublicKey curve q) msg = 
-
--- unSign :: HashFunction -> ECDSA.PublicKey -> ECDSA.Signature -> BS.ByteString
--- unSign hash pk@(PublicKey curve q) (Signature r s) =
-	
-	
 getBody :: ServerKeyExchange -> BS.ByteString
-{-
-getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
-	BS.concat $ map (lenBodyToByteString 2) [
-		BS.pack $ toWords p,
-		BS.pack $ toWords g,
-		BS.pack $ toWords $ fromIntegral ys ]
-		-}
-getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
-	BS.concat $ [
+getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
+	BS.concat [
 		toByteString ct,
 		toByteString nc,
 		lenBodyToByteString 1 $ encodePoint t p]
 getBody _ = error "bad"
 
 data ServerKeyExchange
-{-
-	= ServerKeyExchange Params PublicNumber
-		Word8 Word8 BS.ByteString
-		BS.ByteString
-		-}
 	= ServerKeyExchangeEc EcCurveType NamedCurve Word8 Point
 		Word8 Word8 BS.ByteString
 		BS.ByteString
@@ -120,6 +90,7 @@ data ServerKeyExchange
 encodePoint :: Word8 -> Point -> BS.ByteString
 encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
+encodePoint _ PointO = error "KeyExchange.encodePoint"
 
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of

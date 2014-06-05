@@ -4,7 +4,8 @@ module Basic (
 	Fragment(..),
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
-	Random(..), CipherSuite(..),
+	Random(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	showKey, showKeySingle, word64ToByteString,
 	byteStringToInt, intToByteString,
 	lenBodyToByteString, fromInt, fst3,
@@ -57,6 +58,10 @@ contentTypeToByteString (ContentTypeRaw ct) = pack [ct]
 data Random = Random ByteString
 
 data CipherSuite
+	= CipherSuite CipherSuiteKeyEx CipherSuiteMsgEnc
+	| CipherSuiteRaw Word8 Word8
+	deriving (Show, Eq)
+{-
 	= TLS_NULL_WITH_NULL_NULL
 	| TLS_RSA_WITH_AES_128_CBC_SHA
 	| TLS_DHE_RSA_WITH_AES_128_CBC_SHA
@@ -69,6 +74,24 @@ data CipherSuite
 	| TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
 	| TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
 	| CipherSuiteRaw Word8 Word8
+	deriving (Show, Eq)
+	-}
+
+data CipherSuiteKeyEx
+	= RSA
+	| DHE_RSA
+	| ECDHE_RSA
+	| ECDHE_PSK
+	| ECDHE_ECDSA
+	| KeyExNULL
+	deriving (Show, Eq)
+
+data CipherSuiteMsgEnc
+	= AES_128_CBC_SHA
+	| AES_128_CBC_SHA256
+	| CAMELLIA_128_CBC_SHA
+	| NULL_SHA
+	| MsgEncNULL
 	deriving (Show, Eq)
 
 showKeySingle :: ByteString -> String

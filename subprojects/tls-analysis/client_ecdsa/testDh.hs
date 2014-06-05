@@ -22,14 +22,13 @@ main = do
 	print $ getShared params (fst bob) (snd alice)
 
 alice :: (PrivateNumber, PublicNumber)
-alice = unsafePerformIO $ do
-	g <- readIORef gen
-	let (pr, g') = generatePrivate g params
-	writeIORef gen g'
-	return (pr, calculatePublic params pr)
+alice = unsafePerformIO getPP
 
 bob :: (PrivateNumber, PublicNumber)
-bob = unsafePerformIO $ do
+bob = unsafePerformIO getPP
+
+getPP :: IO (PrivateNumber, PublicNumber)
+getPP = do
 	g <- readIORef gen
 	let (pr, g') = generatePrivate g params
 	writeIORef gen g'

@@ -30,10 +30,6 @@ import Fragment
 import Content
 import Basic
 
-import Crypto.PubKey.DH
-
-import Data.Ratio
-
 import Crypto.PubKey.ECC.Prim
 import Crypto.Types.PubKey.ECC
 
@@ -68,10 +64,10 @@ handshake ccs certStore opts = do
 		(helloVersionFromOptions opts)
 		(clientVersionFromOptions opts)
 		(if OptEmptyCipherSuite `elem` opts then [] else [
-			TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-			TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
-			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256])
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA256])
 --			TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
 --			TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
 --			TLS_RSA_WITH_AES_128_CBC_SHA256,
@@ -84,7 +80,7 @@ handshake ccs certStore opts = do
 	case (OptStartByChangeCipherSpec `elem` opts,
 		OptStartByFinished `elem` opts) of
 		(True, _) -> writeContent changeCipherSpec
-		(_, True) -> writeContent $ ContentHandshake version $
+		(_, True) -> writeContent . ContentHandshake version $
 			HandshakeFinished ""
 		_ -> writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
@@ -255,7 +251,7 @@ serverHelloDone pub = do
 	sr <- getServerRandom
 	liftIO . print $ verifyServerKeyExchange pub cr sr ske
 
-	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+--	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 
 	liftIO . putStrLn $ "NAMED CURVE: " ++ show nc
 	liftIO . putStrLn $ "(x, y) = " ++ show p
@@ -268,7 +264,7 @@ serverHelloDone pub = do
 		pms = let Point x _ = pointMul secp256r1 private p in integerToByteString x
 
 	liftIO . putStrLn $ "PUBLIC: " ++ show public
-	liftIO . putStrLn $ "EPMS  : " ++ concatMap (flip showHex "") (BS.unpack epms)
+	liftIO . putStrLn $ "EPMS  : " ++ concatMap (`showHex` "") (BS.unpack epms)
 
 --	g <- getRandomGen
 --	let	(pr, g') = generatePrivate g ps
@@ -289,9 +285,7 @@ serverHelloDone pub = do
 		shd <- readContent
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
-	return $ (getCertificateRequest crtReq, epms, pms)
---		integerToByteString $ toInteger $ calculatePublic ps pr,
---		integerToByteString $ numerator $ toRational dhsk)
+	return (getCertificateRequest crtReq, epms, pms)
 
 readContent :: TlsIo Content Content
 readContent = do
