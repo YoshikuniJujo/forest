@@ -135,7 +135,7 @@ rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
-			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
+--			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let pms = calculateCommon dhps dhpn $ decodePublic dhps epms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal

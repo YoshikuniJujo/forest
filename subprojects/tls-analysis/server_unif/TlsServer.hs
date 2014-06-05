@@ -48,6 +48,7 @@ cipherSuite' csssv csscl = case find (`elem` csscl) csssv of
 		then Just $ CipherSuite RSA AES_128_CBC_SHA
 		else Nothing
 
+{-
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
 	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 `elem` css =
@@ -65,6 +66,7 @@ cipherSuite css
 	| CipherSuite RSA AES_128_CBC_SHA256 `elem` css =
 		CipherSuite RSA AES_128_CBC_SHA256
 	| otherwise = CipherSuite RSA AES_128_CBC_SHA
+	-}
 
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
@@ -104,7 +106,7 @@ helloHandshake :: DH.SecretKey sk =>
 helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
-	liftIO $ print cs
+--	liftIO $ print cs
 	case cs of
 		Just (CipherSuite RSA _) -> handshake NoDH cv sk sk mcs
 		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk sk mcs
@@ -139,17 +141,17 @@ handshake ps cv sks skd mcs = do
 	pn <- liftIO $ DH.dhprivate ps
 	serverKeyExchange sks ps pn
 	serverToHelloDone mcs
-	liftIO . putStrLn $ "server hello done"
+--	liftIO . putStrLn $ "server hello done"
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
-	liftIO . putStrLn $ "is ephemeral DH?: " ++ show dhe
+--	liftIO . putStrLn $ "is ephemeral DH?: " ++ show dhe
 	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
 	maybe (return ()) (certificateVerify . fst) mpn
-	liftIO . putStrLn $ "client key exchange done"
+--	liftIO . putStrLn $ "client key exchange done"
 	clientChangeCipherSuite
-	liftIO . putStrLn $ "client change cipher suite done"
+--	liftIO . putStrLn $ "client change cipher suite done"
 	clientFinished
-	liftIO . putStrLn $ "client finished done"
+--	liftIO . putStrLn $ "client finished done"
 	serverChangeCipherSuite
 	serverFinished
 	return $ maybe [] snd mpn
@@ -157,7 +159,7 @@ handshake ps cv sks skd mcs = do
 clientHello :: TlsIo (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
-	liftIO $ print hs
+--	liftIO $ print hs
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
@@ -193,7 +195,7 @@ serverHello csssv css cc ccec = do
 		Just c@(CipherSuite ECDHE_ECDSA _) -> (c, ccec)
 		Just c -> (c, cc)
 		_ -> error "bad"
-	liftIO . putStrLn $ "cs = " ++ show cs
+	liftIO . putStrLn $ "CIPHER SUITE: " ++ show cs
 --	liftIO . putStrLn $ "cccc = " ++ show cccc
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
@@ -205,7 +207,7 @@ serverKeyExchange ::
 	(DH.Base b, DH.SecretKey sk) => sk -> b -> DH.Secret b -> TlsIo ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
-	liftIO $ print dh
+--	liftIO $ print dh
 	Just rsr <- getServerRandom
 	when dh $ DH.sndServerKeyExchange ps pn sk rsr
 
@@ -264,7 +266,7 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
-			liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
+--			liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
