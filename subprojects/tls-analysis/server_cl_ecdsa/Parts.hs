@@ -8,7 +8,6 @@ module Parts (
 
 	Parsable'(..),
 
---	list1,
 	whole, ByteStringM, evalByteStringM, headBS,
 
 	lenBodyToByteString, emptyBS, concat,
@@ -72,6 +71,7 @@ parseCipherSuite = do
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
 		(0xc0, 0x09) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
+		(0xc0, 0x23) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
 		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
@@ -88,6 +88,7 @@ parseCipherSuite' rd = do
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
 		(0xc0, 0x09) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
+		(0xc0, 0x23) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
 		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
 
@@ -104,6 +105,7 @@ cipherSuiteToByteString (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
 cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA256) = "\x00\x67"
 cipherSuiteToByteString (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA) = "\xc0\x09"
 cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA) = "\xc0\x13"
+cipherSuiteToByteString (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256) = "\xc0\x23"
 cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"

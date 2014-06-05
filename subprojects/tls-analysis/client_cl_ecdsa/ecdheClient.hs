@@ -16,51 +16,30 @@ import System.Exit
 
 import ReadEcPrivateKey
 
+data Option
+	= OptSha1
+	| OptSha256
+	deriving (Show, Eq)
+
 options :: [OptDescr Option]
 options = [
-	Option "p" ["pms-ver-err"] (NoArg OptPmsVerErr) "PMS version error",
-	Option "" ["hello-version"]
-		(ReqArg readOptHelloVersion "version [major].[minor]")
-		"client hello version",
-	Option "c" ["start-by-change-cipher-spec"]
-		(NoArg OptStartByChangeCipherSpec)
-		"start by change cipher spec",
-	Option "f" ["start-by-finished"]
-		(NoArg OptStartByFinished)
-		"start by finished",
-	Option "" ["client-version"]
-		(ReqArg readOptClientVersion "version [major].[minor]")
-		"client version",
-	Option "e" ["empty-cipher-suite"] (NoArg OptEmptyCipherSuite)
-		"empty cipher suite",
-	Option "" ["empty-compression-method"] (NoArg OptEmptyCompressionMethod)
-		"empty compression method",
-	Option "" ["not-client-certificate"] (NoArg OptNotClientCertificate)
-		"not client certificate",
-	Option "" ["not-client-key-exchange"] (NoArg OptNotClientKeyExchange)
-		"not client key exchange",
-	Option "" ["bad-signature"] (NoArg OptBadSignature) "bad signature",
-	Option "" ["not-certificate-verify"] (NoArg OptNotCertificateVerify)
-		"not certificate verify",
-	Option "" ["not-exist-hash-and-signature"]
-		(NoArg OptNotExistHashAndSignature)
-		"not exist hash and signature",
-	Option "" ["not-application-data"] (NoArg OptNotApplicationData)
-		"not application data"
+	Option "" ["sha1"] (NoArg OptSha1) "Use SHA1",
+	Option "" ["sha256"] (NoArg OptSha256) "Use SHA256"
  ]
-
-readOptHelloVersion :: String -> Option
-readOptHelloVersion (mjr : '.' : mnr : "") =
-	OptHelloVersion (read [mjr]) (read [mnr])
-readOptHelloVersion _ = error "readOptHelloVersion: bad version expression"
-
-readOptClientVersion :: String -> Option
-readOptClientVersion (mjr : '.' : mnr : "") =
-	OptClientVersion (read [mjr]) (read [mnr])
-readOptClientVersion _ = error "readOptHelloVersion: bad version expression"
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
+
+cipherSuitesBase, cipherSuitesSha1, cipherSuitesSha256, cipherSuitesBoth ::
+	[CipherSuite]
+cipherSuitesBase = [CipherSuite RSA AES_128_CBC_SHA]
+cipherSuitesSha1 = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA ] ++ cipherSuitesBase
+cipherSuitesSha256 = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 ] ++ cipherSuitesBase
+cipherSuitesBoth = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA ] ++ cipherSuitesBase
 
 main :: IO ()
 main = do
@@ -68,46 +47,29 @@ main = do
 	unless (null errs) $ do
 		mapM_ putStr errs
 		exitFailure
-	print $ OptPmsVerErr `elem` opts
+	let cipherSuites = case (OptSha1 `elem` opts, OptSha256 `elem` opts) of
+		(True, False) -> cipherSuitesSha1
+		(False, True) -> cipherSuitesSha256
+		_ -> cipherSuitesBoth
 	(svpn :: Int) : _ <- mapM readIO args
 	pkys <- readEcPrivKey "client_ecdsa.key"
 	certChain <- CertificateChain <$> readSignedObject "client_ecdsa.cert"
 	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
 	sv <- connectTo "0.0.0.0" . PortNumber $ fromIntegral svpn
-	tls <- openTlsServer [(pkys, certChain)] certStore sv opts
-	if OptNotApplicationData `elem` opts
-		then tPutWithCT tls ContentTypeHandshake $
-			"GET / HTTP/1.1\r\n" +++
-			"Host: localhost:4492\r\n" +++
-			"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
-				"Gecko/20140415 Firefox/24.0\r\n" +++
-			"Accept: text/html,application/xhtml+xml," +++
-				"application/xml;q=0.9,*/*;q=0.8\r\n" +++
-			"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
-			"Accept-Encoding: gzip, deflate\r\n" +++
-			"Connection: keep-alive\r\n" +++
-			"Cache-Control: max-age=0\r\n\r\n"
-		else hlPut tls $
-			"GET / HTTP/1.1\r\n" +++
-			"Host: localhost:4492\r\n" +++
-			"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
-				"Gecko/20140415 Firefox/24.0\r\n" +++
-			"Accept: text/html,application/xhtml+xml," +++
-				"application/xml;q=0.9,*/*;q=0.8\r\n" +++
-			"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
-			"Accept-Encoding: gzip, deflate\r\n" +++
-			"Connection: keep-alive\r\n" +++
-			"Cache-Control: max-age=0\r\n\r\n"
+	tls <- openTlsServer cipherSuites [(pkys, certChain)] certStore sv
+	hlPut tls $
+		"GET / HTTP/1.1\r\n" +++
+		"Host: localhost:4492\r\n" +++
+		"User-Agent: Mozilla/5.0 (X11; Linux i686; rv:24.0) " +++
+			"Gecko/20140415 Firefox/24.0\r\n" +++
+		"Accept: text/html,application/xhtml+xml," +++
+			"application/xml;q=0.9,*/*;q=0.8\r\n" +++
+		"Accept-Language: ja,en-us;q=0.7,en;q=0.3\r\n" +++
+		"Accept-Encoding: gzip, deflate\r\n" +++
+		"Connection: keep-alive\r\n" +++
+		"Cache-Control: max-age=0\r\n\r\n"
 	hlGetHeaders tls >>= print
 	hlGetContent tls >>= print
---	tGet tls 10 >>= print
---	tGet tls 10 >>= print
-	{-
-	tGetByte tls >>= print
-	tGetByte tls >>= print
-	tGetByte tls >>= print
-	tGetByte tls >>= print
-	-}
 	tClose tls
 
 hlGetHeaders :: TlsServer -> IO [BS.ByteString]

@@ -47,10 +47,10 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
-	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA `elem` css =
-		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 `elem` css =
 		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
+	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA `elem` css =
+		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 	| CipherSuite ECDHE_RSA AES_128_CBC_SHA `elem` css =
 		CipherSuite ECDHE_RSA AES_128_CBC_SHA
 	| CipherSuite DHE_RSA AES_128_CBC_SHA256 `elem` css =
@@ -117,7 +117,7 @@ clientHello = do
 		| vsn < version = throwError $ Alert
 			AlertLevelFatal AlertDescriptionProtocolVersion
 			"TlsServer.clientHello: client version should 3.3 or more"
-		| CipherSuite ECDHE_RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
 		| compressionMethod `notElem` cms = throwError $ Alert
