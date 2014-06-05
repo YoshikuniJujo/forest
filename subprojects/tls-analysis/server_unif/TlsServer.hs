@@ -87,9 +87,9 @@ helloHandshake sk cc mcs = do
 	cs <- getCipherSuite
 	liftIO $ print cs
 	case cs of
-		Just (CipherSuite RSA _) -> handshake NoDH cv sk mcs
-		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk mcs
-		Just (CipherSuite ECDHE_RSA _) -> handshake curve cv sk mcs
+		Just (CipherSuite RSA _) -> handshake NoDH cv sk sk mcs
+		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk sk mcs
+		Just (CipherSuite ECDHE_RSA _) -> handshake curve cv sk sk mcs
 		_ -> error "bad"
 
 hello :: CertificateChain -> TlsIo Version
@@ -113,17 +113,19 @@ instance DH.Base NoDH where
 	encodePublic = undefined
 	decodePublic = undefined
 
-handshake :: DH.Base b =>
-	b -> Version -> RSA.PrivateKey -> Maybe CertificateStore -> TlsIo [String]
-handshake ps cv sk mcs = do
+-- handshake :: DH.Base b =>
+--	b -> Version -> RSA.PrivateKey -> Maybe CertificateStore -> TlsIo [String]
+handshake :: (DH.Base b, DH.SecretKey sk) => b -> Version -> sk ->
+	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo [String]
+handshake ps cv sks skd mcs = do
 	pn <- liftIO $ DH.dhprivate ps
-	serverKeyExchange sk ps pn
+	serverKeyExchange sks ps pn
 	serverToHelloDone mcs
 	liftIO . putStrLn $ "server hello done"
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
 	liftIO . putStrLn $ "is ephemeral DH?: " ++ show dhe
-	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange sk cv
+	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
 	maybe (return ()) (certificateVerify . fst) mpn
 	liftIO . putStrLn $ "client key exchange done"
 	clientChangeCipherSuite
@@ -169,7 +171,8 @@ serverHello css cc = do
 			(cipherSuite css) compressionMethod Nothing,
 		Just $ HandshakeCertificate cc ]
 
-serverKeyExchange :: DH.Base b => RSA.PrivateKey -> b -> DH.Secret b -> TlsIo ()
+serverKeyExchange ::
+	(DH.Base b, DH.SecretKey sk) => sk -> b -> DH.Secret b -> TlsIo ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 	liftIO $ print dh

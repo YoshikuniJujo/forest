@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module KeyExchange (
-	Base(..),
+	Base(..), SecretKey,
 
 	sndServerKeyExchange,
 	rcvClientKeyExchange,
@@ -27,18 +27,25 @@ import Content
 import Fragment
 import ByteStringMonad
 
-addSign :: RSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
-	ServerKeyExchange -> ServerKeyExchange
+class SecretKey sk where
+	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
+		BS.ByteString -> BS.ByteString
+
+instance SecretKey RSA.PrivateKey where
+	sign sk hs bs = let
+		h = hs bs
+		a = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26],
+			Null, End Sequence, OctetString h, End Sequence]
+		b = encodeASN1' DER a
+		pd = BS.concat [
+			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
+			"\NUL", b ] in
+		RSA.dp Nothing sk pd
+
+addSign :: SecretKey sk =>
+	sk -> ByteString -> ByteString -> ServerKeyExchange -> ServerKeyExchange
 addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
-	hash = SHA1.hash $ BS.concat [cr, sr, ps, ys]
-	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
-		End Sequence, OctetString hash, End Sequence]
-	bs = encodeASN1' DER asn1
-	pd = BS.concat [
-		"\x00\x01",
-		BS.replicate (125 - BS.length bs) 0xff,
-		"\NUL", bs ]
-	sn = RSA.dp Nothing sk pd in
+	sn = sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
 	ServerKeyExchange ps ys ha sa sn
 
 data ServerKeyExchange
@@ -47,10 +54,10 @@ data ServerKeyExchange
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString
-	(ServerKeyExchange params dhYs hashA sigA sign) =
+	(ServerKeyExchange params dhYs hashA sigA sn) =
 	BS.concat [
 		params, dhYs, BS.pack [hashA, sigA],
-		lenBodyToByteString 2 sign ]
+		lenBodyToByteString 2 sn ]
 
 wordsToInteger :: [Word8] -> Integer
 wordsToInteger [] = 0
@@ -83,8 +90,8 @@ class Base b where
 version :: Version
 version = Version 3 3
 	
-sndServerKeyExchange ::
-	Base b => b -> Secret b -> RSA.PrivateKey -> BS.ByteString -> TlsIo ()
+sndServerKeyExchange :: (Base b, SecretKey sk) =>
+	b -> Secret b -> sk -> BS.ByteString -> TlsIo ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .

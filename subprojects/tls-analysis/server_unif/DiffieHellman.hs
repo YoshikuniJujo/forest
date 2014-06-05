@@ -7,6 +7,7 @@ module DiffieHellman (
 	rcvClientKeyExchange,
 	DH.PrivateNumber,
 	Base(..),
+	SecretKey,
 ) where
 
 import Control.Applicative
