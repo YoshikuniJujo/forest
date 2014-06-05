@@ -8,7 +8,6 @@ module Handshake (
 	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
 	handshakeClientVersion, handshakeServerVersion,
 	handshakeEncryptedPreMasterSecret,
-	handshakeOnlyKnownCipherSuite,
 
 	handshakeGetFinish,
 
@@ -219,11 +218,6 @@ handshakeTypeToByteString HandshakeTypeCertificateVerify = pack [15]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]
 handshakeTypeToByteString HandshakeTypeFinished = pack [20]
 handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]
-
-handshakeOnlyKnownCipherSuite :: Handshake -> Handshake
-handshakeOnlyKnownCipherSuite (HandshakeClientHello ch) =
-	HandshakeClientHello $ clientHelloOnlyKnownCipherSuite ch
-handshakeOnlyKnownCipherSuite hs = hs
 
 handshakeCertificateRequest :: Handshake -> Maybe CertificateRequest
 handshakeCertificateRequest (HandshakeCertificateRequest cr) = Just cr
