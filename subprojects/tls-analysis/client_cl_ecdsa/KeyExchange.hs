@@ -17,32 +17,18 @@ import Data.ASN1.Types
 import Data.ASN1.Error
 import Data.ASN1.BinaryEncoding
 
-import GHC.Real
-
-import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import Data.Maybe
 import qualified Data.ByteString as BS
 
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import Data.ASN1.Encoding
-import Data.ASN1.BinaryEncoding
-import Data.ASN1.Types
-import Data.ASN1.Error
-
 import Data.Bits
-
--- import Crypto.PubKey.DH
 
 import Parts
 import Crypto.Types.PubKey.ECC
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-import Crypto.PubKey.HashDescr
 
 secp256r1 :: Curve
 secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
@@ -109,7 +95,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 		BS.pack $ toWords g,
 		BS.pack $ toWords $ fromIntegral ys ]
 		-}
-getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
+getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
 	BS.concat $ [
 		toByteString ct,
 		toByteString nc,
@@ -131,6 +117,7 @@ data ServerKeyExchange
 encodePoint :: Word8 -> Point -> BS.ByteString
 encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
+encodePoint _ PointO = error "KeyExchange.encodePoint"
 
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of

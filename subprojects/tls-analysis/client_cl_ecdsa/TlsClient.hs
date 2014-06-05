@@ -21,7 +21,6 @@ import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.CertificateStore
 import Data.X509.Validation
-import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Numeric
@@ -29,10 +28,6 @@ import Numeric
 import Fragment
 import Content
 import Basic
-
-import Crypto.PubKey.DH
-
-import Data.Ratio
 
 import Crypto.PubKey.ECC.Prim
 import Crypto.Types.PubKey.ECC
@@ -245,7 +240,6 @@ serverHelloDone pub = do
 	-------------------------------------------
 	cske <- readContent
 	liftIO . putStrLn $
---		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 		"CERTIFICATE REQUEST: " ++ show cske
 
 	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
@@ -255,7 +249,7 @@ serverHelloDone pub = do
 	sr <- getServerRandom
 	liftIO . print $ verifyServerKeyExchange pub cr sr ske
 
-	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+--	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 
 	liftIO . putStrLn $ "NAMED CURVE: " ++ show nc
 	liftIO . putStrLn $ "(x, y) = " ++ show p
@@ -264,7 +258,6 @@ serverHelloDone pub = do
 
 	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
 		epms = encodePoint 4 public
---		pms = encodePoint 4 $ pointMul secp256r1 private p
 		pms = let Point x _ = pointMul secp256r1 private p in integerToByteString x
 
 	liftIO . putStrLn $ "PUBLIC: " ++ show public

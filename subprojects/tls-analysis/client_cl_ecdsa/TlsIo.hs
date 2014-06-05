@@ -40,9 +40,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
