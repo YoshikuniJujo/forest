@@ -145,6 +145,7 @@ hashAlgorithmToByteString (HashAlgorithmRaw w) = pack [w]
 data SignatureAlgorithm
 	= SignatureAlgorithmRsa
 	| SignatureAlgorithmDsa
+	| SignatureAlgorithmEcdsa
 	| SignatureAlgorithmRaw Word8
 	deriving Show
 
@@ -159,11 +160,13 @@ parseSignatureAlgorithm = do
 	return $ case sa of
 		1 -> SignatureAlgorithmRsa
 		2 -> SignatureAlgorithmDsa
+		3 -> SignatureAlgorithmEcdsa
 		_ -> SignatureAlgorithmRaw sa
 
 signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
 signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
 signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
+signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
 signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]
 
 instance Parsable Version where

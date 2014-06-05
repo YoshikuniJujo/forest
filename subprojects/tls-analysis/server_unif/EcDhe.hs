@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module EcDhe (Curve) where
+module EcDhe (Curve, secp256r1, decodeSignature) where
 
 import Crypto.Types.PubKey.ECC
 import Crypto.PubKey.ECC.Prim

@@ -14,6 +14,7 @@ module TlsIo (
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
+	clientVerifyHashEc,
 
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,
@@ -344,6 +345,9 @@ finishedHash partner = do
 		(Just CT.TLS12, Just ms) -> return $
 			CT.generateFinished CT.TLS12 (partner == Client) ms sha256
 		_ -> throwError "No master secrets"
+
+clientVerifyHashEc :: TlsIo BS.ByteString
+clientVerifyHashEc = gets $ SHA256.finalize . tlssSha256Ctx
 
 clientVerifyHash :: RSA.PublicKey -> TlsIo BS.ByteString
 clientVerifyHash pub = do

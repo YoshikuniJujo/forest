@@ -8,6 +8,8 @@ module DiffieHellman (
 	DH.PrivateNumber,
 	Base(..),
 	SecretKey,
+
+	byteStringToInteger,
 ) where
 
 import Control.Applicative

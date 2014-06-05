@@ -15,6 +15,7 @@ module OpenClient (
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
+	clientVerifyHashEc,
 
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,

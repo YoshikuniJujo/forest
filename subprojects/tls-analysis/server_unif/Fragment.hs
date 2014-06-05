@@ -20,6 +20,7 @@ module Fragment (
 	updateSequenceNumber,
 	randomByteString,
 	clientVerifyHash,
+	clientVerifyHashEc,
 
 	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
 	checkName, getName,

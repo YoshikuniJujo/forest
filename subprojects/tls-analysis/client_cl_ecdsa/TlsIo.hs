@@ -314,6 +314,7 @@ clientVerifySign :: ECDSA.PrivateKey -> Bool -> TlsIo cnt BS.ByteString
 clientVerifySign pkys bad = do
 	sha256 <- gets $ SHA256.finalize .
 		(if bad then flip SHA256.update "hogeru" else id) . tlssSha256Ctx
+	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show sha256
 	return . encodeSignature . fromJust $ ECDSA.signWith 500 pkys id sha256
 --	return . encodeSignature . fromJust $ ECDSA.signWith 500 pkys (`BS.append` "hoge") sha256
 

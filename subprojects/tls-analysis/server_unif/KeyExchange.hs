@@ -9,6 +9,8 @@ module KeyExchange (
 
 	integerToByteString,
 	byteStringToInteger,
+
+	decodeSignature,
 ) where
 
 import Control.Applicative
@@ -157,3 +159,8 @@ readContent vc = do
 		<* updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
+
+decodeSignature :: BS.ByteString -> ECDSA.Signature
+decodeSignature bs = let
+	Right [Start Sequence, IntVal r, IntVal s, End Sequence] = decodeASN1' DER bs
+		in ECDSA.Signature r s

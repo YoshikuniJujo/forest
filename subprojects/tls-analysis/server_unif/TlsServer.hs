@@ -25,6 +25,9 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.Types.PubKey.ECC as ECDSA
+import qualified Crypto.Types.PubKey.ECDSA as ECDSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified DiffieHellman as DH
 
@@ -204,13 +207,13 @@ serverToHelloDone mcs =
 			_ -> Nothing,
 		Just HandshakeServerHelloDone]
 
-clientCertificate :: CertificateStore -> TlsIo (RSA.PublicKey, [String])
+clientCertificate :: CertificateStore -> TlsIo (PubKey, [String])
 clientCertificate cs = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeCertificate cc@(CertificateChain (c : _)) ->
 			case certPubKey $ getCertificate c of
-				PubKeyRSA pub -> chk cc >> return (pub, names cc)
+				pub -> chk cc >> return (pub, names cc)
 				p -> throwError $ Alert AlertLevelFatal
 					AlertDescriptionUnsupportedCertificate
 					("TlsServer.clientCertificate: " ++
@@ -265,8 +268,8 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			_ -> throwError "bad: never occur"
 		return pms
 
-certificateVerify :: RSA.PublicKey -> TlsIo ()
-certificateVerify pub = do
+certificateVerify :: PubKey -> TlsIo ()
+certificateVerify (PubKeyRSA pub) = do
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== version)
 	case hs of
@@ -288,6 +291,35 @@ certificateVerify pub = do
 			AlertLevelFatal
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
+certificateVerify (PubKeyECDSA cn pnt) = do
+	hash0 <- clientVerifyHashEc
+	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeCertificateVerify (DigitallySigned a s) -> do
+			chk a
+			unless (ECDSA.verify id (pub pnt) (ECDHE.decodeSignature s) hash0) . throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionDecryptError
+				"ECDSA: client authentification failed"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Certificate Verify"
+	where
+	point s = let 
+		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
+		ECDSA.Point
+			(DH.byteStringToInteger x)
+			(DH.byteStringToInteger y)
+	pub = ECDSA.PublicKey ECDHE.secp256r1 . point
+	chk a = case a of
+		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionDecodeError
+			("Not implement such algorithm: " ++ show a)
+certificateVerify _ = error "TlsServer.certificateVerify"
 
 clientChangeCipherSuite :: TlsIo ()
 clientChangeCipherSuite = do
