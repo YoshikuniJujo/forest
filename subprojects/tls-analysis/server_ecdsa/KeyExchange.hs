@@ -12,18 +12,12 @@ module KeyExchange (
 	addSign,
 ) where
 
-import GHC.Real
-
-import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
 import Data.ASN1.Encoding
@@ -81,7 +75,7 @@ addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
 addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
-getBody (ServerKeyExchangeEc ct nc t p ha sa _sign "") =
+getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
 	BS.concat $ [
 		toByteString ct,
 		toByteString nc,
@@ -98,6 +92,7 @@ data ServerKeyExchange
 encodePoint :: Word8 -> Point -> BS.ByteString
 encodePoint t (Point x y) =
 	t `BS.cons` integerToByteString x `BS.append` integerToByteString y
+encodePoint _ PointO = error "KeyExchange.encodePoint"
 
 decodePoint :: BS.ByteString -> (Word8, Point)
 decodePoint bs = case BS.uncons bs of

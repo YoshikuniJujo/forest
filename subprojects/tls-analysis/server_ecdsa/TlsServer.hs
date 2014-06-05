@@ -5,9 +5,6 @@ module TlsServer (
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
 
-import System.IO.Unsafe
-import "crypto-random" Crypto.Random
-
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
@@ -30,12 +27,9 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import Crypto.PubKey.DH
+import Crypto.PubKey.ECC.Prim
 
 import Types
-
-import Crypto.PubKey.ECC.Prim
-import Crypto.Types.PubKey.ECC
 
 version :: Version
 version = Version 3 3
@@ -89,10 +83,10 @@ withClient = (((flip bracket hlClose .) .) .) . openClient
 handshake :: ECDSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
-	(cv, css) <- clientHello
+	(_cv, css) <- clientHello
 	serverHello sk css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
-	clientKeyExchange sk cv
+	clientKeyExchange
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -123,14 +117,6 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-(dhParams, dhPrivate) = unsafePerformIO $ do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, g') = generateParams g 512 2
---	let	(ps, g') = generateParams g 128 2
-		(pr, g'') = generatePrivate g' ps
-	return (ps, pr)
-	
-
 private :: Integer
 private = 0x1234567890
 
@@ -139,9 +125,6 @@ serverHello :: ECDSA.PrivateKey -> [CipherSuite] -> CertificateChain ->
 serverHello pk css cc mcs = do
 	sr <- randomByteString 32
 	Just cr <- getClientRandom
---	g <- getRandomGen
---	let	(ps, g') = generateParams g 8 2
---		(pr, g'') = generatePrivate g' ps
 	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
 		ske = HandshakeServerKeyExchange $ addSign pk cr sr $
 			ServerKeyExchangeEc
@@ -153,15 +136,9 @@ serverHello pk css cc mcs = do
 				3
 				"\x00\x05 defg"
 				""
-			{-
-				dhParams (calculatePublic dhParams dhPrivate)
-				2 1 "hogeru" ""
-				-}
 	liftIO $ print ske
---	liftIO $ print $ contentToFragment $ ContentHandshake version ske
 	liftIO . putStrLn $ "CIPHER SUITES: " ++ show css
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
---	setRandomGen g''
 	setVersion version
 	setServerRandom $ Random sr
 	cacheCipherSuite $ cipherSuite css
@@ -221,8 +198,8 @@ clientCertificate cs = do
 	uan (AltNameDNS s) = Just s
 	uan _ = Nothing
 
-clientKeyExchange :: ECDSA.PrivateKey -> Version -> TlsIo ()
-clientKeyExchange sk (Version cvmjr cvmnr) = do
+clientKeyExchange :: TlsIo ()
+clientKeyExchange = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
@@ -235,32 +212,11 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 					Point x' _ = pointMul secp256r1 private p in
 					integerToByteString x'
 			liftIO . putStrLn $ "PMS: " ++ show pms
---			let pms = getShared dhParams dhPrivate $
---				byteStringToPublicNumber epms
---			generateKeys $ integerToByteString $ fromIntegral pms
 			generateKeys pms
 			return ()
-			{-
-			r <- randomByteString 46
-			pms <- mkpms epms `catchError` const (return $ dummy r)
-			generateKeys pms
-			-}
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
-	where
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
-	{-
-	mkpms epms = do
-		pms <- decryptRSA sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
-		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] -> do
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
-		return pms
-		-}
 
 certificateVerify :: RSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
