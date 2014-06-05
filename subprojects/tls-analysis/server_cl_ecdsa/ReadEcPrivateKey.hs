@@ -1,6 +1,5 @@
 module ReadEcPrivateKey (readEcPrivKey) where
 
-import Numeric
 import Control.Applicative
 import Data.Maybe
 import Data.Bits
@@ -11,22 +10,16 @@ import qualified Data.ByteString as BS
 import Crypto.Types.PubKey.ECDSA
 import Crypto.Types.PubKey.ECC
 
-main :: IO ()
-main = do
-	pk@(PrivateKey _ pn) <- readEcPrivKey "localhost_ecdsa.key"
-	print pk
-	putStrLn $ showHex pn ""
-
 readEcPrivKey :: FilePath -> IO PrivateKey
 readEcPrivKey fp = do
 	Right [pem] <- pemParseBS <$> BS.readFile fp
 	print pem
 	let	c = pemContent pem
-		ws = BS.unpack c
+		_ws = BS.unpack c
 		body = BS.drop 6 c
 		(pklen, body') = fromJust $ BS.uncons body
 		pk = BS.take (fromIntegral pklen) body'
-		pkws = BS.unpack pk
+		_pkws = BS.unpack pk
 	return . PrivateKey secp256r1 $ byteStringToInteger pk
 
 secp256r1 :: Curve

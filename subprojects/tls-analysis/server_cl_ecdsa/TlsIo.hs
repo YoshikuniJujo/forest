@@ -42,7 +42,6 @@ import qualified Data.ByteString as BS
 import System.IO
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
@@ -340,9 +339,7 @@ finishedHash partner = do
 		_ -> throwError "No master secrets"
 
 clientVerifyHash :: TlsIo BS.ByteString
-clientVerifyHash = do
-	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
-	return sha256
+clientVerifyHash = gets $ SHA256.finalize . tlssSha256Ctx
 
 tlsEncryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo BS.ByteString
 tlsEncryptMessage ct v msg = do
@@ -353,26 +350,24 @@ tlsEncryptMessage ct v msg = do
 	updateSequenceNumber Server
 	mmk <- macKey Server
 	gen <- gets tlssRandomGen
-	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
-		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
-		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
-		(Just CT.TLS12, _, _, _) -> throwError $ Alert
+	mhs <- case cs of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA -> return $ Just CT.hashSha1
+		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
+		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return Nothing
+		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionIllegalParameter
 			"tlsEncryptMessage: not implemented cipher suite"
+	case (version, mhs, mwk, mmk) of
+		(Just CT.TLS12, Just hs, Just wk, Just mk)
+			-> do	let (ret, gen') =
+					CT.encryptMessage hs gen wk sn mk ct v msg
+				tlss <- get
+				put tlss{ tlssRandomGen = gen' }
+				return ret
+		(_, Nothing, _, _) -> return msg
+		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
+		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
 		(Just vsn, _, _, _) -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion

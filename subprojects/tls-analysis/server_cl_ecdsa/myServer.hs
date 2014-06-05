@@ -13,7 +13,7 @@ import System.Exit (exitFailure)
 import Network (PortID(..), listenOn, accept)
 import TlsServer (
 	withClient, getName,
-	readRsaKey, readCertificateChain, readCertificateStore)
+	readCertificateChain, readCertificateStore)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC

@@ -1,12 +1,9 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore
 ) where
-
-import System.IO.Unsafe
-import "crypto-random" Crypto.Random
 
 import Control.Applicative
 import Control.Monad
@@ -27,17 +24,13 @@ import Crypto.Types.PubKey.ECC
 
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Types.PubKey.ECC as ECDSA
-
-import Crypto.PubKey.DH
 
 import Types
 import KeyExchange
 
 import Crypto.PubKey.ECC.Prim
-import Crypto.Types.PubKey.ECC
 
 version :: Version
 version = Version 3 3
@@ -91,10 +84,10 @@ withClient = (((flip bracket hlClose .) .) .) . openClient
 handshake :: ECDSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
 	-> TlsIo [String]
 handshake sk cc mcs = do
-	(cv, css) <- clientHello
+	(_cv, css) <- clientHello
 	serverHello sk css cc mcs
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
-	clientKeyExchange sk cv
+	clientKeyExchange
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -124,14 +117,6 @@ clientHello = do
 			AlertLevelFatal AlertDescriptionDecodeError
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
-
-(dhParams, dhPrivate) = unsafePerformIO $ do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, g') = generateParams g 512 2
---	let	(ps, g') = generateParams g 128 2
-		(pr, g'') = generatePrivate g' ps
-	return (ps, pr)
-	
 
 private :: Integer
 private = 0x1234567890
@@ -174,7 +159,7 @@ serverHello pk css cc mcs = do
 				ExtensionEcPointFormat [EcPointFormatUncompressed]
 			 ],
 		Just $ HandshakeCertificate cc,
-		Just $ ske,
+		Just ske,
 		case mcs of
 			Just cs -> Just $ HandshakeCertificateRequest
 				. CertificateRequest
@@ -231,8 +216,8 @@ clientCertificate cs = do
 	uan (AltNameDNS s) = Just s
 	uan _ = Nothing
 
-clientKeyExchange :: ECDSA.PrivateKey -> Version -> TlsIo ()
-clientKeyExchange sk (Version cvmjr cvmnr) = do
+clientKeyExchange :: TlsIo ()
+clientKeyExchange = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
@@ -258,19 +243,6 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
-	where
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
-	{-
-	mkpms epms = do
-		pms <- decryptRSA sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
-		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] -> do
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
-		return pms
-		-}
 
 certificateVerify :: ECDSA.PublicKey -> TlsIo ()
 certificateVerify pub = do
@@ -279,8 +251,7 @@ certificateVerify pub = do
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
---			unless (ECDSA.verify id pub (decodeSignature s) hash0) . throwError $ Alert
-			unless (ECDSA.verify id pub (decodeSignature s) $ hash0) . throwError $ Alert
+			unless (ECDSA.verify id pub (decodeSignature s) hash0) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError
 				"client authentification failed"
