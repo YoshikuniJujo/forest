@@ -34,11 +34,13 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 class SecretKey sk where
 	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
 		BS.ByteString -> BS.ByteString
+	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
 		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
 		encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s)
+	signatureAlgorithm _ = SignatureAlgorithmEcdsa
 
 data EcdsaSign
 	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
@@ -64,6 +66,7 @@ instance SecretKey RSA.PrivateKey where
 			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
 			"\NUL", b ] in
 		RSA.dp Nothing sk pd
+	signatureAlgorithm _ = SignatureAlgorithmRsa
 
 addSign :: SecretKey sk =>
 	sk -> ByteString -> ByteString -> ServerKeyExchange -> ServerKeyExchange
@@ -72,14 +75,15 @@ addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
 	ServerKeyExchange ps ys ha sa sn
 
 data ServerKeyExchange
-	= ServerKeyExchange ByteString ByteString Word8 Word8 BS.ByteString
+--	= ServerKeyExchange ByteString ByteString Word8 Word8 BS.ByteString
+	= ServerKeyExchange ByteString ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
 	deriving Show
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString
 	(ServerKeyExchange params dhYs hashA sigA sn) =
 	BS.concat [
-		params, dhYs, BS.pack [hashA, sigA],
+		params, dhYs, toByteString hashA, toByteString sigA,
 		lenBodyToByteString 2 sn ]
 
 wordsToInteger :: [Word8] -> Integer
@@ -122,7 +126,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 			ServerKeyExchange
 				(encodeBase ps)
 				(encodePublic ps $ calculatePublic ps dhsk)
-				2 3 "hogeru"
+				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
 		[ContentHandshake version ske]
 

@@ -12,6 +12,7 @@ import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..), listenOn, accept)
 import TlsServer (
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	withClient, getName,
 	readRsaKey, readCertificateChain, readCertificateStore)
 
@@ -19,6 +20,18 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import ReadEcPrivateKey
+
+cipherSuites :: [CipherSuite]
+cipherSuites = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+	CipherSuite DHE_RSA AES_128_CBC_SHA256,
+	CipherSuite DHE_RSA AES_128_CBC_SHA,
+	CipherSuite RSA AES_128_CBC_SHA256,
+	CipherSuite RSA AES_128_CBC_SHA
+ ]
 
 main :: IO ()
 main = do
@@ -35,9 +48,11 @@ main = do
 	soc <- listenOn port
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO . withClient h pk cc (pkec, ccec) mcs $ \cl -> do
-			doUntil BS.null (hlGetLine cl) >>= mapM_ BSC.putStrLn
-			hlPut cl . answer . fromMaybe "Anonym" $ getName cl
+		void . forkIO . withClient h cipherSuites pk cc (pkec, ccec) mcs $
+			\cl -> do
+				doUntil BS.null (hlGetLine cl) >>=
+					mapM_ BSC.putStrLn
+				hlPut cl . answer . fromMaybe "Anonym" $ getName cl
 
 data Option = OptDisableClientCert deriving (Show, Eq)
 

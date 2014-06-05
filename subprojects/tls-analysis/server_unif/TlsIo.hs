@@ -161,7 +161,7 @@ isEphemeralDH :: TlsIo Bool
 isEphemeralDH = do
 	me <- ((\cs -> let CT.CipherSuite e _ = cs in e) <$>) <$>
 		gets tlssCachedCipherSuite
-	liftIO . putStrLn $ "isEphemeralDH: " ++ show me
+	liftIO . putStrLn $ "TlsIo.isEphemeralDH: " ++ show me
 	case me of
 		Just CT.DHE_RSA -> return True
 		Just CT.ECDHE_RSA -> return True
@@ -318,6 +318,7 @@ generateKeys pms = do
 				ems = CT.generateKeyBlock v cr sr ms $
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] = divide [mkl, mkl, 16, 16] ems
+			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
 			put $ tlss {
 				tlssMasterSecret = Just ms,
 				tlssClientWriteMacKey = Just cwmk,

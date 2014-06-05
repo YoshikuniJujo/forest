@@ -251,6 +251,7 @@ generateKeys pms = do
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] =
 					divide [ mkl, mkl, 16, 16 ] ems
+			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
 			tlss <- get
 			put $ tlss {
 				tlssMasterSecret = Just ms,

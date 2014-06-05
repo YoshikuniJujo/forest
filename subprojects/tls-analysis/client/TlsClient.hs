@@ -90,6 +90,7 @@ handshake name ccs certStore cs = do
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
 	pms <- ("\x03\x03" `BS.append`) <$> randomByteString 46
+	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 	epms' <- encryptRSA pub pms
 --	liftIO $ putStrLn $ "Encrypted Pre Master Secret: " ++ show epms'
 	generateKeys pms
