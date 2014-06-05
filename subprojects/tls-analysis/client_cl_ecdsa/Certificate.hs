@@ -11,8 +11,6 @@ module Certificate (
 	section, whole, headBS,
 ) where
 
-import Prelude hiding (concat)
-
 import Control.Applicative
 import qualified Data.X509 as X509
 import Data.ASN1.Encoding
@@ -59,7 +57,7 @@ parseCertificateList = section 3 $ list parseCertificate
 
 certificateListToByteString :: [Certificate] -> ByteString
 certificateListToByteString =
-	lenBodyToByteString 3 . concat . map certificateToByteString
+	lenBodyToByteString 3 . BS.concat . map certificateToByteString
 
 parseCertificate :: ByteStringM Certificate
 parseCertificate = CertificateRaw <$> takeLen 3

@@ -72,7 +72,7 @@ encodeSignature (ECDSA.Signature r s) =
 verifyServerKeyExchange :: ECDSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1], ECDSA.Signature, Bool)
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 --		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 --		ret = verify SHA1.hash pub 
@@ -96,7 +96,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 		BS.pack $ toWords $ fromIntegral ys ]
 		-}
 getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
-	BS.concat $ [
+	BS.concat [
 		toByteString ct,
 		toByteString nc,
 		lenBodyToByteString 1 $ encodePoint t p]

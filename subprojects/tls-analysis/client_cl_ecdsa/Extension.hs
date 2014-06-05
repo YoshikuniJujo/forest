@@ -1,15 +1,16 @@
 module Extension (
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
-	concat, emptyBS, ByteStringM,
+	emptyBS, ByteStringM,
 	Extension(..),
 	EcPointFormat(..),
 	NamedCurve(..),
 ) where
 
-import Prelude hiding (head, concat)
+import Prelude hiding (head)
 
 import Control.Applicative
+import qualified Data.ByteString as BS
 
 import ByteStringMonad
 -- import Basic
@@ -23,7 +24,7 @@ parseExtensionList = section 2 $ list parseExtension
 
 extensionListToByteString :: ExtensionList -> ByteString
 extensionListToByteString =
-	lenBodyToByteString 2 .  concat . map extensionToByteString
+	lenBodyToByteString 2 .  BS.concat . map extensionToByteString
 
 data Extension
 	= ExtensionServerName [ServerName]
@@ -57,13 +58,13 @@ parseExtension = do
 extensionToByteString :: Extension -> ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
 	ExtensionRaw ExtensionTypeServerName . lenBodyToByteString 2 .
-		concat $ map serverNameToByteString sns
+		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEllipticCurve . lenBodyToByteString 2 .
-		concat $ map namedCurveToByteString ecs
+		BS.concat $ map namedCurveToByteString ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEcPointFormat . lenBodyToByteString 1 .
-		concat $ map ecPointFormatToByteString epf
+		BS.concat $ map ecPointFormatToByteString epf
 extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
 	ExtensionRaw ExtensionTypeSessionTicketTls stt
 extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
