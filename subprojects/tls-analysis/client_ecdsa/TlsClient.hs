@@ -4,19 +4,18 @@ module TlsClient (
 	TlsServer,
 	openTlsServer, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
-	Option(..),
 	tPutWithCT,
 	Content(..),
 	ContentType(..),
 	Handshake(..),
 	Version(..),
+
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
 import System.IO
 import Control.Applicative
 import Control.Monad
-import Data.List
-import Data.Word
 import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.CertificateStore
@@ -33,56 +32,36 @@ import Basic
 import Crypto.PubKey.ECC.Prim
 import Crypto.Types.PubKey.ECC
 
-openTlsServer :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore -> Handle
-	-> [Option] -> IO TlsServer
-openTlsServer ccs certStore sv opts = runOpen (handshake ccs certStore opts) sv
+openTlsServer :: [CipherSuite] ->
+	[(RSA.PrivateKey, CertificateChain)] -> CertificateStore -> Handle ->
+	IO TlsServer
+openTlsServer css ccs certStore sv = runOpen (handshake css ccs certStore) sv
 
 isIncluded :: (RSA.PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
 
-helloVersionFromOptions :: [Option] -> (Word8, Word8)
-helloVersionFromOptions =
-	maybe (3, 3) (\(OptHelloVersion mjr mnr) -> (mjr, mnr)) .
-		find isOptHelloVersion
-
-clientVersionFromOptions :: [Option] -> (Word8, Word8)
-clientVersionFromOptions =
-	maybe (3, 3) (\(OptClientVersion mjr mnr) -> (mjr, mnr)) .
-		find isOptClientVersion
-
-handshake :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore
-	-> [Option] -> TlsIo Content ()
-handshake ccs certStore opts = do
+handshake :: [CipherSuite] ->
+	[(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
+	TlsIo Content ()
+handshake css ccs certStore = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
-	let ch = clientHello cr
-		(helloVersionFromOptions opts)
-		(clientVersionFromOptions opts)
-		(if OptEmptyCipherSuite `elem` opts then [] else [
-			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+	let ch = clientHello cr (3, 3) (3, 3) css
+	{-
+		[	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
 			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
 			CipherSuite ECDHE_RSA AES_128_CBC_SHA,
-			CipherSuite ECDHE_RSA AES_128_CBC_SHA256])
---			TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
---			TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
---			TLS_RSA_WITH_AES_128_CBC_SHA256,
---			TLS_RSA_WITH_AES_128_CBC_SHA])
-		(if OptEmptyCompressionMethod `elem` opts
-			then []
-			else [CompressionMethodNull])
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA256]
+			-}
+		[CompressionMethodNull]
 		(Just [	ExtensionEllipticCurve [Secp256r1],
 			ExtensionEcPointFormat [EcPointFormatUncompressed] ])
-	case (OptStartByChangeCipherSpec `elem` opts,
-		OptStartByFinished `elem` opts) of
-		(True, _) -> writeContent changeCipherSpec
-		(_, True) -> writeContent . ContentHandshake version $
-			HandshakeFinished ""
-		_ -> writeContent ch
+	writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
 	maybe (throwError "No Client Hello") setClientRandom $ clientRandom ch
 
@@ -145,10 +124,7 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			writeContent $ if OptNotClientCertificate `elem` opts
-				then ContentHandshake version $
-					HandshakeFinished ""
-				else certificate cc
+			writeContent $ certificate cc
 			fragmentUpdateHash . contentToFragment $ certificate cc
 		_ -> return ()
 
@@ -162,9 +138,7 @@ handshake ccs certStore opts = do
 	generateKeys pms
 --	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms
-	writeContent $ if OptNotClientKeyExchange `elem` opts
-		then ContentHandshake version $ HandshakeFinished ""
-		else cke''
+	writeContent cke''
 	liftIO . putStrLn $ "CLIENT KEY EXCHANGE: " ++ show (contentToFragment cke'')
 	liftIO . putStrLn $ "CLIENT KEY EXCHANGE: " ++ show cke''
 	fragmentUpdateHash $ contentToFragment cke''
@@ -178,16 +152,10 @@ handshake ccs certStore opts = do
 	-------------------------------------------
 	case crtReq of
 		Just _ -> do
-			signed <- clientVerifySign pk $ OptBadSignature `elem` opts
-			let	(ha, sa) = if OptNotExistHashAndSignature `elem` opts
-					then (HashAlgorithmRaw 255,
-						SignatureAlgorithmRaw 255)
-					else (HashAlgorithmSha256,
-						SignatureAlgorithmRsa)
-				cv = if OptNotCertificateVerify `elem` opts
-					then ContentHandshake version $
-						HandshakeFinished ""
-					else makeVerify ha sa signed
+			signed <- clientVerifySign pk False
+			let	(ha, sa) = (HashAlgorithmSha256,
+					SignatureAlgorithmRsa)
+				cv = makeVerify ha sa signed
 			writeContent cv
 			fragmentUpdateHash . contentToFragment $ cv
 		_ -> return ()

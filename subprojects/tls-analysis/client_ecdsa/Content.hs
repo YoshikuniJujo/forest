@@ -37,6 +37,8 @@ module Content (
 	NamedCurve(..),
 	secp256r1,
 	encodePoint,
+
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
 import Prelude hiding (concat, head)

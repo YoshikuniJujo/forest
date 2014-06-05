@@ -115,7 +115,7 @@ clientHello = do
 		| vsn < version = throwError $ Alert
 			AlertLevelFatal AlertDescriptionProtocolVersion
 			"TlsServer.clientHello: client version should 3.3 or more"
-		| CipherSuite ECDHE_RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
 		| compressionMethod `notElem` cms = throwError $ Alert
@@ -159,6 +159,7 @@ serverHello pk css cc mcs = do
 				-}
 	liftIO $ print ske
 --	liftIO $ print $ contentToFragment $ ContentHandshake version ske
+	liftIO . putStrLn $ "CIPHER SUITES: " ++ show css
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show (cipherSuite css)
 --	setRandomGen g''
 	setVersion version
