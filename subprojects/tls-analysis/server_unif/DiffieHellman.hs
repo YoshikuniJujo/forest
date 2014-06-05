@@ -57,8 +57,8 @@ instance Base DH.Params where
 	type Secret DH.Params = DH.PrivateNumber
 	type Public DH.Params = DH.PublicNumber
 	generateBase rng (bits, gen) = DH.generateParams rng bits gen
-	generateSecret rng ps = DH.generatePrivate rng ps
-	calculatePublic ps sn = DH.calculatePublic ps sn
+	generateSecret = DH.generatePrivate
+	calculatePublic = DH.calculatePublic
 	calculateCommon ps sn pn = integerToByteString .
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
 	encodeBase = encodeParams

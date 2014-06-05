@@ -71,24 +71,21 @@ validationCache = ValidationCache
 validationChecks :: ValidationChecks
 validationChecks = defaultChecks{ checkFQHN = False }
 
--- openClient :: Handle
---	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
---	-> IO TlsClient
--- openClient h = ((runOpen h .) .) . helloHandshake
+openClient :: DH.SecretKey sk => Handle -> RSA.PrivateKey -> CertificateChain ->
+	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
 openClient h pk cc ecks mcs = runOpen h $ helloHandshake pk cc ecks mcs
 
--- withClient :: Handle
---	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
---	-> (TlsClient -> IO a) -> IO a
--- withClient = (((flip bracket hlClose .) .) .) . openClient
-withClient h pk cc ecks mcs act =
-	bracket (openClient h pk cc ecks mcs) hlClose act
+withClient :: DH.SecretKey sk => Handle -> RSA.PrivateKey -> CertificateChain ->
+	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
+	IO a
+withClient h pk cc ecks mcs =
+	bracket (openClient h pk cc ecks mcs) hlClose
 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
 
--- helloHandshake :: RSA.PrivateKey -> CertificateChain ->
---	Maybe CertificateStore -> TlsIo [String]
+helloHandshake :: DH.SecretKey sk => RSA.PrivateKey -> CertificateChain ->
+	(sk, CertificateChain) -> Maybe CertificateStore -> TlsIo [String]
 helloHandshake sk cc (pkec, ccec) mcs = do
 	cv <- hello cc ccec
 	cs <- getCipherSuite
@@ -194,7 +191,7 @@ serverKeyExchange sk ps pn = do
 	when dh $ DH.sndServerKeyExchange ps pn sk rsr
 
 serverToHelloDone :: Maybe CertificateStore -> TlsIo ()
-serverToHelloDone mcs = do
+serverToHelloDone mcs =
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		case mcs of
@@ -262,7 +259,7 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 		pms <- decryptRSA sk epms
 		unless (BS.length pms == 48) $ throwError "bad: length"
 		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] -> do
+			[pmsvmjr, pmsvmnr] ->
 				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
 					throwError "bad: version"
 			_ -> throwError "bad: never occur"
