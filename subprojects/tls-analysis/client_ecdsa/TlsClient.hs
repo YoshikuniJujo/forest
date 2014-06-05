@@ -218,6 +218,7 @@ serverHelloDone pub = do
 	cr <- getClientRandom
 	sr <- getServerRandom
 	liftIO . print $ verifyServerKeyExchange pub cr sr ske
+	liftIO . putStrLn $ "\nSERVER KEY EXCHANGE: " ++ show ske ++ "\n"
 
 --	let field = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 

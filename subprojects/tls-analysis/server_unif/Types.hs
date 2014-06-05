@@ -54,6 +54,7 @@ data CipherSuiteKeyEx
 	= RSA
 	| DHE_RSA
 	| ECDHE_RSA
+	| ECDHE_ECDSA
 	| ECDHE_PSK
 	| KeyExNULL
 	deriving (Show, Eq)

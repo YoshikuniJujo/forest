@@ -53,13 +53,20 @@ verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
 		(hash, decodeASN1' BER unSign)
 verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
-addSign :: ECDSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
+instance SecretKey ECDSA.PrivateKey where
+	sign sk hs bs = let
+		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
+		encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s)
+
+class SecretKey sk where
+	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
+		BS.ByteString -> BS.ByteString
+
+addSign :: SecretKey sk => sk -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> ServerKeyExchange
 addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
-	body = BS.concat [cr, sr, getBody ske]
-	Just (ECDSA.Signature r s) = ECDSA.signWith 800 pk SHA1.hash body
-	sn = encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s) in
-	ServerKeyExchangeEc ct nc t p ha sa sn ""
+	body = BS.concat [cr, sr, getBody ske] in
+	ServerKeyExchangeEc ct nc t p ha sa (sign pk SHA1.hash body) ""
 addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
@@ -101,9 +108,9 @@ parseServerKeyExchange = do
 	let (t, p) = decodePoint ecp
 	ha <- headBS
 	sa <- headBS
-	sign <- takeLen 2
+	sn <- takeLen 2
 	rest <- whole
-	return $ ServerKeyExchangeEc ct nc t p ha sa sign rest
+	return $ ServerKeyExchangeEc ct nc t p ha sa sn rest
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString ske@(ServerKeyExchangeEc _ _ _ _ ha sa sn rst) =
@@ -111,8 +118,7 @@ serverKeyExchangeToByteString ske@(ServerKeyExchangeEc _ _ _ _ ha sa sn rst) =
 		getBody ske,
 		BS.pack [ha, sa],
 		lenBodyToByteString 2 sn,
-		rst
-	 ]
+		rst ]
 serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
 
 byteStringToInteger :: BS.ByteString -> Integer

@@ -27,9 +27,30 @@ import Content
 import Fragment
 import ByteStringMonad
 
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+
 class SecretKey sk where
 	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
 		BS.ByteString -> BS.ByteString
+
+instance SecretKey ECDSA.PrivateKey where
+	sign sk hs bs = let
+		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
+		encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s)
+
+data EcdsaSign
+	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
+	deriving Show
+
+encodeEcdsaSign :: EcdsaSign -> BS.ByteString
+encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
+	BS.pack [t, len rbbs + len sbbs + 4],
+	BS.pack [rt, len rbbs], rbbs,
+	BS.pack [st, len sbbs], sbbs ]
+	where
+	len = fromIntegral . BS.length
+	rbbs = integerToByteString rb
+	sbbs = integerToByteString sb
 
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
@@ -99,7 +120,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 			ServerKeyExchange
 				(encodeBase ps)
 				(encodePublic ps $ calculatePublic ps dhsk)
-				2 1 "hogeru"
+				2 3 "hogeru"
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
 		[ContentHandshake version ske]
 

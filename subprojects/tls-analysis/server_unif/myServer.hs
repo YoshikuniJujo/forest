@@ -18,6 +18,8 @@ import TlsServer (
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
+import ReadEcPrivateKey
+
 main :: IO ()
 main = do
 	(opts, pn : kfp : cfp: _, errs) <- getOpt Permute options <$> getArgs
@@ -25,13 +27,15 @@ main = do
 	port <- (PortNumber . fromIntegral <$>) (readIO pn :: IO Int)
 	pk <- readRsaKey kfp
 	cc <- readCertificateChain cfp
+	pkec <- readEcPrivKey "localhost_ecdsa.key"
+	ccec <- readCertificateChain "localhost_ecdsa.cert"
 	mcs <- if OptDisableClientCert `elem` opts
 		then return Nothing
 		else Just <$> readCertificateStore ["cacert.pem"]
 	soc <- listenOn port
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO . withClient h pk cc mcs $ \cl -> do
+		void . forkIO . withClient h pk cc (pkec, ccec) mcs $ \cl -> do
 			doUntil BS.null (hlGetLine cl) >>= mapM_ BSC.putStrLn
 			hlPut cl . answer . fromMaybe "Anonym" $ getName cl
 

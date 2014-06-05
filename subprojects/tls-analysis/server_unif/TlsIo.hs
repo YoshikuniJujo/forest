@@ -164,7 +164,7 @@ isEphemeralDH = do
 	case me of
 		Just CT.DHE_RSA -> return True
 		Just CT.ECDHE_RSA -> return True
---		Just CT.ECDHE_ECDSA -> return True
+		Just CT.ECDHE_ECDSA -> return True
 		Just CT.RSA -> return False
 		_ -> throwError "TlsIo.isEphemeralDH: Unknown algorithm"
 

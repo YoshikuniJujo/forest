@@ -38,6 +38,10 @@ sessionId = SessionId ""
 
 cipherSuite :: [CipherSuite] -> CipherSuite
 cipherSuite css
+	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 `elem` css =
+		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
+	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA `elem` css =
+		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 	| CipherSuite ECDHE_RSA AES_128_CBC_SHA256 `elem` css =
 		CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 	| CipherSuite ECDHE_RSA AES_128_CBC_SHA `elem` css =
@@ -67,35 +71,39 @@ validationCache = ValidationCache
 validationChecks :: ValidationChecks
 validationChecks = defaultChecks{ checkFQHN = False }
 
-openClient :: Handle
-	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
-	-> IO TlsClient
-openClient h = ((runOpen h .) .) . helloHandshake
+-- openClient :: Handle
+--	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
+--	-> IO TlsClient
+-- openClient h = ((runOpen h .) .) . helloHandshake
+openClient h pk cc ecks mcs = runOpen h $ helloHandshake pk cc ecks mcs
 
-withClient :: Handle
-	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
-	-> (TlsClient -> IO a) -> IO a
-withClient = (((flip bracket hlClose .) .) .) . openClient
+-- withClient :: Handle
+--	-> RSA.PrivateKey -> CertificateChain -> Maybe CertificateStore
+--	-> (TlsClient -> IO a) -> IO a
+-- withClient = (((flip bracket hlClose .) .) .) . openClient
+withClient h pk cc ecks mcs act =
+	bracket (openClient h pk cc ecks mcs) hlClose act
 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
 
-helloHandshake :: RSA.PrivateKey -> CertificateChain ->
-	Maybe CertificateStore -> TlsIo [String]
-helloHandshake sk cc mcs = do
-	cv <- hello cc
+-- helloHandshake :: RSA.PrivateKey -> CertificateChain ->
+--	Maybe CertificateStore -> TlsIo [String]
+helloHandshake sk cc (pkec, ccec) mcs = do
+	cv <- hello cc ccec
 	cs <- getCipherSuite
 	liftIO $ print cs
 	case cs of
 		Just (CipherSuite RSA _) -> handshake NoDH cv sk sk mcs
 		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk sk mcs
 		Just (CipherSuite ECDHE_RSA _) -> handshake curve cv sk sk mcs
+		Just (CipherSuite ECDHE_ECDSA _) -> handshake curve cv pkec undefined mcs
 		_ -> error "bad"
 
-hello :: CertificateChain -> TlsIo Version
-hello cc = do
+hello :: CertificateChain -> CertificateChain -> TlsIo Version
+hello cc ccec = do
 	(cv, css) <- clientHello
-	serverHello css cc
+	serverHello css cc ccec
 	return cv
 
 data NoDH = NoDH deriving Show
@@ -159,17 +167,23 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: [CipherSuite] -> CertificateChain -> TlsIo ()
-serverHello css cc = do
+serverHello :: [CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo ()
+serverHello css cc ccec = do
 	sr <- Random <$> randomByteString 32
 	setVersion version
 	setServerRandom sr
 	cacheCipherSuite $ cipherSuite css
+	cs <- getCipherSuite
+	let cccc = case cs of
+		Just (CipherSuite ECDHE_ECDSA _) -> ccec
+		_ -> cc
+--	liftIO . putStrLn $ "cs = " ++ show cs
+--	liftIO . putStrLn $ "cccc = " ++ show cccc
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		Just $ HandshakeServerHello $ ServerHello version sr sessionId
 			(cipherSuite css) compressionMethod Nothing,
-		Just $ HandshakeCertificate cc ]
+		Just $ HandshakeCertificate cccc ]
 
 serverKeyExchange ::
 	(DH.Base b, DH.SecretKey sk) => sk -> b -> DH.Secret b -> TlsIo ()
