@@ -47,7 +47,7 @@ secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchangeEc _ _ _ _ _ _ s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
@@ -56,19 +56,7 @@ verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 addSign :: ECDSA.PrivateKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> ServerKeyExchange
 addSign pk cr sr ske@(ServerKeyExchangeEc ct nc t p ha sa _ "") = let
-	body = BS.concat $ [cr, sr, getBody ske]
---	asn1 = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26], Null,
---		End Sequence, OctetString hash, End Sequence]
---	bs = encodeASN1' DER asn1
-{-
-	pd = BSC.concat [
-		"\x00\x01",
-		BSC.replicate (125 - BS.length bs) '\xff',
-		"\NUL",
-		bs
-	 ]
--}
-
+	body = BS.concat [cr, sr, getBody ske]
 	Just (ECDSA.Signature r s) = ECDSA.signWith 800 pk SHA1.hash body
 	sn = encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s) in
 	ServerKeyExchangeEc ct nc t p ha sa sn ""
@@ -76,7 +64,7 @@ addSign _ _ _ _ = error "addSign: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
 getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
-	BS.concat $ [
+	BS.concat [
 		toByteString ct,
 		toByteString nc,
 		lenBodyToByteString 1 $ encodePoint t p]

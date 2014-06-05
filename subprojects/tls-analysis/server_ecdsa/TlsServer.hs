@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TlsServer (
 	TlsClient, openClient, withClient, checkName, getName,
@@ -126,7 +126,7 @@ serverHello pk css cc mcs = do
 	sr <- randomByteString 32
 	Just cr <- getClientRandom
 	let	public = pointMul secp256r1 private (ecc_g $ common_curve secp256r1)
-		ske = HandshakeServerKeyExchange $ addSign pk cr sr $
+		ske = HandshakeServerKeyExchange . addSign pk cr sr $
 			ServerKeyExchangeEc
 				NamedCurve
 				Secp256r1
@@ -144,15 +144,15 @@ serverHello pk css cc mcs = do
 	cacheCipherSuite $ cipherSuite css
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
-		Just $ HandshakeServerHello $ ServerHello version (Random sr)
+		Just . HandshakeServerHello . ServerHello version (Random sr)
 			sessionId
 			(cipherSuite css) compressionMethod $ Just [
 				ExtensionEcPointFormat [EcPointFormatUncompressed]
 			 ],
 		Just $ HandshakeCertificate cc,
-		Just $ ske,
+		Just ske,
 		case mcs of
-			Just cs -> Just $ HandshakeCertificateRequest
+			Just cs -> Just . HandshakeCertificateRequest
 				. CertificateRequest
 					[clientCertificateType]
 					[clientCertificateAlgorithm]
@@ -203,7 +203,7 @@ clientKeyExchange = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret point) -> do
-			liftIO $ putStrLn $ "CLIENT KEY: " ++ show point
+			liftIO . putStrLn $ "CLIENT KEY: " ++ show point
 			let	(x, y) = BS.splitAt 32 $ BS.tail point
 				p = Point
 					(byteStringToInteger x)
@@ -267,7 +267,7 @@ clientFinished = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"bad version"
-			unless (f == fhc) . throwError $ Alert
+			unless (f == fhc) . throwError . Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError $
 				"Finished error:\n\t" ++
@@ -298,7 +298,7 @@ readHandshake ck = do
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
 				"Not supported layer version"
-		_ -> throwError $ Alert
+		_ -> throwError . Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage $
 			"Not Handshake: " ++ show cnt
