@@ -3,7 +3,6 @@
 module Hello (
 	Parsable(..), ByteStringM,
 	ClientHello(..),
-	clientHelloOnlyKnownCipherSuite,
 	clientHelloClientRandom, clientHelloClientVersion,
 	CipherSuite(..), Random(..),
 	SignatureAlgorithm(..), HashAlgorithm(..), CompressionMethod(..),
@@ -12,7 +11,6 @@ module Hello (
 	ServerHello(..),
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
---	list1,
 	evalByteStringM, fst3, fromInt, lenBodyToByteString
  ) where
 
@@ -23,18 +21,14 @@ import Control.Applicative
 import Data.ByteString (ByteString, pack, unpack)
 import Data.Word
 
--- import Types
-
 import Parts(
 	Version(..), Parsable(..), CipherSuite(..), Random(..),
 
 	SignatureAlgorithm(..),
 	HashAlgorithm(..),
---	Version(..),
 
 	fst3, fromInt,
 	lenBodyToByteString, headBS, takeLen,
---	list1,
 	evalByteStringM)
 import Extension
 
@@ -43,11 +37,6 @@ data ClientHello
 		[CompressionMethod] (Maybe ExtensionList)
 	| ClientHelloRaw ByteString
 	deriving Show
-
-clientHelloOnlyKnownCipherSuite :: ClientHello -> ClientHello
-clientHelloOnlyKnownCipherSuite (ClientHello pv r sid css cms mel) =
-	ClientHello pv r sid (TLS_RSA_WITH_AES_128_CBC_SHA : css) cms mel
-clientHelloOnlyKnownCipherSuite ch = ch
 
 clientHelloClientRandom :: ClientHello -> Maybe Random
 clientHelloClientRandom (ClientHello _ r _ _ _ _) = Just r
@@ -68,7 +57,6 @@ parseClientHello = do
 	r <- parse
 	sid <- parseSessionId
 	css <- parse
---	cms <- parseCompressionMethodList
 	cms <- parse
 	e <- emptyBS
 	mel <- if e then return Nothing else Just <$> parseExtensionList
@@ -80,7 +68,6 @@ clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
 	toByteString r,
 	sessionIdToByteString sid,
 	toByteString css,
---	compressionMethodListToByteString cms,
 	toByteString cms,
 	maybe "" extensionListToByteString mel
  ]

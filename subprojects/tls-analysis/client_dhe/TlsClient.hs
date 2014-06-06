@@ -10,7 +10,7 @@ module TlsClient (
 	Handshake(..),
 	Version(..),
 
-	CipherSuite(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
 import System.IO
@@ -49,7 +49,7 @@ handshake ccs certStore cs = do
 	-------------------------------------------
 	cr <- Random <$> randomByteString 32
 	let ch = clientHello cr (3, 3) (3, 3)
-		(cs ++ [TLS_RSA_WITH_AES_128_CBC_SHA])
+		(cs ++ [CipherSuite RSA AES_128_CBC_SHA])
 		[CompressionMethodNull]
 	writeContent ch
 	fragmentUpdateHash $ contentToFragment ch
