@@ -1,12 +1,13 @@
 module Extension (
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
-	concat, emptyBS, ByteStringM,
+	emptyBS, ByteStringM,
 ) where
 
 import Prelude hiding (head, concat)
 
 import Control.Applicative
+import qualified Data.ByteString as BS
 
 import ByteStringMonad
 -- import Basic
@@ -19,7 +20,7 @@ parseExtensionList = section 2 $ list parseExtension
 
 extensionListToByteString :: ExtensionList -> ByteString
 extensionListToByteString =
-	lenBodyToByteString 2 .  concat . map extensionToByteString
+	lenBodyToByteString 2 . BS.concat . map extensionToByteString
 
 data Extension
 	= ExtensionServerName [ServerName]

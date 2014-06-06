@@ -204,10 +204,9 @@ serverHelloDone pub = do
 		shd <- readContent
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
-	return $ (getCertificateRequest crtReq,
-		integerToByteString $ toInteger $ calculatePublic ps pr,
---		integerToByteString $ toInteger (calculatePublic ps pr) + 1,
-		integerToByteString $ numerator $ toRational dhsk)
+	return (getCertificateRequest crtReq,
+		integerToByteString . toInteger $ calculatePublic ps pr,
+		integerToByteString . numerator $ toRational dhsk)
 
 readContent :: TlsIo Content Content
 readContent = do

@@ -14,11 +14,12 @@ module Hello (
 	evalByteStringM, fst3, fromInt, lenBodyToByteString
  ) where
 
-import Prelude hiding (concat, take)
+import Prelude hiding (take)
 import Numeric
 
 import Control.Applicative
 import Data.ByteString (ByteString, pack, unpack)
+import qualified Data.ByteString as BS
 import Data.Word
 
 import Parts(
@@ -51,11 +52,16 @@ instance Parsable ClientHello where
 	toByteString = clientHelloToByteString
 	listLength _ = Nothing
 
-parseClientHello :: ByteStringM ClientHello
-parseClientHello = do
+getPvRSid :: ByteStringM (Version, Random, SessionId)
+getPvRSid = do
 	pv <- parse
 	r <- parse
 	sid <- parseSessionId
+	return (pv, r, sid)
+
+parseClientHello :: ByteStringM ClientHello
+parseClientHello = do
+	(pv, r, sid) <- getPvRSid
 	css <- parse
 	cms <- parse
 	e <- emptyBS
@@ -63,7 +69,7 @@ parseClientHello = do
 	return $ ClientHello pv r sid css cms mel
 
 clientHelloToByteString :: ClientHello -> ByteString
-clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
+clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString pv,
 	toByteString r,
 	sessionIdToByteString sid,
@@ -98,9 +104,7 @@ serverHelloCipherSuite _ = Nothing
 
 parseServerHello :: ByteStringM ServerHello
 parseServerHello = do
-	pv <- parse
-	r <- parse
-	sid <- parseSessionId
+	(pv, r, sid) <- getPvRSid
 	cs <- parse
 	cm <- parseCompressionMethod
 	e <- emptyBS
@@ -108,7 +112,7 @@ parseServerHello = do
 	return $ ServerHello pv r sid cs cm me
 
 serverHelloToByteString :: ServerHello -> ByteString
-serverHelloToByteString (ServerHello pv r sid cs cm mes) = concat [
+serverHelloToByteString (ServerHello pv r sid cs cm mes) = BS.concat [
 	toByteString pv,
 	toByteString r,
 	sessionIdToByteString sid,

@@ -30,7 +30,7 @@ import Crypto.PubKey.DH
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
 verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ps _ys _ha _sa s "") =
-	let	body = BS.concat $ [cr, sr, getBody ske]
+	let	body = BS.concat [cr, sr, getBody ske]
 		hash = SHA1.hash body
 		unSign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub s in
 		(hash, decodeASN1' BER unSign)
@@ -41,7 +41,7 @@ getBody (ServerKeyExchange (Params p g) ys _ha _sa _ "") =
 	BS.concat $ map (lenBodyToByteString 2) [
 		BS.pack $ toWords p,
 		BS.pack $ toWords g,
-		BS.pack $ toWords $ fromIntegral ys ]
+		BS.pack . toWords $ fromIntegral ys ]
 getBody _ = error "bad"
 
 data ServerKeyExchange
