@@ -10,7 +10,6 @@ module KeyExchange (
 	Base(..),
 ) where
 
-import Control.Applicative
 import ByteStringMonad
 import qualified Data.ByteString as BS
 
@@ -23,56 +22,9 @@ import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
 import Data.ASN1.Error
 
-import Data.Bits
-
-import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.DH as DH
-import "crypto-random" Crypto.Random
 
-class Base b where
-	type Param b
-	type Secret b
-	type Public b
-	generateBase :: CPRG g => g -> Param b -> (b, g)
-	generateSecret :: CPRG g => g -> b -> (Secret b, g)
-	calculatePublic :: b -> Secret b -> Public b
-	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
-
-	encodeBasePublic :: b -> Public b -> BS.ByteString
-	decodeBasePublic :: BS.ByteString -> Either String (b, Public b)
-	encodePublic :: b -> Public b -> BS.ByteString
-	decodePublic :: b -> BS.ByteString -> Either String (Public b)
-
-	wantPublic :: b -> Bool
-	passPublic :: b -> Bool
-
-instance Base DH.Params where
-	type Param DH.Params = (Int, Integer)
-	type Secret DH.Params = DH.PrivateNumber
-	type Public DH.Params = DH.PublicNumber
-
-	generateBase = uncurry . DH.generateParams
-	generateSecret = DH.generatePrivate
-	calculatePublic = DH.calculatePublic
-	calculateCommon ps sv pv = let
-		DH.SharedKey s = DH.getShared ps sv pv in
-		integerToByteString s
-
-	encodeBasePublic (DH.Params p g) (DH.PublicNumber y) = BS.concat [
-		lenBodyToByteString 2 $ integerToByteString p,
-		lenBodyToByteString 2 $ integerToByteString g,
-		lenBodyToByteString 2 $ integerToByteString y ]
-	decodeBasePublic = evalByteStringM parseParamsPublic
-	encodePublic _ = dhEncodePublic
-	decodePublic _ = evalByteStringM $
-		DH.PublicNumber . byteStringToInteger <$> takeLen 2
-
-	wantPublic _ = True
-	passPublic _ = True
-
-dhEncodePublic :: DH.PublicNumber -> BS.ByteString
-dhEncodePublic =
-	lenBodyToByteString 2 . integerToByteString .  (\(DH.PublicNumber pn) -> pn)
+import DiffieHellman
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
@@ -84,12 +36,7 @@ verifyServerKeyExchange pub cr sr ske@(ServerKeyExchange _ps _ys _ha _sa s "") =
 verifyServerKeyExchange _ _ _ _ = error "verifyServerKeyExchange: bad"
 
 getBody :: ServerKeyExchange -> BS.ByteString
-getBody (ServerKeyExchange (DH.Params p g) ys _ha _sa _ "") =
-	BS.concat $ map (lenBodyToByteString 2) [
-		BS.pack $ toWords p,
-		BS.pack $ toWords g,
-		BS.pack . toWords $
-			(\(DH.PublicNumber pn) -> pn) ys ]
+getBody (ServerKeyExchange ps ys _ha _sa _ "") = encodeBasePublic ps ys
 getBody _ = error "bad"
 
 data ServerKeyExchange
@@ -100,58 +47,18 @@ data ServerKeyExchange
 	deriving Show
 
 decodeServerKeyExchange :: BS.ByteString -> Either String ServerKeyExchange
-decodeServerKeyExchange = evalByteStringM parse
+decodeServerKeyExchange = decodeKeyExchange
 
-instance Parsable ServerKeyExchange where
-	parse = parseServerKeyExchange
-	toByteString = serverKeyExchangeToByteString
-	listLength _ = Nothing
+decodeKeyExchange :: BS.ByteString -> Either String ServerKeyExchange
+decodeKeyExchange bs = do
+	((b, p), bs') <- decodeBasePublic bs
+	(hashA, sigA, sign) <- evalByteStringM parseSign bs'
+	return $ ServerKeyExchange b p hashA sigA sign ""
 
-parseParamsPublic :: ByteStringM (DH.Params, DH.PublicNumber)
-parseParamsPublic = do
-	dhP <- toI . BS.unpack <$> takeLen 2
-	dhG <- toI . BS.unpack <$> takeLen 2
-	dhY <- toI . BS.unpack <$> takeLen 2
-	return (DH.Params dhP dhG, DH.PublicNumber dhY)
-
-parseServerKeyExchange :: ByteStringM ServerKeyExchange
-parseServerKeyExchange = do
-	(ps, pn) <- parseParamsPublic
+parseSign :: ByteStringM (Word8, Word8, BS.ByteString)
+parseSign = do
 	hashA <- headBS
 	sigA <- headBS
 	sign <- takeLen 2
-	rest <- whole
-	return $ ServerKeyExchange ps pn hashA sigA sign rest
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyExchange (DH.Params dhP dhG) dhYs hashA sigA sign rest) =
-	BS.concat [
-		lenBodyToByteString 2 . BS.pack $ toWords dhP,
-		lenBodyToByteString 2 . BS.pack $ toWords dhG,
-		lenBodyToByteString 2 . BS.pack . toWords $
-			(\(DH.PublicNumber pn) -> pn) dhYs]
-	`BS.append`
-	BS.pack [hashA, sigA] `BS.append`
-	BS.concat [lenBodyToByteString 2 sign, rest]
-serverKeyExchangeToByteString (ServerKeyExchangeRaw bs) = bs
-
-toI :: [Word8] -> Integer
-toI = wordsToInteger . reverse
-
-wordsToInteger :: [Word8] -> Integer
-wordsToInteger [] = 0
-wordsToInteger (w : ws) = fromIntegral w .|. (wordsToInteger ws `shiftL` 8)
-
-toWords :: Integer -> [Word8]
-toWords = reverse . integerToWords
-
-integerToWords :: Integer -> [Word8]
-integerToWords 0 = []
-integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
-
-integerToByteString :: Integer -> BS.ByteString
-integerToByteString = BS.pack . toWords
-
-byteStringToInteger :: BS.ByteString -> Integer
-byteStringToInteger = toI . BS.unpack
+	"" <- whole
+	return (hashA, sigA, sign)

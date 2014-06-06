@@ -56,15 +56,12 @@ import Hello
 import Certificate
 import KeyExchange
 import Data.ByteString(ByteString, pack)
--- import ByteStringMonad
--- import ToByteString
--- import Parts
 
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
-	| HandshakeServerKeyExchange ByteString -- ServerKeyExchange
+	| HandshakeServerKeyExchange ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
