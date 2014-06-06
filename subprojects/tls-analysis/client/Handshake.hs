@@ -33,7 +33,6 @@ module Handshake (
 	Version(..),
 
 	fst3, fromInt, headBS,
---	list1,
 	whole, ByteStringM, evalByteStringM,
 ) where
 
@@ -48,9 +47,6 @@ import qualified Data.ByteString as BS
 import Hello
 import Certificate
 import Data.ByteString(ByteString, pack)
--- import ByteStringMonad
--- import ToByteString
--- import Parts
 
 data Handshake
 	= HandshakeClientHello ClientHello
@@ -59,7 +55,7 @@ data Handshake
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
-	| HandshakeClientKeyExchange ByteString -- EncryptedPreMasterSecret
+	| HandshakeClientKeyExchange ByteString
 	| HandshakeFinished ByteString
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
