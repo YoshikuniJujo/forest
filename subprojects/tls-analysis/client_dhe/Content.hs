@@ -27,13 +27,10 @@ module Content (
 
 	HashAlgorithm(..), SignatureAlgorithm(..),
 
-	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
 
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-
-	decodeServerKeyExchange,
 
 	Base(..),
 ) where

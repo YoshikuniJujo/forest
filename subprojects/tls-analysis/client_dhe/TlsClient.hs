@@ -28,18 +28,22 @@ import Basic
 
 import qualified Crypto.PubKey.DH as DH
 
+import DiffieHellman()
+
 openTlsServer :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore
 	-> Handle -> [CipherSuite]
 	-> IO TlsServer
-openTlsServer ccs certStore sv cs = runOpen (handshake ccs certStore cs) sv
+openTlsServer ccs certStore sv cs =
+	runOpen (const () <$> (handshake ccs certStore cs :: TlsIo Content DH.Params)) sv
 
 isIncluded :: (RSA.PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
 
-handshake :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
-	[CipherSuite] -> TlsIo Content ()
+handshake :: Base b =>
+	[(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
+	[CipherSuite] -> TlsIo Content b
 handshake ccs certStore cs = do
 
 	-------------------------------------------
@@ -85,7 +89,7 @@ handshake ccs certStore cs = do
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-	(crtReq, yc, dhsk) <- serverHelloDone pub
+	(crtReq, yc, dhsk, b) <- serverHelloDone pub
 
 	let	Just (CertificateRequest _ _ sdn) = crtReq
 		(pk, cc) = head $ filter (`isIncluded` sdn) ccs
@@ -158,8 +162,10 @@ handshake ccs certStore cs = do
 	liftIO $ do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
+	return b
 
-serverHelloDone :: RSA.PublicKey -> TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString)
+serverHelloDone :: Base b => RSA.PublicKey ->
+	TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString, b)
 serverHelloDone pub = do
 
 	-------------------------------------------
@@ -169,20 +175,16 @@ serverHelloDone pub = do
 	liftIO . putStrLn $
 		"CERTIFICATE REQUEST: " ++ show cske
 
-	let	ContentHandshake _ (HandshakeServerKeyExchange ske_) = cske
-		Right ske = decodeServerKeyExchange ske_
-		ServerKeyExchange ps ys _ _ _ _ = ske
-
 	cr <- getClientRandom
 	sr <- getServerRandom
-	liftIO . print $ verifyServerKeyExchange pub cr sr ske
-
+	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
+		Right (ps, ys) = verifyServerKeyExchange pub cr sr ske
 	g <- getRandomGen
-	let	(pr, g') = DH.generatePrivate g ps
+	let	(pr, g') = generateSecret g ps
 		dhsk = calculateCommon ps pr ys
 	setRandomGen g'
-	liftIO . putStrLn $ "PRIVATE NUMBER: " ++ show pr
-	liftIO . putStrLn $ "SHARED KEY    : " ++ show dhsk
+--	liftIO . putStrLn $ "PRIVATE NUMBER: " ++ show pr
+--	liftIO . putStrLn $ "SHARED KEY    : " ++ show dhsk
 
 	crtReq <- readContent
 
@@ -191,13 +193,12 @@ serverHelloDone pub = do
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-		shd <- readContent
-		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
-
+		_ <- readContent
+		return ()
 	return (
 		getCertificateRequest crtReq,
-		encodePublic ps $ DH.calculatePublic ps pr,
-		dhsk)
+		encodePublic ps $ calculatePublic ps pr, -- DH.calculatePublic ps pr,
+		dhsk, ps)
 
 readContent :: TlsIo Content Content
 readContent = do

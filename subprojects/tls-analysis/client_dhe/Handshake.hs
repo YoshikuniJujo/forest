@@ -35,11 +35,8 @@ module Handshake (
 	fst3, fromInt, headBS,
 	whole, ByteStringM, evalByteStringM,
 
-	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
-
-	decodeServerKeyExchange,
 
 	Base(..),
 ) where

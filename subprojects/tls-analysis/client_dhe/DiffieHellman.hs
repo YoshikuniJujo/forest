@@ -1,4 +1,5 @@
 {-# LANGUAGE PackageImports, TypeFamilies #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module DiffieHellman (
 	Base(..),
@@ -14,26 +15,9 @@ import qualified Data.ByteString as BS
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.PubKey.DH as DH
 
-import "crypto-random" Crypto.Random
-
 import ByteStringMonad
 
-class Base b where
-	type Param b
-	type Secret b
-	type Public b
-	generateBase :: CPRG g => g -> Param b -> (b, g)
-	generateSecret :: CPRG g => g -> b -> (Secret b, g)
-	calculatePublic :: b -> Secret b -> Public b
-	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
-
-	encodeBasePublic :: b -> Public b -> BS.ByteString
-	decodeBasePublic :: BS.ByteString -> Either String ((b, Public b), BS.ByteString)
-	encodePublic :: b -> Public b -> BS.ByteString
-	decodePublic :: b -> BS.ByteString -> Either String (Public b)
-
-	wantPublic :: b -> Bool
-	passPublic :: b -> Bool
+import Base
 
 instance Base DH.Params where
 	type Param DH.Params = (Int, Integer)
@@ -66,15 +50,15 @@ wordsToInteger :: [Word8] -> Integer
 wordsToInteger [] = 0
 wordsToInteger (w : ws) = fromIntegral w .|. (wordsToInteger ws `shiftL` 8)
 
+integerToByteString :: Integer -> BS.ByteString
+integerToByteString = BS.pack . toWords
+
 toWords :: Integer -> [Word8]
 toWords = reverse . integerToWords
 
 integerToWords :: Integer -> [Word8]
 integerToWords 0 = []
 integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
-
-integerToByteString :: Integer -> BS.ByteString
-integerToByteString = BS.pack . toWords
 
 byteStringToInteger :: BS.ByteString -> Integer
 byteStringToInteger = toI . BS.unpack
