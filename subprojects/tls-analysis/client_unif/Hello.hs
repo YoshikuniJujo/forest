@@ -12,7 +12,8 @@ module Hello (
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
 --	list1,
-	evalByteStringM, fst3, fromInt, lenBodyToByteString
+	evalByteStringM, fst3, fromInt, lenBodyToByteString,
+	Extension(..), EcPointFormat(..), NamedCurve(..),
  ) where
 
 import Prelude hiding (take)

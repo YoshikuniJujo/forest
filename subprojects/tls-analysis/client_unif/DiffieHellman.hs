@@ -43,13 +43,6 @@ instance Base DH.Params where
 	wantPublic _ = True
 	passPublic _ = True
 
-toI :: [Word8] -> Integer
-toI = wordsToInteger . reverse
-
-wordsToInteger :: [Word8] -> Integer
-wordsToInteger [] = 0
-wordsToInteger (w : ws) = fromIntegral w .|. (wordsToInteger ws `shiftL` 8)
-
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . toWords
 
@@ -62,6 +55,13 @@ integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
 
 byteStringToInteger :: BS.ByteString -> Integer
 byteStringToInteger = toI . BS.unpack
+
+toI :: [Word8] -> Integer
+toI = wordsToInteger . reverse
+
+wordsToInteger :: [Word8] -> Integer
+wordsToInteger [] = 0
+wordsToInteger (w : ws) = fromIntegral w .|. (wordsToInteger ws `shiftL` 8)
 
 dhEncodePublic :: DH.PublicNumber -> BS.ByteString
 dhEncodePublic =

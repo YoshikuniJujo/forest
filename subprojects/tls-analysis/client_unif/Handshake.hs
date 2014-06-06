@@ -34,6 +34,7 @@ module Handshake (
 
 	fst3, fromInt, headBS,
 	whole, ByteStringM, evalByteStringM,
+	Extension(..), EcPointFormat(..), NamedCurve(..),
 ) where
 
 import Prelude hiding (head, take, concat)

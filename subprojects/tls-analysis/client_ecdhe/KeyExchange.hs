@@ -73,11 +73,6 @@ getBody (ServerKeyExchangeEc ct nc t p _ha _sa _sign "") =
 getBody _ = error "bad"
 
 data ServerKeyExchange
-{-
-	= ServerKeyExchange Params PublicNumber
-		Word8 Word8 BS.ByteString
-		BS.ByteString
-		-}
 	= ServerKeyExchangeEc EcCurveType NamedCurve Word8 Point
 		Word8 Word8 BS.ByteString
 		BS.ByteString

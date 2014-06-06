@@ -9,6 +9,7 @@ module Basic (
 	byteStringToInt, intToByteString,
 	lenBodyToByteString, fromInt, fst3,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	NamedCurve(..),
 ) where
 
 import Data.Bits
@@ -73,6 +74,7 @@ data CipherSuite
 data CipherSuiteKeyEx
 	= RSA
 	| DHE_RSA
+	| ECDHE_RSA
 	| ECDHE_PSK
 	| KeyExNULL
 	deriving (Show, Eq)
@@ -127,3 +129,10 @@ fromInt = fromIntegral
 
 fst3 :: (a, b, c) -> a
 fst3 (x, _, _) = x
+
+data NamedCurve
+	= Secp256r1
+	| Secp384r1
+	| Secp521r1
+	| NamedCurveRaw Word16
+	deriving Show

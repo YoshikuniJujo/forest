@@ -57,7 +57,8 @@ clientHello :: Random -> [CipherSuite] -> Content
 clientHello cr cs = ContentHandshake (Version 3 3) . HandshakeClientHello $
 	ClientHello (Version 3 3) cr (SessionId "") cs
 		[CompressionMethodNull]
-		Nothing
+		(Just [	ExtensionEllipticCurve [Secp256r1],
+			ExtensionEcPointFormat [EcPointFormatUncompressed] ])
 
 certificateRequest :: [DistinguishedName] -> Content
 certificateRequest = ContentHandshake (Version 3 3)

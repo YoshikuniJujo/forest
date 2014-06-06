@@ -15,6 +15,7 @@ import Data.X509.Validation
 import Crypto.PubKey.RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.PubKey.ECC.Prim as ECDH
 
 import Fragment
 import Content
@@ -23,6 +24,7 @@ import Basic
 import Base
 import KeyExchange
 import DiffieHellman()
+import EcDhe
 
 openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
 openTlsServer name ccs certStore sv cs =
@@ -46,6 +48,10 @@ helloHandshake name ccs certStore css = do
 		CipherSuite DHE_RSA _ -> do
 			_ :: DH.Params <- handshake True name ccs certStore
 			return ()
+		CipherSuite ECDHE_RSA _ -> do
+			_ :: Curve <- handshake True name ccs certStore
+			return ()
+		_ -> throwError "TlsClient.helloHandshake"
 	
 hello :: [CipherSuite] -> TlsIo Content ()
 hello cs = do
@@ -88,8 +94,9 @@ serverKeyExchange pub = do
 			Just cr <- getClientRandom
 			Just sr <- getServerRandom
 			let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
-				Right (p, y) = verifyServerKeyExchange pub cr sr ske
-			return (p, y)
+			case verifyServerKeyExchange pub cr sr ske of
+				Right (p, y) -> return (p, y)
+				Left err -> error err
 		else return (undefined, undefined)
 
 handshake :: Base b => Bool ->
