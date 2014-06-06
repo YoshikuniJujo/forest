@@ -5,6 +5,7 @@ module KeyExchange (
 	ServerKeyExchange(..),
 	verifyServerKeyExchange,
 	integerToByteString,
+	decodeServerKeyExchange,
 ) where
 
 import GHC.Real
@@ -50,6 +51,9 @@ data ServerKeyExchange
 		BS.ByteString
 	| ServerKeyExchangeRaw BS.ByteString
 	deriving Show
+
+decodeServerKeyExchange :: BS.ByteString -> Either String ServerKeyExchange
+decodeServerKeyExchange = evalByteStringM parse
 
 instance Parsable ServerKeyExchange where
 	parse = parseServerKeyExchange

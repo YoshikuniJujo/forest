@@ -180,7 +180,8 @@ serverHelloDone pub = do
 --		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 		"CERTIFICATE REQUEST: " ++ show cske
 
-	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
+	let	ContentHandshake _ (HandshakeServerKeyExchange ske_) = cske
+		Right ske = decodeServerKeyExchange ske_
 		ServerKeyExchange ps ys _ _ _ _ = ske
 
 	cr <- getClientRandom
