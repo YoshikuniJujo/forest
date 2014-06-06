@@ -12,8 +12,6 @@ import qualified Data.ByteString as BS
 import Data.X509
 import Data.X509.CertificateStore
 import Data.X509.Validation
--- import Crypto.PubKey.RSA
-import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -78,7 +76,7 @@ hello cs = do
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
-	liftIO . putStrLn $ "SERVER HELLO: " ++ show sh
+--	liftIO . putStrLn $ "SERVER HELLO: " ++ show sh
 
 serverKeyExchange :: (Base b, PublicKey pk) =>
 	pk -> TlsIo Content (b, BS.ByteString, BS.ByteString)
@@ -94,9 +92,7 @@ serverKeyExchange pub = do
 	exchange :: Base b => b -> TlsIo Content (b, Public b)
 	exchange t =
 		if wantPublic t
-		then do	liftIO . putStrLn $ "HERE 1"
-			cske <- readContent
-			liftIO . putStrLn $ "HERE 2"
+		then do	cske <- readContent
 			Just cr <- getClientRandom
 			Just sr <- getServerRandom
 			let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
@@ -126,10 +122,10 @@ handshake dh name ccs certStore = do
 		pb@(~(PubKeyRSA pub)) = certPubKey $ getCertificate cert
 	v <- liftIO $ validateDefault certStore
 		(ValidationCache query add) (name, "localhost da") scc
-	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
+--	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
 	unless (null v) $ throwError "SERVER VALIDATION FAILURE"
-	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
-	liftIO . putStrLn $ "CERTIFICATE Chain: " ++ take 60 (show scc) ++ "..."
+--	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
+--	liftIO . putStrLn $ "CERTIFICATE Chain: " ++ take 60 (show scc) ++ "..."
 --	liftIO . putStrLn $ "PUBKEY: " ++ take 60 (show pub) ++ "..."
 
 	-------------------------------------------
@@ -167,7 +163,7 @@ handshake dh name ccs certStore = do
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
-	liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
+--	liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 	generateKeys pms
 	let	cke = ContentHandshake version $ HandshakeClientKeyExchange epms
 	writeContent cke
@@ -195,7 +191,7 @@ handshake dh name ccs certStore = do
 	--     CLIENT FINISHED                   --
 	-------------------------------------------
 	fhc <- finishedHash Client
-	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
+--	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	writeContent $ finished fhc
 	fragmentUpdateHash . contentToFragment $ finished fhc
 
@@ -204,19 +200,21 @@ handshake dh name ccs certStore = do
 	-------------------------------------------
 	sccs <- readContent
 	when (doesChangeCipherSpec sccs) $ flushCipherSuite Server
-	liftIO . putStrLn $ "SERVER CHANGE CIPHER SPEC: " ++ take 60 (show sccs)
+--	liftIO . putStrLn $ "SERVER CHANGE CIPHER SPEC: " ++ take 60 (show sccs)
 
 	-------------------------------------------
 	--     SERVER FINISHED                   --
 	-------------------------------------------
-	sfhc <- finishedHash Server
+	_sfhc <- finishedHash Server
 	scf <- readContent
 	updateSequenceNumberSmart Server
-	sfinish <- maybe (throwError $ "Not Finished: " ++ show scf)
+	_sfinish <- maybe (throwError $ "Not Finished: " ++ show scf)
 		return $ getFinish scf
+		{-
 	liftIO $ do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
+		-}
 	return ps
 
 serverHelloDone :: TlsIo Content (Maybe CertificateRequest)
@@ -226,16 +224,17 @@ serverHelloDone = do
 	--     CERTIFICATE REQUEST               --
 	-------------------------------------------
 	crtReq <- readContent
-	liftIO . putStrLn $
-		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
+--	liftIO . putStrLn $
+--		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 
 	unless (doesServerHelloDone crtReq) $ do
 
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
-		shd <- readContent
-		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
+		_shd <- readContent
+		return ()
+--		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
 	return $ getCertificateRequest crtReq
 

@@ -52,7 +52,6 @@ import Data.HandleLike
 
 import Data.ASN1.Encoding
 import Data.ASN1.Types
-import Data.ASN1.Error
 import Data.ASN1.BinaryEncoding
 
 import Content
@@ -271,7 +270,7 @@ generateKeys pms = do
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] =
 					divide [ mkl, mkl, 16, 16 ] ems
-			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
+--			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
 			tlss <- get
 			put $ tlss {
 				tlssMasterSecret = Just ms,
@@ -333,31 +332,24 @@ clientVerifySign pkys = do
 getVsnCsMwkSnMmk :: Partner -> TlsIo cnt (Maybe CT.MSVersion, CipherSuite, Maybe BS.ByteString,
 	Word64, Maybe BS.ByteString)
 getVsnCsMwkSnMmk partner = do
-	version <- gets tlssVersion
+	vrsn <- gets tlssVersion
 	cs <- cipherSuite partner
 	mwk <- writeKey partner
 	sn <- sequenceNumber partner
 	mmk <- macKey partner
-	return (version, cs, mwk, sn, mmk)
+	return (vrsn, cs, mwk, sn, mmk)
 
 encryptMessage :: Partner ->
 	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 encryptMessage partner ct v msg = do
-	(version, cs, mwk, sn, mmk) <- getVsnCsMwkSnMmk partner
-	{-
-	version <- gets tlssVersion
-	cs <- cipherSuite partner
-	mwk <- writeKey partner
-	sn <- sequenceNumber partner
-	mmk <- macKey partner
-	-}
+	(vrsn, cs, mwk, sn, mmk) <- getVsnCsMwkSnMmk partner
 	gen <- gets tlssRandomGen
 	mhs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return $ Just CT.hashSha1
 		CipherSuite _ AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
 		CipherSuite KeyExNULL MsgEncNULL -> return Nothing
 		_ -> throwError "TlsIo.encryptMessage"
-	case (version, mhs, mwk, mmk) of
+	case (vrsn, mhs, mwk, mmk) of
 		(Just CT.TLS12, Just hs, Just wk, Just mk)
 			-> do	let (ret, gen') =
 					CT.encryptMessage hs gen wk sn mk ct v msg
@@ -371,15 +363,8 @@ encryptMessage partner ct v msg = do
 decryptMessage :: Partner ->
 	ContentType -> Version -> BS.ByteString -> TlsIo cnt BS.ByteString
 decryptMessage partner ct v enc = do
-	(version, cs, mwk, sn, mmk) <- getVsnCsMwkSnMmk partner
-	{-
-	version <- gets tlssVersion
-	cs <- cipherSuite partner
-	mwk <- writeKey partner
-	sn <- sequenceNumber partner
-	mmk <- macKey partner
-	-}
-	case (version, cs, mwk, mmk) of
+	(vrsn, cs, mwk, sn, mmk) <- getVsnCsMwkSnMmk partner
+	case (vrsn, cs, mwk, mmk) of
 		(Just CT.TLS12, CipherSuite _ AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
@@ -588,7 +573,8 @@ debugPrintKeys = do
 tClose :: TlsServer -> IO ()
 tClose ts = do
 	tPutWithCT ts ContentTypeAlert "\SOH\NUL"
-	tGetWholeWithCT ts >>= print
+	tGetWholeWithCT ts >>= \c -> if c /= (ContentTypeAlert, "\SOH\NUL")
+		then print c else return ()
 	hClose h
 	where
 	h = tlsHandle ts

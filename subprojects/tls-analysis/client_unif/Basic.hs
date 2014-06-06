@@ -38,7 +38,7 @@ data ContentType
 	| ContentTypeHandshake
 	| ContentTypeApplicationData
 	| ContentTypeRaw Word8
-	deriving Show
+	deriving (Show, Eq)
 
 byteStringToContentType :: ByteString -> ContentType
 byteStringToContentType "\20" = ContentTypeChangeCipherSpec

@@ -13,7 +13,7 @@ import Crypto.Types.PubKey.ECC
 readEcPrivKey :: FilePath -> IO PrivateKey
 readEcPrivKey fp = do
 	Right [pem] <- pemParseBS <$> BS.readFile fp
-	print pem
+--	print pem
 	let	c = pemContent pem
 		_ws = BS.unpack c
 		body = BS.drop 6 c
