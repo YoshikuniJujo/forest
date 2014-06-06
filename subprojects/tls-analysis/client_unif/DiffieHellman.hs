@@ -6,6 +6,7 @@ module DiffieHellman (
 	toWords,
 	parseParamsPublic,
 	integerToByteString,
+	byteStringToInteger,
 ) where
 
 import Control.Applicative

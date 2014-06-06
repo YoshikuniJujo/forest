@@ -30,9 +30,12 @@ optDescr = [
 getCipherSuites :: [Option] -> [CipherSuite]
 getCipherSuites opts = (++ [CipherSuite RSA AES_128_CBC_SHA]) $
 	case (SHA1 `elem` opts, SHA256 `elem` opts) of
-		(True, False) -> [CipherSuite ECDHE_RSA AES_128_CBC_SHA]
-		(False, True) -> [CipherSuite ECDHE_RSA AES_128_CBC_SHA256]
-		_ -> [	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
+		(True, False) -> [CipherSuite ECDHE_ECDSA AES_128_CBC_SHA]
+		(False, True) -> [CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256]
+		_ -> [	
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
 			CipherSuite ECDHE_RSA AES_128_CBC_SHA,
 			CipherSuite DHE_RSA AES_128_CBC_SHA256,
 			CipherSuite DHE_RSA AES_128_CBC_SHA,
