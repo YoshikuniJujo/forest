@@ -68,7 +68,6 @@ parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
 	(pv, r, sid) <- getPvRSid
 	css <- parse
---	cms <- parseCompressionMethodList
 	cms <- parse
 	e <- emptyBS
 	mel <- if e then return Nothing else Just <$> parseExtensionList
@@ -80,7 +79,6 @@ clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString r,
 	sessionIdToByteString sid,
 	toByteString css,
---	compressionMethodListToByteString cms,
 	toByteString cms,
 	maybe "" extensionListToByteString mel
  ]

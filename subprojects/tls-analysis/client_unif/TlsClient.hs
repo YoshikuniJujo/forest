@@ -13,10 +13,16 @@ import Data.X509
 import Data.X509.CertificateStore
 import Data.X509.Validation
 import Crypto.PubKey.RSA
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.DH as DH
 
 import Fragment
 import Content
 import Basic
+
+import Base
+import KeyExchange
+import DiffieHellman()
 
 openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
 openTlsServer name ccs certStore sv cs =
@@ -29,9 +35,17 @@ isIncluded (_, CertificateChain certs) dns = let
 
 helloHandshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
 	[CipherSuite] -> TlsIo Content ()
-helloHandshake name ccs certStore cs = do
-	hello cs
-	handshake name ccs certStore
+helloHandshake name ccs certStore css = do
+	hello css
+	cs <- getCipherSuite
+	liftIO . putStrLn $ "CIPHER SUITE: " ++ show cs
+	case cs of
+		CipherSuite RSA _ -> do
+			_ :: NoDh <- handshake False name ccs certStore
+			return ()
+		CipherSuite DHE_RSA _ -> do
+			_ :: DH.Params <- handshake True name ccs certStore
+			return ()
 	
 hello :: [CipherSuite] -> TlsIo Content ()
 hello cs = do
@@ -54,9 +68,34 @@ hello cs = do
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
 	liftIO . putStrLn $ "SERVER HELLO: " ++ show sh
 
-handshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
-	TlsIo Content ()
-handshake name ccs certStore = do
+serverKeyExchange :: Base b =>
+	RSA.PublicKey -> TlsIo Content (b, BS.ByteString, BS.ByteString)
+serverKeyExchange pub = do
+	(ps, ys) <- exchange undefined
+	g <- getRandomGen
+	let	(pr, g') = generateSecret g ps
+		pv = encodePublic ps $ calculatePublic ps pr
+		dhsk = calculateCommon ps pr ys
+	setRandomGen g'
+	return (ps, pv, dhsk)
+	where
+	exchange :: Base b => b -> TlsIo Content (b, Public b)
+	exchange t = do
+		if wantPublic t
+		then do	liftIO . putStrLn $ "HERE 1"
+			cske <- readContent
+			liftIO . putStrLn $ "HERE 2"
+			Just cr <- getClientRandom
+			Just sr <- getServerRandom
+			let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
+				Right (p, y) = verifyServerKeyExchange pub cr sr ske
+			return (p, y)
+		else return (undefined, undefined)
+
+handshake :: Base b => Bool ->
+	String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
+	TlsIo Content b
+handshake dh name ccs certStore = do
 
 	-------------------------------------------
 	--     SERVER CERTIFICATE                --
@@ -78,7 +117,16 @@ handshake name ccs certStore = do
 	-------------------------------------------
 	--     SERVER HELLO DONE                 --
 	-------------------------------------------
+	
+	(ps, epms, pms) <- if dh
+	then serverKeyExchange pub
+	else do
+		p <- ("\x03\x03" `BS.append`) <$> randomByteString 46
+		e <- lenBodyToByteString 2 <$> encryptRSA pub p
+		return (undefined, e, p)
+
 	crtReq <- serverHelloDone
+
 
 	let	Just (CertificateRequest _ _ sdn) = crtReq
 		(pk, cc) = head $ filter (`isIncluded` sdn) ccs
@@ -95,14 +143,11 @@ handshake name ccs certStore = do
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
-	pms <- ("\x03\x03" `BS.append`) <$> randomByteString 46
-	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
-	epms' <- encryptRSA pub pms
+	liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 	generateKeys pms
-	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
-	writeContent cke''
-	fragmentUpdateHash $ contentToFragment cke''
-	liftIO $ putStrLn "GENERATE KEYS"
+	let	cke = ContentHandshake version $ HandshakeClientKeyExchange epms
+	writeContent cke
+	fragmentUpdateHash $ contentToFragment cke
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
@@ -125,6 +170,7 @@ handshake name ccs certStore = do
 	--     CLIENT FINISHED                   --
 	-------------------------------------------
 	fhc <- finishedHash Client
+	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	writeContent $ finished fhc
 	fragmentUpdateHash . contentToFragment $ finished fhc
 
@@ -146,6 +192,7 @@ handshake name ccs certStore = do
 	liftIO $ do
 		putStrLn $ "SERVER FINISHED FIREFOX     : " ++ take 60 (show sfinish)
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
+	return ps
 
 serverHelloDone :: TlsIo Content (Maybe CertificateRequest)
 serverHelloDone = do

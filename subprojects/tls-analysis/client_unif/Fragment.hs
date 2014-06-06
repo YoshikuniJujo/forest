@@ -7,6 +7,7 @@ module Fragment (
 	Partner(..),
 
 	setVersion, setClientRandom, setServerRandom,
+	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
 	encryptRSA, generateKeys, finishedHash, clientVerifySign,
@@ -16,6 +17,8 @@ module Fragment (
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	debugPrintKeys,
+
+	getRandomGen, setRandomGen,
 ) where
 
 import Prelude hiding (read)

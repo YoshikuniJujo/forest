@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content, fragmentToContent, contentToFragment, contentListToFragment,
+	Content(..), fragmentToContent, contentToFragment, contentListToFragment,
 	serverHello, certificate, certificateRequest,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
+
+	Handshake(..),
 
 	EncryptedPreMasterSecret(..),
 

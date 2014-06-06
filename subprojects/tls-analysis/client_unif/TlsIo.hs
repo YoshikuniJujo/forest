@@ -9,6 +9,7 @@ module TlsIo (
 	readLen, writeLen, 
 
 	setVersion, setClientRandom, setServerRandom,
+	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 	
 	encryptRSA, generateKeys, updateHash, finishedHash, clientVerifySign,
@@ -19,6 +20,8 @@ module TlsIo (
 	TlsServer, runOpen, tPut, tGetByte, tGetLine, tGet, tGetContent, tClose,
 
 	debugPrintKeys,
+
+	getRandomGen, setRandomGen,
 ) where
 
 import Prelude hiding (read)
@@ -210,6 +213,13 @@ setServerRandom (Random sr) = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
 
+getClientRandom, getServerRandom :: TlsIo cnt (Maybe BS.ByteString)
+getClientRandom = gets tlssClientRandom
+getServerRandom = gets tlssServerRandom
+
+getCipherSuite :: TlsIo cnt CipherSuite
+getCipherSuite = gets tlssCachedCipherSuite
+
 cacheCipherSuite :: CipherSuite -> TlsIo cnt ()
 cacheCipherSuite cs = do
 	tlss <- get
@@ -241,8 +251,8 @@ generateKeys pms = do
 	mkl <- do
 		cs <- gets tlssCachedCipherSuite
 		case cs of
-			CipherSuite RSA AES_128_CBC_SHA -> return 20
-			CipherSuite RSA AES_128_CBC_SHA256 -> return 32
+			CipherSuite _ AES_128_CBC_SHA -> return 20
+			CipherSuite _ AES_128_CBC_SHA256 -> return 32
 			_ -> throwError "TlsIO.generateKeys: error"
 	case (mv, mcr, msr) of
 		(Just v, Just cr, Just sr) -> do
@@ -269,6 +279,9 @@ generateKeys pms = do
 updateHash :: BS.ByteString -> TlsIo cnt ()
 updateHash bs = do
 	tlss@TlsClientState{ tlssSha256Ctx = sha256 } <- get
+--	liftIO . putStrLn $ "PRE : " ++ show (SHA256.finalize sha256)
+--	liftIO . putStrLn $ show bs
+--	liftIO . putStrLn $ "POST: " ++ show (SHA256.finalize $ SHA256.update sha256 bs)
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
 finishedHash :: Partner -> TlsIo cnt BS.ByteString
@@ -340,12 +353,12 @@ decryptMessage partner ct v enc = do
 	mmk <- macKey partner
 	-}
 	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CipherSuite RSA AES_128_CBC_SHA, Just key, Just mk)
+		(Just CT.TLS12, CipherSuite _ AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
 					Left err -> throwError err
-		(Just CT.TLS12, CipherSuite RSA AES_128_CBC_SHA256, Just key, Just mk)
+		(Just CT.TLS12, CipherSuite _ AES_128_CBC_SHA256, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -552,3 +565,11 @@ tClose ts = do
 	hClose h
 	where
 	h = tlsHandle ts
+
+getRandomGen :: TlsIo cnt SystemRNG
+getRandomGen = gets tlssRandomGen
+
+setRandomGen :: SystemRNG -> TlsIo cnt ()
+setRandomGen g = do
+	tlss <- get
+	put tlss{ tlssRandomGen = g }
