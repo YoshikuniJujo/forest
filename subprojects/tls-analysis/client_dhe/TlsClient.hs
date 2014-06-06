@@ -173,27 +173,33 @@ handshake ccs certStore = do
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
 	return b
 
+serverKeyExchange :: Base b => b -> RSA.PublicKey -> TlsIo Content (b, Public b)
+serverKeyExchange t pub = do
+	if wantPublic t
+	then do cske <- readContent
+		cr <- getClientRandom
+		sr <- getServerRandom
+		let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
+			Right (p, y) = verifyServerKeyExchange pub cr sr ske
+		return (p, y)
+	else return (undefined, undefined)
+
 serverHelloDone :: Base b => RSA.PublicKey ->
 	TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString, b)
 serverHelloDone pub = do
 
-	-------------------------------------------
-	--     CERTIFICATE REQUEST               --
-	-------------------------------------------
-	cske <- readContent
-	liftIO . putStrLn $
-		"CERTIFICATE REQUEST: " ++ show cske
-
-	cr <- getClientRandom
-	sr <- getServerRandom
-	let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
-		Right (ps, ys) = verifyServerKeyExchange pub cr sr ske
+	-----------------------------------------------
+	--      SERVER KEY EXCHANGE                  --
+	-----------------------------------------------
+	(ps, ys) <- serverKeyExchange undefined pub
 	g <- getRandomGen
 	let	(pr, g') = generateSecret g ps
 		dhsk = calculateCommon ps pr ys
 	setRandomGen g'
---	liftIO . putStrLn $ "PRIVATE NUMBER: " ++ show pr
---	liftIO . putStrLn $ "SHARED KEY    : " ++ show dhsk
+
+	-------------------------------------------
+	--     CERTIFICATE REQUEST               --
+	-------------------------------------------
 
 	crtReq <- readContent
 
