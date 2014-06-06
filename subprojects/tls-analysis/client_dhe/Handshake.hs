@@ -45,6 +45,7 @@ import Prelude hiding (head, take, concat)
 
 import Control.Applicative ((<$>))
 
+import Data.Bits
 import Data.Word
 import qualified Data.ByteString as BS
 
@@ -64,7 +65,7 @@ data Handshake
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
-	| HandshakeClientKeyExchange EncryptedPreMasterSecret
+	| HandshakeClientKeyExchange ByteString
 	| HandshakeFinished ByteString
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
@@ -124,11 +125,19 @@ handshakeGetFinish (HandshakeFinished f) = Just f
 handshakeGetFinish _ = Nothing
 
 handshakeEncryptedPreMasterSecret :: Handshake -> Maybe EncryptedPreMasterSecret
-handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange epms) = Just epms
+handshakeEncryptedPreMasterSecret (HandshakeClientKeyExchange lenepms) =
+	if BS.length epms == len
+		then Just $ EncryptedPreMasterSecret epms
+		else Nothing
+	where
+	(len_, epms) = BS.splitAt 2 lenepms
+	len = let [w1, w2] = BS.unpack len_ in
+		fromIntegral w1 `shiftL` 8 .|. fromIntegral w2
 handshakeEncryptedPreMasterSecret _ = Nothing
 
 handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
-handshakeMakeClientKeyExchange = HandshakeClientKeyExchange
+handshakeMakeClientKeyExchange (EncryptedPreMasterSecret epms) =
+	HandshakeClientKeyExchange $ lenBodyToByteString 2 epms
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do
@@ -146,7 +155,7 @@ parseHandshake = do
 		HandshakeTypeCertificateVerify ->
 			HandshakeCertificateVerify <$> parse
 		HandshakeTypeClientKeyExchange ->
-			HandshakeClientKeyExchange <$> parse
+			HandshakeClientKeyExchange <$> whole
 		HandshakeTypeFinished -> HandshakeFinished <$> whole
 		_ -> HandshakeRaw mt <$> whole
 
@@ -165,8 +174,8 @@ handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
 handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificateVerify $ toByteString ds
-handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeClientKeyExchange $ toByteString epms
+handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeClientKeyExchange epms
 handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =
