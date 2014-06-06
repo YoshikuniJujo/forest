@@ -40,6 +40,8 @@ module Handshake (
 	integerToByteString,
 
 	decodeServerKeyExchange,
+
+	Base(..),
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -138,7 +140,8 @@ handshakeEncryptedPreMasterSecret _ = Nothing
 
 handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
 handshakeMakeClientKeyExchange (EncryptedPreMasterSecret epms) =
-	HandshakeClientKeyExchange $ lenBodyToByteString 2 epms
+	HandshakeClientKeyExchange epms
+--	HandshakeClientKeyExchange $ lenBodyToByteString 2 epms
 
 parseHandshake :: ByteStringM Handshake
 parseHandshake = do

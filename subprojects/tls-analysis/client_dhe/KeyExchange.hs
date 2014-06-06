@@ -6,12 +6,11 @@ module KeyExchange (
 	verifyServerKeyExchange,
 	integerToByteString,
 	decodeServerKeyExchange,
+
+	Base(..),
 ) where
 
-import GHC.Real
-
 import Control.Applicative
-import Control.Arrow
 import ByteStringMonad
 import qualified Data.ByteString as BS
 
@@ -64,7 +63,16 @@ instance Base DH.Params where
 		lenBodyToByteString 2 $ integerToByteString g,
 		lenBodyToByteString 2 $ integerToByteString y ]
 	decodeBasePublic = evalByteStringM parseParamsPublic
---	encodePublic
+	encodePublic _ = dhEncodePublic
+	decodePublic _ = evalByteStringM $
+		DH.PublicNumber . byteStringToInteger <$> takeLen 2
+
+	wantPublic _ = True
+	passPublic _ = True
+
+dhEncodePublic :: DH.PublicNumber -> BS.ByteString
+dhEncodePublic =
+	lenBodyToByteString 2 . integerToByteString .  (\(DH.PublicNumber pn) -> pn)
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
@@ -144,3 +152,6 @@ integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
 
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . toWords
+
+byteStringToInteger :: BS.ByteString -> Integer
+byteStringToInteger = toI . BS.unpack

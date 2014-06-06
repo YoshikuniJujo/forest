@@ -26,10 +26,7 @@ import Fragment
 import Content
 import Basic
 
-import Crypto.PubKey.DH
-import qualified Crypto.Types.PubKey.DH as DH
-
-import Data.Ratio
+import qualified Crypto.PubKey.DH as DH
 
 openTlsServer :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore
 	-> Handle -> [CipherSuite]
@@ -105,19 +102,11 @@ handshake ccs certStore cs = do
 	-------------------------------------------
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
---	let pmsVer = if OptPmsVerErr `elem` opts then "\x99\x99" else "\x03\x03"
---	pms <- (pmsVer `BS.append`) <$> randomByteString 46
---	epms' <- encryptRSA pub pms
---	liftIO $ putStrLn $ "Encrypted Pre Master Secret: " ++ show epms'
-	generateKeys dhsk -- pms
---	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
+	generateKeys dhsk
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret yc
 	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''
---	liftIO $ putStrLn $ "KEY EXCHANGE: " ++ show (contentToFragment cke'')
 	liftIO $ putStrLn "GENERATE KEYS"
-
---	debugPrintKeys
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
@@ -178,7 +167,6 @@ serverHelloDone pub = do
 	-------------------------------------------
 	cske <- readContent
 	liftIO . putStrLn $
---		"CERTIFICATE REQUEST: " ++ take 60 (show crtReq) ++ "..."
 		"CERTIFICATE REQUEST: " ++ show cske
 
 	let	ContentHandshake _ (HandshakeServerKeyExchange ske_) = cske
@@ -190,8 +178,8 @@ serverHelloDone pub = do
 	liftIO . print $ verifyServerKeyExchange pub cr sr ske
 
 	g <- getRandomGen
-	let	(pr, g') = generatePrivate g ps
-		dhsk = getShared ps pr ys
+	let	(pr, g') = DH.generatePrivate g ps
+		dhsk = calculateCommon ps pr ys
 	setRandomGen g'
 	liftIO . putStrLn $ "PRIVATE NUMBER: " ++ show pr
 	liftIO . putStrLn $ "SHARED KEY    : " ++ show dhsk
@@ -206,10 +194,10 @@ serverHelloDone pub = do
 		shd <- readContent
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
-	return (getCertificateRequest crtReq,
-		integerToByteString . (\(DH.PublicNumber pn) -> pn) $
-			calculatePublic ps pr,
-		integerToByteString . numerator $ toRational dhsk)
+	return (
+		getCertificateRequest crtReq,
+		encodePublic ps $ DH.calculatePublic ps pr,
+		dhsk)
 
 readContent :: TlsIo Content Content
 readContent = do

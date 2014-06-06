@@ -34,6 +34,8 @@ module Content (
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 
 	decodeServerKeyExchange,
+
+	Base(..),
 ) where
 
 import Prelude hiding (concat, head)
