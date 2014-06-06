@@ -137,6 +137,7 @@ rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let pms = calculateCommon dhps dhpn $ decodePublic dhps epms
+			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage

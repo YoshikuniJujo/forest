@@ -48,26 +48,6 @@ cipherSuite' csssv csscl = case find (`elem` csscl) csssv of
 		then Just $ CipherSuite RSA AES_128_CBC_SHA
 		else Nothing
 
-{-
-cipherSuite :: [CipherSuite] -> CipherSuite
-cipherSuite css
-	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256 `elem` css =
-		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
-	| CipherSuite ECDHE_ECDSA AES_128_CBC_SHA `elem` css =
-		CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
-	| CipherSuite ECDHE_RSA AES_128_CBC_SHA256 `elem` css =
-		CipherSuite ECDHE_RSA AES_128_CBC_SHA256
-	| CipherSuite ECDHE_RSA AES_128_CBC_SHA `elem` css =
-		CipherSuite ECDHE_RSA AES_128_CBC_SHA
-	| CipherSuite DHE_RSA AES_128_CBC_SHA256 `elem` css =
-		CipherSuite DHE_RSA AES_128_CBC_SHA256
-	| CipherSuite DHE_RSA AES_128_CBC_SHA `elem` css =
-		CipherSuite DHE_RSA AES_128_CBC_SHA
-	| CipherSuite RSA AES_128_CBC_SHA256 `elem` css =
-		CipherSuite RSA AES_128_CBC_SHA256
-	| otherwise = CipherSuite RSA AES_128_CBC_SHA
-	-}
-
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
 
@@ -356,6 +336,7 @@ clientChangeCipherSuite = do
 clientFinished :: TlsIo ()
 clientFinished = do
 	fhc <- finishedHash Client
+	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	cnt <- readContent (== version)
 --	liftIO . putStrLn $ "CLIENT FINISHED: " ++ show cnt
 	case cnt of

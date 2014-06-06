@@ -335,6 +335,9 @@ generateKeys pms = do
 updateHash :: BS.ByteString -> TlsIo ()
 updateHash bs = do
 	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
+--	liftIO . putStrLn $ "PRE : " ++ show (SHA256.finalize sha256)
+--	liftIO . putStrLn $ show bs
+--	liftIO . putStrLn $ "POST: " ++ show (SHA256.finalize $ SHA256.update sha256 bs)
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
 finishedHash :: Partner -> TlsIo BS.ByteString

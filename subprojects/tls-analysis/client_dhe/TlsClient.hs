@@ -116,7 +116,7 @@ handshake ccs certStore = do
 	--     CLIENT KEY EXCHANGE               --
 	-------------------------------------------
 	generateKeys dhsk
-	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret yc
+	let	cke'' = ContentHandshake version $ HandshakeClientKeyExchange yc
 	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''
 	liftIO $ putStrLn "GENERATE KEYS"
@@ -173,16 +173,27 @@ handshake ccs certStore = do
 		putStrLn $ "SERVER FINISHED CALCULATE   : " ++ take 60 (show sfhc)
 	return b
 
-serverKeyExchange :: Base b => b -> RSA.PublicKey -> TlsIo Content (b, Public b)
-serverKeyExchange t pub = do
-	if wantPublic t
-	then do cske <- readContent
-		cr <- getClientRandom
-		sr <- getServerRandom
-		let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
-			Right (p, y) = verifyServerKeyExchange pub cr sr ske
-		return (p, y)
-	else return (undefined, undefined)
+serverKeyExchange :: Base b =>
+	b -> RSA.PublicKey -> TlsIo Content (b, BS.ByteString, BS.ByteString)
+serverKeyExchange _ pub = do
+	(ps, ys) <- exchange undefined
+	g <- getRandomGen
+	let	(pr, g') = generateSecret g ps
+		pv = encodePublic ps $ calculatePublic ps pr
+		dhsk = calculateCommon ps pr ys
+	setRandomGen g'
+	return (ps, pv, dhsk)
+	where
+	exchange :: Base b => b -> TlsIo Content (b, Public b)
+	exchange t = do
+		if wantPublic t
+		then do cske <- readContent
+			cr <- getClientRandom
+			sr <- getServerRandom
+			let	ContentHandshake _ (HandshakeServerKeyExchange ske) = cske
+				Right (p, y) = verifyServerKeyExchange pub cr sr ske
+			return (p, y)
+		else return (undefined, undefined)
 
 serverHelloDone :: Base b => RSA.PublicKey ->
 	TlsIo Content (Maybe CertificateRequest, BS.ByteString, BS.ByteString, b)
@@ -191,11 +202,7 @@ serverHelloDone pub = do
 	-----------------------------------------------
 	--      SERVER KEY EXCHANGE                  --
 	-----------------------------------------------
-	(ps, ys) <- serverKeyExchange undefined pub
-	g <- getRandomGen
-	let	(pr, g') = generateSecret g ps
-		dhsk = calculateCommon ps pr ys
-	setRandomGen g'
+	(ps, pv, dhsk) <- serverKeyExchange undefined pub
 
 	-------------------------------------------
 	--     CERTIFICATE REQUEST               --
@@ -210,10 +217,7 @@ serverHelloDone pub = do
 	-------------------------------------------
 		_ <- readContent
 		return ()
-	return (
-		getCertificateRequest crtReq,
-		encodePublic ps $ calculatePublic ps pr, -- DH.calculatePublic ps pr,
-		dhsk, ps)
+	return (getCertificateRequest crtReq, pv, dhsk, ps)
 
 readContent :: TlsIo Content Content
 readContent = do
