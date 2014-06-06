@@ -23,6 +23,7 @@ module Content (
 	getCertificateRequest,
 	clientHello,
 	CertificateRequest(..),
+	HashAlgorithm(..), SignatureAlgorithm(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -145,8 +146,8 @@ digitalSign :: Content -> Maybe ByteString
 digitalSign (ContentHandshake _ hss) = handshakeSign hss
 digitalSign _ = Nothing
 
-makeVerify :: ByteString -> Content
-makeVerify = ContentHandshake (Version 3 3) . handshakeMakeVerify
+makeVerify :: (HashAlgorithm, SignatureAlgorithm) -> ByteString -> Content
+makeVerify a = ContentHandshake (Version 3 3) . handshakeMakeVerify a
 
 certificateChain :: Content -> Maybe CertificateChain
 certificateChain (ContentHandshake _ hss) = handshakeCertificate hss

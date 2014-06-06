@@ -27,16 +27,18 @@ import KeyExchange
 import DiffieHellman(byteStringToInteger)
 import EcDhe
 
-openTlsServer :: String -> [(RSA.PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
+openTlsServer :: SecretKey sk =>
+	String -> [(sk, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
 openTlsServer name ccs certStore sv cs =
 	runOpen (helloHandshake name ccs certStore cs) sv
 
-isIncluded :: (RSA.PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
+isIncluded :: (sk, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
 
-helloHandshake :: String -> [(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
+helloHandshake :: SecretKey sk =>
+	String -> [(sk, CertificateChain)] -> CertificateStore ->
 	[CipherSuite] -> TlsIo Content ()
 helloHandshake name ccs certStore css = do
 	hello css
@@ -111,8 +113,8 @@ makeEcdsaPubKey cn bs = case cn of
 	(bspubx, bspuby) = BS.splitAt 32 $ BS.tail bs
 	[pubx, puby] = map byteStringToInteger [bspubx, bspuby]
 
-handshake :: Base b => Bool ->
-	String -> [(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
+handshake :: (Base b, SecretKey sk)  => Bool ->
+	String -> [(sk, CertificateChain)] -> CertificateStore ->
 	TlsIo Content b
 handshake dh name ccs certStore = do
 
@@ -177,8 +179,9 @@ handshake dh name ccs certStore = do
 	case crtReq of
 		Just _ -> do
 			signed <- clientVerifySign pk
-			writeContent $ makeVerify signed
-			fragmentUpdateHash . contentToFragment $ makeVerify signed
+			writeContent $ makeVerify (algorithm pk) signed
+			fragmentUpdateHash . contentToFragment $ makeVerify
+				(algorithm pk) signed
 		_ -> return ()
 
 	-------------------------------------------

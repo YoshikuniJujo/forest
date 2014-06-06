@@ -22,6 +22,8 @@ module TlsIo (
 	debugPrintKeys,
 
 	getRandomGen, setRandomGen,
+
+	SecretKey(..),
 ) where
 
 import Prelude hiding (read)
@@ -42,10 +44,18 @@ import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified CryptoTools as CT
 import Basic
 import Data.HandleLike
+
+import Data.ASN1.Encoding
+import Data.ASN1.Types
+import Data.ASN1.Error
+import Data.ASN1.BinaryEncoding
+
+import Content
 
 type TlsIo cnt = ErrorT String (StateT (TlsClientState cnt) IO)
 
@@ -295,13 +305,30 @@ finishedHash partner = do
 			Server -> CT.generateFinished CT.TLS12 False ms sha256
 		_ -> throwError "finishedHash: No version / No master secrets"
 
-clientVerifySign :: RSA.PrivateKey -> TlsIo cnt BS.ByteString
+class SecretKey sk where
+	sign :: sk -> BS.ByteString -> BS.ByteString
+	algorithm :: sk -> (HashAlgorithm, SignatureAlgorithm)
+
+instance SecretKey RSA.PrivateKey where
+	sign sk bd = let
+		Right hashed = RSA.padSignature
+			(RSA.public_size $ RSA.private_pub sk)
+			(RSA.digestToASN1 RSA.hashDescrSHA256 bd) in
+		RSA.dp Nothing sk hashed
+	algorithm _ = (HashAlgorithmSha256, SignatureAlgorithmRsa)
+
+instance SecretKey ECDSA.PrivateKey where
+	sign sk = encodeSignature . fromJust . ECDSA.signWith 4649 sk id
+	algorithm _ = (HashAlgorithmSha256, SignatureAlgorithmEcdsa)
+
+encodeSignature :: ECDSA.Signature -> BS.ByteString
+encodeSignature (ECDSA.Signature r s) =
+	encodeASN1' DER [Start Sequence, IntVal r, IntVal s, End Sequence]
+
+clientVerifySign :: SecretKey sk => sk -> TlsIo cnt BS.ByteString
 clientVerifySign pkys = do
 	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
-	let Right hashed = RSA.padSignature
-		(RSA.public_size $ RSA.private_pub pkys)
-		(RSA.digestToASN1 RSA.hashDescrSHA256 sha256)
-	return $ RSA.dp Nothing pkys hashed
+	return $ sign pkys sha256
 
 getVsnCsMwkSnMmk :: Partner -> TlsIo cnt (Maybe CT.MSVersion, CipherSuite, Maybe BS.ByteString,
 	Word64, Maybe BS.ByteString)

@@ -19,6 +19,7 @@ module Fragment (
 	debugPrintKeys,
 
 	getRandomGen, setRandomGen,
+	SecretKey(..),
 ) where
 
 import Prelude hiding (read)

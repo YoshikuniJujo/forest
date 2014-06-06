@@ -265,6 +265,7 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 
 certificateVerify :: PubKey -> TlsIo ()
 certificateVerify (PubKeyRSA pub) = do
+	liftIO . putStrLn $ "VERIFY WITH RSA"
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== version)
 	case hs of
@@ -287,6 +288,7 @@ certificateVerify (PubKeyRSA pub) = do
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
 certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
+	liftIO . putStrLn $ "VERIFY WITH ECDSA"
 	hash0 <- clientVerifyHashEc
 	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
 	hs <- readHandshake (== version)

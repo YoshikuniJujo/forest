@@ -310,12 +310,20 @@ finishedHash partner = do
 			Server -> CT.generateFinished CT.TLS12 False ms sha256
 		_ -> throwError "finishedHash: No version / No master secrets"
 
-clientVerifySign :: ECDSA.PrivateKey -> Bool -> TlsIo cnt BS.ByteString
+class SecretKey sk where
+	sign :: sk -> BS.ByteString -> BS.ByteString
+
+instance SecretKey ECDSA.PrivateKey where
+	sign sk = encodeSignature . fromJust . ECDSA.signWith 4649 sk id
+
+-- clientVerifySign :: ECDSA.PrivateKey -> Bool -> TlsIo cnt BS.ByteString
+clientVerifySign :: SecretKey sk => sk -> Bool -> TlsIo cnt BS.ByteString
 clientVerifySign pkys bad = do
 	sha256 <- gets $ SHA256.finalize .
 		(if bad then flip SHA256.update "hogeru" else id) . tlssSha256Ctx
 	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show sha256
-	return . encodeSignature . fromJust $ ECDSA.signWith 500 pkys id sha256
+	return $ sign pkys sha256
+--	return . encodeSignature . fromJust $ ECDSA.signWith 500 pkys id sha256
 --	return . encodeSignature . fromJust $ ECDSA.signWith 500 pkys (`BS.append` "hoge") sha256
 
 encryptMessage :: Partner ->
