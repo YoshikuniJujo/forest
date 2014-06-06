@@ -51,22 +51,23 @@ parseCipherSuite :: ByteStringM CipherSuite
 parseCipherSuite = do
 	[w1, w2] <- takeWords 2
 	return $ case (w1, w2) of
-		(0x00, 0x00) -> TLS_NULL_WITH_NULL_NULL
-		(0x00, 0x2f) -> TLS_RSA_WITH_AES_128_CBC_SHA
-		(0x00, 0x33) -> TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-		(0x00, 0x39) -> TLS_ECDHE_PSK_WITH_NULL_SHA
-		(0x00, 0x3c) -> TLS_RSA_WITH_AES_128_CBC_SHA256
-		(0x00, 0x45) -> TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+		(0x00, 0x00) -> CipherSuite KeyExNULL MsgEncNULL
+		(0x00, 0x2f) -> CipherSuite RSA AES_128_CBC_SHA
+		(0x00, 0x33) -> CipherSuite DHE_RSA AES_128_CBC_SHA
+		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
+		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
+		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
 		_ -> CipherSuiteRaw w1 w2
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
-cipherSuiteToByteString TLS_NULL_WITH_NULL_NULL = "\x00\x00"
-cipherSuiteToByteString TLS_RSA_WITH_AES_128_CBC_SHA = "\x00\x2f"
-cipherSuiteToByteString TLS_DHE_RSA_WITH_AES_128_CBC_SHA = "\x00\x33"
-cipherSuiteToByteString TLS_ECDHE_PSK_WITH_NULL_SHA = "\x00\x39"
-cipherSuiteToByteString TLS_RSA_WITH_AES_128_CBC_SHA256 = "\x00\x3c"
-cipherSuiteToByteString TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA = "\x00\x45"
+cipherSuiteToByteString (CipherSuite KeyExNULL MsgEncNULL) = "\x00\x00"
+cipherSuiteToByteString (CipherSuite RSA AES_128_CBC_SHA) = "\x00\x2f"
+cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA) = "\x00\x33"
+cipherSuiteToByteString (CipherSuite ECDHE_PSK NULL_SHA) = "\x00\x39"
+cipherSuiteToByteString (CipherSuite RSA AES_128_CBC_SHA256) = "\x00\x3c"
+cipherSuiteToByteString (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
+cipherSuiteToByteString _ = error "Parts.cipherSuiteToByteString"
 
 data HashAlgorithm
 	= HashAlgorithmSha1

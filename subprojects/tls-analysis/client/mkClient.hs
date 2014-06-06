@@ -29,10 +29,10 @@ optDescr = [
 
 getCipherSuites :: [Option] -> [CipherSuite]
 getCipherSuites opts = case (SHA1 `elem` opts, SHA256 `elem` opts) of
-	(True, False) -> [TLS_RSA_WITH_AES_128_CBC_SHA]
---	(False, True) -> [TLS_RSA_WITH_AES_128_CBC_SHA256]
-	_ -> [	TLS_RSA_WITH_AES_128_CBC_SHA256,
-		TLS_RSA_WITH_AES_128_CBC_SHA ]
+	(True, False) -> [CipherSuite RSA AES_128_CBC_SHA]
+--	(False, True) -> [CipherSuite RSA AES_128_CBC_SHA256]
+	_ -> [	CipherSuite RSA AES_128_CBC_SHA256,
+		CipherSuite RSA AES_128_CBC_SHA ]
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append

@@ -4,10 +4,11 @@ module Basic (
 	Fragment(..),
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
-	Random(..), CipherSuite(..),
+	Random(..),
 	showKey, showKeySingle, word64ToByteString,
 	byteStringToInt, intToByteString,
 	lenBodyToByteString, fromInt, fst3,
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
 import Data.Bits
@@ -55,6 +56,10 @@ contentTypeToByteString (ContentTypeRaw ct) = pack [ct]
 data Random = Random ByteString
 
 data CipherSuite
+	= CipherSuite CipherSuiteKeyEx CipherSuiteMsgEnc
+	| CipherSuiteRaw Word8 Word8
+	deriving (Show, Eq)
+{-
 	= TLS_NULL_WITH_NULL_NULL
 	| TLS_RSA_WITH_AES_128_CBC_SHA
 	| TLS_DHE_RSA_WITH_AES_128_CBC_SHA
@@ -62,6 +67,22 @@ data CipherSuite
 	| TLS_RSA_WITH_AES_128_CBC_SHA256
 	| TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
 	| CipherSuiteRaw Word8 Word8
+	deriving (Show, Eq)
+	-}
+
+data CipherSuiteKeyEx
+	= RSA
+	| DHE_RSA
+	| ECDHE_PSK
+	| KeyExNULL
+	deriving (Show, Eq)
+
+data CipherSuiteMsgEnc
+	= AES_128_CBC_SHA
+	| AES_128_CBC_SHA256
+	| CAMELLIA_128_CBC_SHA
+	| NULL_SHA
+	| MsgEncNULL
 	deriving (Show, Eq)
 
 showKeySingle :: ByteString -> String
