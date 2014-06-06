@@ -20,17 +20,21 @@ import Basic
 
 openTlsServer :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore -> Handle -> [CipherSuite] -> IO TlsServer
 openTlsServer name ccs certStore sv cs =
-	runOpen (handshake name ccs certStore cs) sv
+	runOpen (helloHandshake name ccs certStore cs) sv
 
 isIncluded :: (PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
-	
 
-handshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
+helloHandshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
 	[CipherSuite] -> TlsIo Content ()
-handshake name ccs certStore cs = do
+helloHandshake name ccs certStore cs = do
+	hello cs
+	handshake name ccs certStore
+	
+hello :: [CipherSuite] -> TlsIo Content ()
+hello cs = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -48,8 +52,11 @@ handshake name ccs certStore cs = do
 	maybe (throwError "No Server Hello") setVersion $ serverVersion sh
 	maybe (throwError "No Server Hello") setServerRandom $ serverRandom sh
 	maybe (throwError "No Server Hello") cacheCipherSuite $ serverCipherSuite sh
---	liftIO . putStrLn $ "SERVER HELLO: " ++ take 60 (show sh) ++ "..."
 	liftIO . putStrLn $ "SERVER HELLO: " ++ show sh
+
+handshake :: String -> [(PrivateKey, CertificateChain)] -> CertificateStore ->
+	TlsIo Content ()
+handshake name ccs certStore = do
 
 	-------------------------------------------
 	--     SERVER CERTIFICATE                --
@@ -59,7 +66,6 @@ handshake name ccs certStore cs = do
 		PubKeyRSA pub = certPubKey $ getCertificate cert
 	v <- liftIO $ validateDefault certStore
 		(ValidationCache query add) (name, "localhost da") scc
---	liftIO . putStrLn $ "CERTIFICATE CHAIN: " ++ show scc
 	liftIO . putStrLn $ "VALIDATE RESULT: " ++ show v
 	unless (null v) $ throwError "SERVER VALIDATION FAILURE"
 	liftIO . putStrLn $ "CERTIFICATE: " ++ take 60 (show crt) ++ "..."
@@ -92,15 +98,11 @@ handshake name ccs certStore cs = do
 	pms <- ("\x03\x03" `BS.append`) <$> randomByteString 46
 	liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 	epms' <- encryptRSA pub pms
---	liftIO $ putStrLn $ "Encrypted Pre Master Secret: " ++ show epms'
 	generateKeys pms
 	let	cke'' = makeClientKeyExchange $ EncryptedPreMasterSecret epms'
 	writeContent cke''
 	fragmentUpdateHash $ contentToFragment cke''
---	liftIO $ putStrLn $ "KEY EXCHANGE: " ++ show (contentToFragment cke'')
 	liftIO $ putStrLn "GENERATE KEYS"
-
---	debugPrintKeys
 
 	-------------------------------------------
 	--     CERTIFICATE VERIFY                --
