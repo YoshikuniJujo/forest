@@ -27,6 +27,7 @@ import Content
 import Basic
 
 import Crypto.PubKey.DH
+import qualified Crypto.Types.PubKey.DH as DH
 
 import Data.Ratio
 
@@ -206,7 +207,8 @@ serverHelloDone pub = do
 		liftIO . putStrLn $ "SERVER HELLO DONE: " ++ take 60 (show shd) ++ "..."
 
 	return (getCertificateRequest crtReq,
-		integerToByteString . toInteger $ calculatePublic ps pr,
+		integerToByteString . (\(DH.PublicNumber pn) -> pn) $
+			calculatePublic ps pr,
 		integerToByteString . numerator $ toRational dhsk)
 
 readContent :: TlsIo Content Content

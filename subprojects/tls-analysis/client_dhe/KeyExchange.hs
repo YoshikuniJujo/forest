@@ -40,9 +40,9 @@ class Base b where
 	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
 	encodeBasePublic :: b -> Public b -> BS.ByteString
-	decodeBasePublic :: BS.ByteString -> (b, Public b)
+	decodeBasePublic :: BS.ByteString -> Either String (b, Public b)
 	encodePublic :: b -> Public b -> BS.ByteString
-	decodePublic :: b -> BS.ByteString -> Public b
+	decodePublic :: b -> BS.ByteString -> Either String (Public b)
 
 	wantPublic :: b -> Bool
 	passPublic :: b -> Bool
@@ -63,7 +63,8 @@ instance Base DH.Params where
 		lenBodyToByteString 2 $ integerToByteString p,
 		lenBodyToByteString 2 $ integerToByteString g,
 		lenBodyToByteString 2 $ integerToByteString y ]
---	decodeBasePublic = parseParamsPublic
+	decodeBasePublic = evalByteStringM parseParamsPublic
+--	encodePublic
 
 verifyServerKeyExchange :: RSA.PublicKey -> BS.ByteString -> BS.ByteString ->
 	ServerKeyExchange -> (BS.ByteString, Either ASN1Error [ASN1])
@@ -79,7 +80,8 @@ getBody (ServerKeyExchange (DH.Params p g) ys _ha _sa _ "") =
 	BS.concat $ map (lenBodyToByteString 2) [
 		BS.pack $ toWords p,
 		BS.pack $ toWords g,
-		BS.pack . toWords $ fromIntegral ys ]
+		BS.pack . toWords $
+			(\(DH.PublicNumber pn) -> pn) ys ]
 getBody _ = error "bad"
 
 data ServerKeyExchange
@@ -119,7 +121,8 @@ serverKeyExchangeToByteString
 	BS.concat [
 		lenBodyToByteString 2 . BS.pack $ toWords dhP,
 		lenBodyToByteString 2 . BS.pack $ toWords dhG,
-		lenBodyToByteString 2 . BS.pack . toWords $ fromIntegral dhYs]
+		lenBodyToByteString 2 . BS.pack . toWords $
+			(\(DH.PublicNumber pn) -> pn) dhYs]
 	`BS.append`
 	BS.pack [hashA, sigA] `BS.append`
 	BS.concat [lenBodyToByteString 2 sign, rest]
@@ -138,20 +141,6 @@ toWords = reverse . integerToWords
 integerToWords :: Integer -> [Word8]
 integerToWords 0 = []
 integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
-
-instance Integral DH.PublicNumber where
-	toInteger pn = case (numerator $ toRational pn, denominator $ toRational pn) of
-		(i, 1) -> i
-		_ -> error "bad"
-	quotRem pn1 pn2 = fromInteger *** fromInteger $
-		toInteger pn1 `quotRem` toInteger pn2
-
-instance Integral DH.PrivateNumber where
-	toInteger pn = case (numerator $ toRational pn, denominator $ toRational pn) of
-		(i, 1) -> i
-		_ -> error "bad"
-	quotRem pn1 pn2 = fromInteger *** fromInteger $
-		toInteger pn1 `quotRem` toInteger pn2
 
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . toWords
