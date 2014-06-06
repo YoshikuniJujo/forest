@@ -15,7 +15,6 @@ import Data.X509.Validation
 import Crypto.PubKey.RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.DH as DH
-import qualified Crypto.PubKey.ECC.Prim as ECDH
 
 import Fragment
 import Content
@@ -86,7 +85,7 @@ serverKeyExchange pub = do
 	return (ps, pv, dhsk)
 	where
 	exchange :: Base b => b -> TlsIo Content (b, Public b)
-	exchange t = do
+	exchange t =
 		if wantPublic t
 		then do	liftIO . putStrLn $ "HERE 1"
 			cske <- readContent

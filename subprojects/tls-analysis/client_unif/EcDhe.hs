@@ -42,12 +42,13 @@ instance Base Curve where
 	passPublic = undefined
 
 encodeCurvePoint :: Curve -> Point -> BS.ByteString
-encodeCurvePoint c (Point x y) = BS.concat [
+encodeCurvePoint _ (Point x y) = BS.concat [
 	"\x03",
 	"\x00\x17",
 	lenBodyToByteString 1 $ "\x04" `BS.append`
 		integerToByteString x `BS.append` integerToByteString y
  ]
+encodeCurvePoint _ PointO = error "EcDhe.encodeCurvePoint"
 
 decodeCurvePoint :: BS.ByteString -> Either String ((Curve, Point), BS.ByteString)
 decodeCurvePoint = runByteStringM parseCurvePoint
@@ -85,11 +86,13 @@ decodePublicPoint _ bs = case BS.uncons $ BS.tail bs of
 calculatePublicPoint :: Curve -> Integer -> Point
 calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
 
+{-
 encodeCurve :: Curve -> BS.ByteString
 encodeCurve c
 	| c == secp256r1 =
 		toByteString NamedCurve `BS.append` toByteString Secp256r1
 	| otherwise = error "TlsServer.encodeCurve: not implemented"
+	-}
 
 data EcCurveType
 	= ExplicitPrime

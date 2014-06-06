@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, TypeFamilies #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module DiffieHellman (

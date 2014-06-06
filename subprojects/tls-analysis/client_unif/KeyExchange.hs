@@ -46,7 +46,7 @@ verifyServerKeyExchange pub cr sr ske = let
 			cHash = SHA1.hash body
 			unsign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pub sign
 		sHash <- fromASN =<< left show (decodeASN1' BER unsign)
-		unless (cHash == sHash) $ Left $ "KeyExchange.verifyServerKeyExchange: " ++
+		unless (cHash == sHash) . Left $ "KeyExchange.verifyServerKeyExchange: " ++
 			show cHash ++ " /= " ++ show sHash
 		getBasePublic ske) in ret
 
