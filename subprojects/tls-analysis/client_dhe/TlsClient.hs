@@ -34,17 +34,22 @@ openTlsServer :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore
 	-> Handle -> [CipherSuite]
 	-> IO TlsServer
 openTlsServer ccs certStore sv cs =
-	runOpen (const () <$> (handshake ccs certStore cs :: TlsIo Content DH.Params)) sv
+	runOpen (const () <$> (helloHandshake ccs certStore cs :: TlsIo Content ())) sv
 
 isIncluded :: (RSA.PrivateKey, CertificateChain) -> [DistinguishedName] -> Bool
 isIncluded (_, CertificateChain certs) dns = let
 	idn = certIssuerDN . signedObject . getSigned $ last certs in
 	idn `elem` dns
 
-handshake :: Base b =>
-	[(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
-	[CipherSuite] -> TlsIo Content b
-handshake ccs certStore cs = do
+helloHandshake :: [(RSA.PrivateKey, CertificateChain)] -> CertificateStore ->
+	[CipherSuite] -> TlsIo Content ()
+helloHandshake ccs certStore cs = do
+	hello cs
+	_ :: DH.Params <- handshake ccs certStore
+	return ()
+
+hello :: [CipherSuite] -> TlsIo Content ()
+hello cs = do
 
 	-------------------------------------------
 	--     CLIENT HELLO                      --
@@ -68,6 +73,10 @@ handshake ccs certStore cs = do
 	maybe (throwError "No Server Hello") cacheCipherSuite $
 		serverCipherSuite sh
 	liftIO . putStrLn $ "SERVER HELLO: " ++ take 60 (show sh) ++ "..."
+
+handshake :: Base b =>
+	[(RSA.PrivateKey, CertificateChain)] -> CertificateStore -> TlsIo Content b
+handshake ccs certStore = do
 
 	-------------------------------------------
 	--     SERVER CERTIFICATE                --

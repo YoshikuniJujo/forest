@@ -3,7 +3,7 @@
 module Content (
 	Content(..), Handshake(..),
 	fragmentToContent, contentToFragment, contentListToFragment,
-	serverHello, certificate, certificateRequest,
+	certificate, certificateRequest,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
 
@@ -56,13 +56,6 @@ showHandshake _ = ""
 
 version :: Version
 version = Version 3 3
-
-serverHello :: Random -> Content
-serverHello sr = ContentHandshake (Version 3 3) . HandshakeServerHello $
-	ServerHello (Version 3 3) sr (SessionId "")
-		(CipherSuite RSA AES_128_CBC_SHA)
-		CompressionMethodNull
-		Nothing
 
 clientHello ::
 	Random ->
