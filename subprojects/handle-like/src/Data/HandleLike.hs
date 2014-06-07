@@ -16,6 +16,7 @@ class Monad (HandleMonad h) => HandleLike h where
 	hlGetLine :: h -> HandleMonad h BS.ByteString
 	hlGetContent :: h -> HandleMonad h BS.ByteString
 	hlClose :: h -> HandleMonad h ()
+	hlError :: h -> BS.ByteString -> HandleMonad h ()
 
 	hlGetByte h = do [b] <- BS.unpack `liftM` hlGet h 1; return b
 	hlGetLine h = do
@@ -24,6 +25,7 @@ class Monad (HandleMonad h) => HandleLike h where
 			10 -> return ""
 			_ -> BS.cons b `liftM` hlGetLine h
 	hlGetContent = flip hlGet 1
+	hlError = hlPut
 
 instance HandleLike Handle where
 	type HandleMonad Handle = IO
