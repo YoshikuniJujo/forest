@@ -111,7 +111,7 @@ instance HandleLike h => HandleLike (TlsClientConst h) where
 	hlGetContent = tGetContentSt
 	hlClose = tCloseSt
 
-runOpen :: Handle -> TlsIo [String] -> IO TlsClient
+runOpen :: CPRG gen => Handle -> TlsIo gen [String] -> IO TlsClient
 runOpen cl opn = do
 	tc <- runOpenSt cl opn
 	ep <- createEntropyPool
@@ -126,7 +126,7 @@ runOpen cl opn = do
 		tlsServerSequenceNumber = ssn }
 	return $ TlsClient { tlsConst = tc, tlsState = stt }
 
-runOpenSt :: Handle -> TlsIo [String] -> IO (TlsClientConst Handle)
+runOpenSt :: CPRG gen => Handle -> TlsIo gen [String] -> IO (TlsClientConst Handle)
 runOpenSt cl opn = do
 	ep <- createEntropyPool
 	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl

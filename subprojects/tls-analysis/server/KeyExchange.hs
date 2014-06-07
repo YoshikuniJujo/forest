@@ -117,8 +117,8 @@ class Base b where
 version :: Version
 version = Version 3 3
 	
-sndServerKeyExchange :: (Base b, SecretKey sk) =>
-	b -> Secret b -> sk -> BS.ByteString -> TlsIo ()
+sndServerKeyExchange :: (Base b, SecretKey sk, CPRG gen) =>
+	b -> Secret b -> sk -> BS.ByteString -> TlsIo gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
@@ -130,7 +130,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
 		[ContentHandshake version ske]
 
-rcvClientKeyExchange :: Base b => b -> Secret b -> Version -> TlsIo ()
+rcvClientKeyExchange :: Base b => b -> Secret b -> Version -> TlsIo gen ()
 rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
@@ -143,7 +143,7 @@ rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
 
-readHandshake :: (Version -> Bool) -> TlsIo Handshake
+readHandshake :: (Version -> Bool) -> TlsIo gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -158,7 +158,7 @@ readHandshake ck = do
 			AlertDescriptionUnexpectedMessage $
 			"Not Handshake: " ++ show cnt
 
-readContent :: (Version -> Bool) -> TlsIo Content
+readContent :: (Version -> Bool) -> TlsIo gen Content
 readContent vc = do
 	c <- getContent (readBufferContentType vc) (readByteString (== version))
 		<* updateSequenceNumber Client

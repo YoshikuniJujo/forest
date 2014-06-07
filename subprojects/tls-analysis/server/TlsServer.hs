@@ -65,10 +65,12 @@ validationCache = ValidationCache
 validationChecks :: ValidationChecks
 validationChecks = defaultChecks{ checkFQHN = False }
 
-openClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
+openClient :: DH.SecretKey sk =>
+	Handle -> [CipherSuite] ->
 	RSA.PrivateKey -> CertificateChain ->
 	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
-openClient h css pk cc ecks mcs = runOpen h $ helloHandshake css pk cc ecks mcs
+openClient h css pk cc ecks mcs =
+	runOpen h (helloHandshake css pk cc ecks mcs :: TlsIo SystemRNG [String])
 
 withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 	RSA.PrivateKey -> CertificateChain ->
@@ -80,9 +82,9 @@ withClient h css pk cc ecks mcs =
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
 
-helloHandshake :: DH.SecretKey sk =>
+helloHandshake :: (DH.SecretKey sk, CPRG gen) =>
 	[CipherSuite] ->  RSA.PrivateKey -> CertificateChain ->
-	(sk, CertificateChain) -> Maybe CertificateStore -> TlsIo [String]
+	(sk, CertificateChain) -> Maybe CertificateStore -> TlsIo gen [String]
 helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
@@ -94,7 +96,8 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 		Just (CipherSuite ECDHE_ECDSA _) -> handshake curve cv pkec undefined mcs
 		_ -> error "bad"
 
-hello :: [CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo Version
+hello :: CPRG gen =>
+	[CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo gen Version
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
@@ -115,8 +118,9 @@ instance DH.Base NoDH where
 	encodePublic = undefined
 	decodePublic = undefined
 
-handshake :: (DH.Base b, DH.SecretKey sk) => b -> Version -> sk ->
-	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo [String]
+handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen) =>
+	b -> Version -> sk ->
+	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo gen [String]
 handshake ps cv sks skd mcs = do
 	pn <- liftIO $ DH.dhprivate ps
 	serverKeyExchange sks ps pn
@@ -136,7 +140,7 @@ handshake ps cv sks skd mcs = do
 	serverFinished
 	return $ maybe [] snd mpn
 
-clientHello :: TlsIo (Version, [CipherSuite])
+clientHello :: TlsIo gen (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
 --	liftIO $ print hs
@@ -159,8 +163,9 @@ clientHello = do
 			"TlsServer.clientHello: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: [CipherSuite] -> [CipherSuite] ->
-	CertificateChain -> CertificateChain -> TlsIo ()
+serverHello :: CPRG gen =>
+	[CipherSuite] -> [CipherSuite] ->
+	CertificateChain -> CertificateChain -> TlsIo gen ()
 serverHello csssv css cc ccec = do
 	sr <- Random <$> randomByteString 32
 	setVersion version
@@ -183,15 +188,15 @@ serverHello csssv css cc ccec = do
 			cs compressionMethod Nothing,
 		Just $ HandshakeCertificate cccc ]
 
-serverKeyExchange ::
-	(DH.Base b, DH.SecretKey sk) => sk -> b -> DH.Secret b -> TlsIo ()
+serverKeyExchange :: (DH.Base b, DH.SecretKey sk, CPRG gen) =>
+	sk -> b -> DH.Secret b -> TlsIo gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 --	liftIO $ print dh
 	Just rsr <- getServerRandom
 	when dh $ DH.sndServerKeyExchange ps pn sk rsr
 
-serverToHelloDone :: Maybe CertificateStore -> TlsIo ()
+serverToHelloDone :: CPRG gen => Maybe CertificateStore -> TlsIo gen ()
 serverToHelloDone mcs =
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
@@ -205,7 +210,7 @@ serverToHelloDone mcs =
 			_ -> Nothing,
 		Just HandshakeServerHelloDone]
 
-clientCertificate :: CertificateStore -> TlsIo (PubKey, [String])
+clientCertificate :: CertificateStore -> TlsIo gen (PubKey, [String])
 clientCertificate cs = do
 	hs <- readHandshake (== version)
 	case hs of
@@ -238,7 +243,7 @@ clientCertificate cs = do
 	uan (AltNameDNS s) = Just s
 	uan _ = Nothing
 
-clientKeyExchange :: RSA.PrivateKey -> Version -> TlsIo ()
+clientKeyExchange :: CPRG gen => RSA.PrivateKey -> Version -> TlsIo gen ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
@@ -263,7 +268,7 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			_ -> throwError "bad: never occur"
 		return pms
 
-certificateVerify :: PubKey -> TlsIo ()
+certificateVerify :: PubKey -> TlsIo gen ()
 certificateVerify (PubKeyRSA pub) = do
 	liftIO . putStrLn $ "VERIFY WITH RSA"
 	hash0 <- clientVerifyHash pub
@@ -320,7 +325,7 @@ certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.clientCertificate: " ++ "not implemented: " ++ show p)
 
-clientChangeCipherSuite :: TlsIo ()
+clientChangeCipherSuite :: TlsIo gen ()
 clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
@@ -335,7 +340,7 @@ clientChangeCipherSuite = do
 			AlertDescriptionUnexpectedMessage
 			"Not Change Cipher Spec"
 
-clientFinished :: TlsIo ()
+clientFinished :: TlsIo gen ()
 clientFinished = do
 	fhc <- finishedHash Client
 	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
@@ -356,17 +361,17 @@ clientFinished = do
 			AlertDescriptionUnexpectedMessage
 			"Not Finished"
 
-serverChangeCipherSuite :: TlsIo ()
+serverChangeCipherSuite :: CPRG gen => TlsIo gen ()
 serverChangeCipherSuite = do
 	writeFragment . contentToFragment $
 		ContentChangeCipherSpec version ChangeCipherSpec
 	flushCipherSuite Server
 
-serverFinished :: TlsIo ()
+serverFinished :: CPRG gen => TlsIo gen ()
 serverFinished = writeFragment . contentToFragment .
 	ContentHandshake version . HandshakeFinished =<< finishedHash Server
 
-readHandshake :: (Version -> Bool) -> TlsIo Handshake
+readHandshake :: (Version -> Bool) -> TlsIo gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -380,7 +385,7 @@ readHandshake ck = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: (Version -> Bool) -> TlsIo Content
+readContent :: (Version -> Bool) -> TlsIo gen Content
 readContent vc = do
 	c <- getContent (readBufferContentType vc) (readByteString (== version))
 		<* updateSequenceNumber Client

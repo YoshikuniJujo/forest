@@ -32,9 +32,9 @@ hashSha1, hashSha256 :: Hash
 hashSha1 = (SHA1.hash, 20)
 hashSha256 = (SHA256.hash, 32)
 
-encryptMessage :: Hash ->
-	SystemRNG -> BS.ByteString -> Word64 -> BS.ByteString ->
-	MS.ContentType -> MS.Version -> BS.ByteString -> (BS.ByteString, SystemRNG)
+encryptMessage :: CPRG gen =>
+	Hash -> gen -> BS.ByteString -> Word64 -> BS.ByteString ->
+	MS.ContentType -> MS.Version -> BS.ByteString -> (BS.ByteString, gen)
 encryptMessage (hs, _) gen key sn mk ct v msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
@@ -70,8 +70,8 @@ padd bs = bs `BS.append` pd
 	plen = 16 - (BS.length bs + 1) `mod` 16
 	pd = BS.replicate (plen + 1) $ fromIntegral plen
 
-encrypt :: SystemRNG ->
-	BS.ByteString -> BS.ByteString -> (BS.ByteString, SystemRNG)
+encrypt :: CPRG gen =>
+	gen -> BS.ByteString -> BS.ByteString -> (BS.ByteString, gen)
 encrypt gen key pln = let
 	(iv, gen') = cprgGenerate 16 gen in
 	(iv `BS.append` encryptCBC (initAES key) iv pln, gen')
