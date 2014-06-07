@@ -24,6 +24,7 @@ description:
     >     hlGetContent :: h -> HandleMonad h ByteString
     >     hlClose :: h -> HandleMonad h ()
     >     hlError :: h -> ByteString -> HandleMonad h ()
+    .
 
     Minimal complete difinition: hlPut, hlGet and hlClose.
 
