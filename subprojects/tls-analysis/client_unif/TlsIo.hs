@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings #-}
+{-# LANGUAGE PackageImports, OverloadedStrings, TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsIo (
@@ -82,6 +82,7 @@ data TlsClientState cnt = TlsClientState {
  }
 
 instance HandleLike TlsServer where
+	type HandleMonad TlsServer = IO
 	hlPut = tPut
 	hlGet = tGet
 	hlGetLine = tGetLine

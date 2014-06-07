@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings, TupleSections #-}
+{-# LANGUAGE PackageImports, OverloadedStrings, TupleSections, TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module OpenClient (
@@ -61,6 +61,7 @@ data TlsClient = TlsClient {
  }
 
 instance HandleLike TlsClient where
+	type HandleMonad TlsClient = IO
 	hlPut = tPut
 	hlGet = tGet
 	hlGetLine = tGetLine
