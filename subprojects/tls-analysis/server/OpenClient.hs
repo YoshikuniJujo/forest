@@ -46,19 +46,35 @@ import TlsIo
 import Types
 
 data TlsClient = TlsClient {
+	tlsConst :: TlsClientConst,
+	tlsState :: TVar TlsClientState }
+
+data TlsClientConst = TlsClientConst {
 	tlsNames :: [String],
 	tlsVersion :: MSVersion,
 	tlsCipherSuite :: CipherSuite,
 	tlsHandle :: Handle,
-	tlsBuffer :: TVar BS.ByteString,
-	tlsRandomGen :: TVar SystemRNG,
 	tlsClientWriteMacKey :: BS.ByteString,
 	tlsServerWriteMacKey :: BS.ByteString,
 	tlsClientWriteKey :: BS.ByteString,
-	tlsServerWriteKey :: BS.ByteString,
-	tlsClientSequenceNumber :: TVar Word64,
-	tlsServerSequenceNumber :: TVar Word64
- }
+	tlsServerWriteKey :: BS.ByteString }
+
+data TlsClientState = TlsClientState {
+	tlsBuffer :: BS.ByteString,
+	tlsRandomGen :: SystemRNG,
+	tlsClientSequenceNumber :: Word64,
+	tlsServerSequenceNumber :: Word64 }
+
+setBuffer :: BS.ByteString -> TlsClientState -> TlsClientState
+setBuffer bs st = st { tlsBuffer = bs }
+
+setRandomGen :: SystemRNG -> TlsClientState -> TlsClientState
+setRandomGen rg st = st { tlsRandomGen = rg }
+
+setClientSequenceNumber, setServerSequenceNumber ::
+	Word64 -> TlsClientState -> TlsClientState
+setClientSequenceNumber sn st = st { tlsClientSequenceNumber = sn }
+setServerSequenceNumber sn st = st { tlsServerSequenceNumber = sn }
 
 instance HandleLike TlsClient where
 	type HandleMonad TlsClient = IO
@@ -72,30 +88,34 @@ runOpen :: Handle -> TlsIo [String] -> IO TlsClient
 runOpen cl opn = do
 	ep <- createEntropyPool
 	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl
-	tvgen <- atomically . newTVar $ tlssRandomGen tlss
-	tvcsn <- atomically . newTVar $ tlssClientSequenceNumber tlss
-	tvssn <- atomically . newTVar $ tlssServerSequenceNumber tlss
-	tvbfr <- atomically $ newTVar ""
+	let	gen = tlssRandomGen tlss
+		csn = tlssClientSequenceNumber tlss
+		ssn = tlssServerSequenceNumber tlss
+		bfr = ""
+	stt <- atomically $ newTVar TlsClientState {
+		tlsBuffer = bfr,
+		tlsRandomGen = gen,
+		tlsClientSequenceNumber = csn,
+		tlsServerSequenceNumber = ssn }
 	return TlsClient {
-		tlsNames = ns,
-		tlsVersion = fromJust $ tlssVersion tlss,
-		tlsCipherSuite = tlssClientWriteCipherSuite tlss,
-		tlsHandle = tlssClientHandle tlss,
-		tlsBuffer = tvbfr,
-		tlsRandomGen = tvgen,
-		tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
-		tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
-		tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
-		tlsServerWriteKey = fromJust $ tlssServerWriteKey tlss,
-		tlsClientSequenceNumber = tvcsn,
-		tlsServerSequenceNumber = tvssn
+		tlsConst = TlsClientConst {
+			tlsNames = ns,
+			tlsVersion = fromJust $ tlssVersion tlss,
+			tlsCipherSuite = tlssClientWriteCipherSuite tlss,
+			tlsHandle = tlssClientHandle tlss,
+			tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
+			tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
+			tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
+			tlsServerWriteKey = fromJust $ tlssServerWriteKey tlss
+		 },
+		tlsState = stt
 	 }
 
 checkName :: TlsClient -> String -> Bool
-checkName TlsClient{ tlsNames = ns } n = n `elem` ns
+checkName tc n = n `elem` tlsNames (tlsConst tc)
 
 getName :: TlsClient -> Maybe String
-getName TlsClient{ tlsNames = ns } = listToMaybe ns
+getName tc = listToMaybe . tlsNames $ tlsConst tc
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut ts = tPutWithCT ts ContentTypeApplicationData
@@ -107,11 +127,11 @@ tPutWithCT ts ct msg = do
 		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
 		_ -> error "OpenClient.tPutWithCT"
 	ebody <- atomically $ do
-		gen <- readTVar tvgen
-		sn <- readTVar tvsn
+		gen <- tlsRandomGen <$> readTVar (tlsState ts)
+		sn <- tlsServerSequenceNumber <$> readTVar (tlsState ts)
 		let (e, gen') = enc hs gen sn
-		writeTVar tvgen gen'
-		writeTVar tvsn $ succ sn
+		modifyTVar (tlsState ts) $ setRandomGen gen'
+		modifyTVar (tlsState ts) $ setServerSequenceNumber $ succ sn
 		return e
 	BS.hPut h $ BS.concat [
 		contentTypeToByteString ct,
@@ -119,15 +139,16 @@ tPutWithCT ts ct msg = do
 		lenBodyToByteString 2 ebody ]
 	where
 	(_vr, cs, h) = vrcsh ts
-	key = tlsServerWriteKey ts
-	mk = tlsServerWriteMacKey ts
+	key = tlsServerWriteKey $ tlsConst ts
+	mk = tlsServerWriteMacKey $ tlsConst ts
 	v = Version 3 3
-	tvsn = tlsServerSequenceNumber ts
-	tvgen = tlsRandomGen ts
+--	tvsn = tlsServerSequenceNumber $ tlsState ts
+--	tvgen = tlsRandomGen $ tlsState ts
 	enc hs gen sn = encryptMessage hs gen key sn mk ct v msg
 
 vrcsh :: TlsClient -> (MSVersion, CipherSuite, Handle)
-vrcsh tc = (tlsVersion tc, tlsCipherSuite tc, tlsHandle tc)
+vrcsh tc = (tlsVersion $ tlsConst tc,
+	tlsCipherSuite $ tlsConst tc, tlsHandle $ tlsConst tc)
 
 tGetWhole :: TlsClient -> IO BS.ByteString
 tGetWhole ts = do
@@ -141,7 +162,7 @@ tGetWhole ts = do
 		_ -> do	tPutWithCT ts ContentTypeAlert "\2\10"
 			error "not application data"
 	where
-	h = tlsHandle ts
+	h = tlsHandle $ tlsConst ts
 
 tGetWholeWithCT :: TlsClient -> IO (ContentType, BS.ByteString)
 tGetWholeWithCT ts = do
@@ -153,8 +174,8 @@ tGetWholeWithCT ts = do
 	v <- byteStringToVersion <$> BS.hGet h 2
 	enc <- BS.hGet h . byteStringToInt =<< BS.hGet h 2
 	sn <- atomically $ do
-		n <- readTVar tvsn
-		writeTVar tvsn $ succ n
+		n <- tlsClientSequenceNumber <$> readTVar (tlsState ts)
+		modifyTVar (tlsState ts) $ setClientSequenceNumber $ succ n
 		return n
 	ret <- case dec hs sn ct v enc of
 		Right r -> return r
@@ -162,38 +183,38 @@ tGetWholeWithCT ts = do
 	return (ct, ret)
 	where
 	(_vr, cs, h) = vrcsh ts
-	key = tlsClientWriteKey ts
-	mk = tlsClientWriteMacKey ts
-	tvsn = tlsClientSequenceNumber ts
+	key = tlsClientWriteKey $ tlsConst ts
+	mk = tlsClientWriteMacKey $ tlsConst ts
+--	tvsn = tlsClientSequenceNumber $ tlsState ts
 	dec hs sn = decryptMessage hs key sn mk
 
 tGet :: TlsClient -> Int -> IO BS.ByteString
 tGet tc n = do
-	bfr <- atomically . readTVar $ tlsBuffer tc
+	bfr <- tlsBuffer <$> (atomically . readTVar $ tlsState tc)
 	if n <= BS.length bfr then atomically $ do
 		let (ret, bfr') = BS.splitAt n bfr
-		writeTVar (tlsBuffer tc) bfr'
+		modifyTVar (tlsState tc) $ setBuffer bfr'
 		return ret
 	else do	msg <- tGetWhole tc
-		atomically $ writeTVar (tlsBuffer tc) msg
+		atomically $ modifyTVar (tlsState tc) $ setBuffer msg
 		(bfr `BS.append`) <$> tGet tc (n - BS.length bfr)
 
 tGetLine :: TlsClient -> IO BS.ByteString
 tGetLine tc = do
-	bfr <- atomically . readTVar $ tlsBuffer tc
+	bfr <- tlsBuffer <$> atomically (readTVar $ tlsState tc)
 	case splitOneLine bfr of
 		Just (l, ls) -> atomically $ do
-			writeTVar (tlsBuffer tc) ls
+			modifyTVar (tlsState tc) $ setBuffer ls
 			return l
 		_ -> do	msg <- tGetWhole tc
-			atomically $ writeTVar (tlsBuffer tc) msg
+			atomically $ modifyTVar (tlsState tc) $ setBuffer msg
 			(bfr `BS.append`) <$> tGetLine tc
 
 tGetContent :: TlsClient -> IO BS.ByteString
 tGetContent ts = do
-	bfr <- atomically . readTVar $ tlsBuffer ts
+	bfr <- tlsBuffer <$> atomically (readTVar $ tlsState ts)
 	if BS.null bfr then tGetWhole ts else atomically $ do
-		writeTVar (tlsBuffer ts) BS.empty
+		modifyTVar (tlsState ts) $ setBuffer BS.empty
 		return bfr
 
 splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
@@ -218,4 +239,4 @@ tClose tc = do
 		_ -> putStrLn "tClose: bad response"
 	hClose h
 	where
-	h = tlsHandle tc
+	h = tlsHandle $ tlsConst tc
