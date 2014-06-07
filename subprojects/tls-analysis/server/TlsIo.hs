@@ -10,9 +10,11 @@ module TlsIo (
 	readLen, writeLen,
 
 	setVersion, setClientRandom, setServerRandom,
+	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
 	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
+	clientVerifyHashEc,
 
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,
@@ -25,6 +27,8 @@ module TlsIo (
 	CT.byteStringToInt,
 	CT.decryptMessage, CT.hashSha1, CT.hashSha256,
 	CT.encryptMessage,
+
+	isEphemeralDH,
 ) where
 
 import Prelude hiding (read)
@@ -143,6 +147,27 @@ data TlsState = TlsState {
 	tlssClientSequenceNumber :: Word64,
 	tlssServerSequenceNumber :: Word64
  }
+
+getClientRandom :: TlsIo (Maybe BS.ByteString)
+getClientRandom = gets tlssClientRandom
+
+getServerRandom :: TlsIo (Maybe BS.ByteString)
+getServerRandom = gets tlssServerRandom
+
+getCipherSuite :: TlsIo (Maybe CT.CipherSuite)
+getCipherSuite = gets tlssCachedCipherSuite
+
+isEphemeralDH :: TlsIo Bool
+isEphemeralDH = do
+	me <- ((\cs -> let CT.CipherSuite e _ = cs in e) <$>) <$>
+		gets tlssCachedCipherSuite
+--	liftIO . putStrLn $ "TlsIo.isEphemeralDH: " ++ show me
+	case me of
+		Just CT.DHE_RSA -> return True
+		Just CT.ECDHE_RSA -> return True
+		Just CT.ECDHE_ECDSA -> return True
+		Just CT.RSA -> return False
+		_ -> throwError "TlsIo.isEphemeralDH: Unknown algorithm"
 
 initTlsState :: EntropyPool -> Handle -> TlsState
 initTlsState ep cl = TlsState {
@@ -293,6 +318,7 @@ generateKeys pms = do
 				ems = CT.generateKeyBlock v cr sr ms $
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] = divide [mkl, mkl, 16, 16] ems
+--			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
 			put $ tlss {
 				tlssMasterSecret = Just ms,
 				tlssClientWriteMacKey = Just cwmk,
@@ -309,6 +335,9 @@ generateKeys pms = do
 updateHash :: BS.ByteString -> TlsIo ()
 updateHash bs = do
 	tlss@TlsState{ tlssSha256Ctx = sha256 } <- get
+--	liftIO . putStrLn $ "PRE : " ++ show (SHA256.finalize sha256)
+--	liftIO . putStrLn $ show bs
+--	liftIO . putStrLn $ "POST: " ++ show (SHA256.finalize $ SHA256.update sha256 bs)
 	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
 
 finishedHash :: Partner -> TlsIo BS.ByteString
@@ -320,6 +349,9 @@ finishedHash partner = do
 		(Just CT.TLS12, Just ms) -> return $
 			CT.generateFinished CT.TLS12 (partner == Client) ms sha256
 		_ -> throwError "No master secrets"
+
+clientVerifyHashEc :: TlsIo BS.ByteString
+clientVerifyHashEc = gets $ SHA256.finalize . tlssSha256Ctx
 
 clientVerifyHash :: RSA.PublicKey -> TlsIo BS.ByteString
 clientVerifyHash pub = do
@@ -337,30 +369,28 @@ tlsEncryptMessage ct v msg = do
 	updateSequenceNumber Server
 	mmk <- macKey Server
 	gen <- gets tlssRandomGen
-	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha1 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage CT.hashSha256 gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return msg
-		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
-		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
-		(Just CT.TLS12, _, _, _) -> throwError $ Alert
+	mhs <- case cs of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA -> return $ Just CT.hashSha1
+		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
+		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return Nothing
+		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionIllegalParameter
-			"tlsEncryptMessage: not implemented cipher suite"
+			"TlsIo.tlsEncryptMessage: not implemented cipher suite"
+	case (version, mhs, mwk, mmk) of
+		(Just CT.TLS12, Just hs, Just wk, Just mk)
+			-> do	let (ret, gen') =
+					CT.encryptMessage hs gen wk sn mk ct v msg
+				tlss <- get
+				put tlss{ tlssRandomGen = gen' }
+				return ret
+		(_, Nothing, _, _) -> return msg
+		(_, _, Nothing, _) -> throwError "encryptMessage: No key"
+		(_, _, _, Nothing) -> throwError "encryptMessage: No MAC key"
 		(Just vsn, _, _, _) -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion
-			("encryptMessage: not support the version: " ++ show vsn)
+			("TlsIo.EncryptMessage: not support the version: " ++ show vsn)
 		(_, _, _, _) -> throwError "no version"
 
 tlsDecryptMessage :: CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo BS.ByteString
@@ -371,7 +401,7 @@ tlsDecryptMessage ct v enc = do
 	sn <- sequenceNumber Client
 	mmk <- macKey Client
 	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -379,7 +409,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(Just CT.TLS12, CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256, Just key, Just mk)
+		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -388,7 +418,7 @@ tlsDecryptMessage ct v enc = do
 						AlertDescriptionBadRecordMac
 						err
 		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return enc
-		_ -> throwError "tlsDecryptMessage: No keys or bad cipher suite"
+		_ -> throwError "TlsIo.tlsDecryptMessage: No keys or bad cipher suite"
 
 sequenceNumber :: Partner -> TlsIo Word64
 sequenceNumber partner = gets $ case partner of
@@ -405,14 +435,14 @@ updateSequenceNumber partner = do
 		Server -> tlssServerSequenceNumber
 	tlss <- get
 	case cs of
-		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA -> put $ case partner of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite CT.RSA CT.AES_128_CBC_SHA256 -> put $ case partner of
+		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
 		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return ()
-		_ -> throwError . strMsg $ "generateKeys: not implemented: " ++ show cs
+		_ -> throwError . strMsg $ "TlsIo.updateSequenceNumber: not implemented: " ++ show cs
 
 cipherSuite :: Partner -> TlsIo CT.CipherSuite
 cipherSuite partner = gets $ case partner of

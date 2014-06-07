@@ -47,10 +47,7 @@ decryptMessage :: Hash ->
 	BS.ByteString -> Word64 -> BS.ByteString ->
 	MS.ContentType -> MS.Version -> BS.ByteString -> Either String BS.ByteString
 decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
-	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
-		"Expected: " ++ show cmac ++ "\n\t" ++
-		"Recieved: " ++ show mac ++ "\n\t" ++
-		"ml: " ++ show ml ++ "\n"
+	Left "decryptMessage: bad MAC"
 	where
 	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm

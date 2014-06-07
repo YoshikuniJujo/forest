@@ -7,7 +7,6 @@ module Fragment (
 	readRawFragment, writeRawFragment,
 
 	setClientRandom, setServerRandom, setVersion,
-	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 	generateKeys,
 
@@ -20,12 +19,9 @@ module Fragment (
 	updateSequenceNumber,
 	randomByteString,
 	clientVerifyHash,
-	clientVerifyHashEc,
 
 	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
 	checkName, getName,
-
-	isEphemeralDH,
 ) where
 
 import Prelude hiding (read)

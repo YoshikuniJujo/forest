@@ -34,6 +34,7 @@ module Handshake (
 
 	fst3, fromInt, headBS,
 	whole, ByteStringM, evalByteStringM,
+	Extension(..), EcPointFormat(..), NamedCurve(..),
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -52,6 +53,7 @@ data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
+	| HandshakeServerKeyExchange ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
@@ -69,9 +71,10 @@ handshakeSign :: Handshake -> Maybe ByteString
 handshakeSign (HandshakeCertificateVerify ds) = digitallySignedSign ds
 handshakeSign _ = Nothing
 
-handshakeMakeVerify :: ByteString -> Handshake
-handshakeMakeVerify = HandshakeCertificateVerify .
-	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
+handshakeMakeVerify :: (HashAlgorithm, SignatureAlgorithm) -> ByteString -> Handshake
+handshakeMakeVerify a = HandshakeCertificateVerify . DigitallySigned a
+--	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
+--	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmEcdsa)
 
 handshakeCertificate :: Handshake -> Maybe CertificateChain
 handshakeCertificate (HandshakeCertificate cc) = Just cc
@@ -136,6 +139,8 @@ parseHandshake = do
 		HandshakeTypeClientHello -> HandshakeClientHello <$> parse
 		HandshakeTypeServerHello -> HandshakeServerHello <$> parse
 		HandshakeTypeCertificate -> HandshakeCertificate <$> parse
+		HandshakeTypeServerKeyExchange ->
+			HandshakeServerKeyExchange <$> whole
 		HandshakeTypeCertificateRequest ->
 			HandshakeCertificateRequest <$> parse
 		HandshakeTypeServerHelloDone ->
@@ -154,6 +159,8 @@ handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ toByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ toByteString crts
+handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
+	HandshakeRaw HandshakeTypeServerKeyExchange ske
 handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
@@ -171,6 +178,7 @@ data HandshakeType
 	= HandshakeTypeClientHello
 	| HandshakeTypeServerHello
 	| HandshakeTypeCertificate
+	| HandshakeTypeServerKeyExchange
 	| HandshakeTypeCertificateRequest
 	| HandshakeTypeServerHelloDone
 	| HandshakeTypeCertificateVerify
@@ -186,6 +194,7 @@ parseHandshakeType = do
 		1 -> HandshakeTypeClientHello
 		2 -> HandshakeTypeServerHello
 		11 -> HandshakeTypeCertificate
+		12 -> HandshakeTypeServerKeyExchange
 		13 -> HandshakeTypeCertificateRequest
 		14 -> HandshakeTypeServerHelloDone
 		15 -> HandshakeTypeCertificateVerify
@@ -197,6 +206,7 @@ handshakeTypeToByteString :: HandshakeType -> ByteString
 handshakeTypeToByteString HandshakeTypeClientHello = pack [1]
 handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
 handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
+handshakeTypeToByteString HandshakeTypeServerKeyExchange = pack [12]
 handshakeTypeToByteString HandshakeTypeCertificateRequest = pack [13]
 handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
 handshakeTypeToByteString HandshakeTypeCertificateVerify = pack [15]

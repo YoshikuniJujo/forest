@@ -5,8 +5,6 @@ module Types (
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Random(..), CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-
-	NamedCurve(..),
 ) where
 
 import Data.Word
@@ -53,8 +51,6 @@ data Random = Random BS.ByteString
 data CipherSuiteKeyEx
 	= RSA
 	| DHE_RSA
-	| ECDHE_RSA
-	| ECDHE_ECDSA
 	| ECDHE_PSK
 	| KeyExNULL
 	deriving (Show, Eq)
@@ -71,10 +67,3 @@ data CipherSuite
 	= CipherSuite CipherSuiteKeyEx CipherSuiteMsgEnc
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Eq)
-
-data NamedCurve
-	= Secp256r1
-	| Secp384r1
-	| Secp521r1
-	| NamedCurveRaw Word16
-	deriving Show

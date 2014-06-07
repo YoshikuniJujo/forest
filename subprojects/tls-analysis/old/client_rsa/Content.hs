@@ -1,12 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content(..), fragmentToContent, contentToFragment, contentListToFragment,
+	Content, fragmentToContent, contentToFragment, contentListToFragment,
 	serverHello, certificate, certificateRequest,
 	changeCipherSpec, finished, applicationData,
 	showHandshake,
-
-	Handshake(..),
 
 	EncryptedPreMasterSecret(..),
 
@@ -23,7 +21,6 @@ module Content (
 	getCertificateRequest,
 	clientHello,
 	CertificateRequest(..),
-	HashAlgorithm(..), SignatureAlgorithm(..),
 ) where
 
 import Prelude hiding (concat, head)
@@ -58,8 +55,7 @@ clientHello :: Random -> [CipherSuite] -> Content
 clientHello cr cs = ContentHandshake (Version 3 3) . HandshakeClientHello $
 	ClientHello (Version 3 3) cr (SessionId "") cs
 		[CompressionMethodNull]
-		(Just [	ExtensionEllipticCurve [Secp256r1],
-			ExtensionEcPointFormat [EcPointFormatUncompressed] ])
+		Nothing
 
 certificateRequest :: [DistinguishedName] -> Content
 certificateRequest = ContentHandshake (Version 3 3)
@@ -146,8 +142,8 @@ digitalSign :: Content -> Maybe ByteString
 digitalSign (ContentHandshake _ hss) = handshakeSign hss
 digitalSign _ = Nothing
 
-makeVerify :: (HashAlgorithm, SignatureAlgorithm) -> ByteString -> Content
-makeVerify a = ContentHandshake (Version 3 3) . handshakeMakeVerify a
+makeVerify :: ByteString -> Content
+makeVerify = ContentHandshake (Version 3 3) . handshakeMakeVerify
 
 certificateChain :: Content -> Maybe CertificateChain
 certificateChain (ContentHandshake _ hss) = handshakeCertificate hss

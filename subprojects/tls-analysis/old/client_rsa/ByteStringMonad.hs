@@ -3,7 +3,7 @@
 module ByteStringMonad (
 	ByteString, Word8, Word16, BS.pack, BS.unpack, BS.append, BS.concat,
 
-	ByteStringM, runByteStringM, evalByteStringM, throwError,
+	ByteStringM, evalByteStringM, throwError,
 	headBS, take, takeWords, takeInt, takeWord16, takeLen, emptyBS,
 	list1, list, section, whole,
 
@@ -14,8 +14,6 @@ module ByteStringMonad (
 	byteStringToInt, intToByteString,
 
 	Parsable(..),
-
-	lenBodyToByteString,
 ) where
 
 import Prelude hiding (head, take)
@@ -55,11 +53,6 @@ instance (Parsable a, Parsable b) => Parsable (a, b) where
 		<*> listLength (undefined :: b)
 
 type ByteStringM = ErrorT String (State ByteString)
-
-runByteStringM :: ByteStringM a -> ByteString -> Either String (a, ByteString)
-runByteStringM m bs = case runState (runErrorT m) bs of
-	(Right x, rest) -> Right (x, rest)
-	(Left err, _) -> Left err
 
 evalByteStringM :: ByteStringM a -> ByteString -> Either String a
 evalByteStringM m bs = case runState (runErrorT m) bs of

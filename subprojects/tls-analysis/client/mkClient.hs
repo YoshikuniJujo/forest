@@ -16,23 +16,34 @@ import System.Console.GetOpt
 
 import Basic
 
+import ReadEcPrivateKey
+
 data Option
 	= SHA1
 	| SHA256
+	| ECDSA
 	deriving (Show, Eq)
 
 optDescr :: [OptDescr Option]
 optDescr = [
 	Option "" ["sha1"] (NoArg SHA1) "Use SHA1",
-	Option "" ["sha256"] (NoArg SHA256) "Use SHA256"
+	Option "" ["sha256"] (NoArg SHA256) "Use SHA256",
+	Option "" ["ecdsa"] (NoArg ECDSA) "Use ECDSA for client certification"
  ]
 
 getCipherSuites :: [Option] -> [CipherSuite]
-getCipherSuites opts = case (SHA1 `elem` opts, SHA256 `elem` opts) of
-	(True, False) -> [CipherSuite RSA AES_128_CBC_SHA]
---	(False, True) -> [CipherSuite RSA AES_128_CBC_SHA256]
-	_ -> [	CipherSuite RSA AES_128_CBC_SHA256,
-		CipherSuite RSA AES_128_CBC_SHA ]
+getCipherSuites opts = (++ [CipherSuite RSA AES_128_CBC_SHA]) $
+	case (SHA1 `elem` opts, SHA256 `elem` opts) of
+		(True, False) -> [CipherSuite ECDHE_ECDSA AES_128_CBC_SHA]
+		(False, True) -> [CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256]
+		_ -> [	
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+			CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
+			CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+			CipherSuite DHE_RSA AES_128_CBC_SHA256,
+			CipherSuite DHE_RSA AES_128_CBC_SHA,
+			CipherSuite RSA AES_128_CBC_SHA256]
 
 (+++) :: BS.ByteString -> BS.ByteString -> BS.ByteString
 (+++) = BS.append
@@ -45,7 +56,8 @@ main = do
 		exitFailure
 	[PrivKeyRSA pkys] <- readKeyFile "yoshikuni.key"
 	certChain <- CertificateChain <$> readSignedObject "yoshikuni.crt"
---	certStore <- makeCertificateStore <$> readSignedObject "cacert.pem"
+	pkysEc <- readEcPrivKey "client_ecdsa.key"
+	certChainEc <- CertificateChain <$> readSignedObject "client_ecdsa.cert"
 	certStore <- makeCertificateStore . concat <$> mapM readSignedObject [
 		"cacert.pem",
 		"../verisign/rsa/veri_test_root_3.pem"
@@ -53,7 +65,9 @@ main = do
 	sv <- connectTo "localhost" . PortNumber . fromIntegral =<<
 		(readIO svpna :: IO Int)
 	let suit = getCipherSuites opts
-	tls <- openTlsServer name [(pkys, certChain)] certStore sv suit
+	tls <- if ECDSA `elem` opts
+		then openTlsServer name [(pkysEc, certChainEc)] certStore sv suit
+		else openTlsServer name [(pkys, certChain)] certStore sv suit
 	hlPut tls $
 		"GET / HTTP/1.1\r\n" +++
 		"Host: localhost:4492\r\n" +++

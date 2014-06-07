@@ -12,7 +12,8 @@ module Hello (
 	serverHelloServerRandom, serverHelloServerVersion, serverHelloCipherSuite,
 
 --	list1,
-	evalByteStringM, fst3, fromInt, lenBodyToByteString
+	evalByteStringM, fst3, fromInt, lenBodyToByteString,
+	Extension(..), EcPointFormat(..), NamedCurve(..),
  ) where
 
 import Prelude hiding (take)
@@ -68,7 +69,6 @@ parseClientHello :: ByteStringM ClientHello
 parseClientHello = do
 	(pv, r, sid) <- getPvRSid
 	css <- parse
---	cms <- parseCompressionMethodList
 	cms <- parse
 	e <- emptyBS
 	mel <- if e then return Nothing else Just <$> parseExtensionList
@@ -80,7 +80,6 @@ clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString r,
 	sessionIdToByteString sid,
 	toByteString css,
---	compressionMethodListToByteString cms,
 	toByteString cms,
 	maybe "" extensionListToByteString mel
  ]

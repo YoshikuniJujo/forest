@@ -2,8 +2,6 @@ module Extension (
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
 	emptyBS, ByteStringM,
-
-	Extension(..), EcPointFormat(..), NamedCurve(..),
 ) where
 
 import Prelude hiding (head)
@@ -11,10 +9,9 @@ import Prelude hiding (head)
 import Control.Applicative
 
 import ByteStringMonad
+import Basic
 
 import qualified Data.ByteString as BS
-
-import Basic
 
 type ExtensionList = [Extension]
 
@@ -138,14 +135,12 @@ nameTypeToByteString :: NameType -> ByteString
 nameTypeToByteString NameTypeHostName = pack [0]
 nameTypeToByteString (NameTypeRaw nt) = pack [nt]
 
-{-
 data NamedCurve
 	= Secp256r1
 	| Secp384r1
 	| Secp521r1
 	| NamedCurveRaw Word16
 	deriving Show
-	-}
 
 parseNamedCurve :: ByteStringM NamedCurve
 parseNamedCurve = do
