@@ -88,7 +88,6 @@ helloHandshake :: (DH.SecretKey sk, CPRG gen) =>
 helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
---	liftIO $ print cs
 	case cs of
 		Just (CipherSuite RSA _) -> handshake NoDH cv sk sk mcs
 		Just (CipherSuite DHE_RSA _) -> handshake DH.dhparams cv sk sk mcs
@@ -125,17 +124,12 @@ handshake ps cv sks skd mcs = do
 	pn <- liftIO $ DH.dhprivate ps
 	serverKeyExchange sks ps pn
 	serverToHelloDone mcs
---	liftIO . putStrLn $ "server hello done"
 	mpn <- maybe (return Nothing) ((Just <$>) . clientCertificate) mcs
 	dhe <- isEphemeralDH
---	liftIO . putStrLn $ "is ephemeral DH?: " ++ show dhe
 	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
 	maybe (return ()) (certificateVerify . fst) mpn
---	liftIO . putStrLn $ "client key exchange done"
 	clientChangeCipherSuite
---	liftIO . putStrLn $ "client change cipher suite done"
 	clientFinished
---	liftIO . putStrLn $ "client finished done"
 	serverChangeCipherSuite
 	serverFinished
 	return $ maybe [] snd mpn
@@ -143,7 +137,6 @@ handshake ps cv sks skd mcs = do
 clientHello :: TlsIo gen (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
---	liftIO $ print hs
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
@@ -181,7 +174,6 @@ serverHello csssv css cc ccec = do
 		Just c -> (c, cc)
 		_ -> error "bad"
 	liftIO . putStrLn $ "CIPHER SUITE: " ++ show cs
---	liftIO . putStrLn $ "cccc = " ++ show cccc
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
 		map (ContentHandshake version) $ catMaybes [
 		Just . HandshakeServerHello $ ServerHello version sr sessionId
@@ -192,7 +184,6 @@ serverKeyExchange :: (DH.Base b, DH.SecretKey sk, CPRG gen) =>
 	sk -> b -> DH.Secret b -> TlsIo gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
---	liftIO $ print dh
 	Just rsr <- getServerRandom
 	when dh $ DH.sndServerKeyExchange ps pn sk rsr
 
@@ -251,7 +242,6 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
---			liftIO . putStrLn $ "Pre Master Secret: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -345,7 +335,6 @@ clientFinished = do
 	fhc <- finishedHash Client
 	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	cnt <- readContent (== version)
---	liftIO . putStrLn $ "CLIENT FINISHED: " ++ show cnt
 	case cnt of
 		ContentHandshake v (HandshakeFinished f) -> do
 			unless (v == version) . throwError $ Alert
