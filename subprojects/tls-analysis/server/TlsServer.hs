@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module TlsServer (
-	TlsClient, openClient, withClient, checkName, getName,
+	ValidateHandle(..),
+	TlsClient, openClient, withClient, openClientSt,
+	checkName, getName,
 	readRsaKey, readCertificateChain, readCertificateStore,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
@@ -35,6 +37,9 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified DiffieHellman as DH
 
 import qualified EcDhe as ECDHE
+
+import Control.Concurrent.STM
+import Control.Arrow
 
 version :: Version
 version = Version 3 3
@@ -70,8 +75,12 @@ openClient :: DH.SecretKey sk =>
 	Handle -> [CipherSuite] ->
 	RSA.PrivateKey -> CertificateChain ->
 	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
-openClient h css pk cc ecks mcs =
-	runOpen h (helloHandshake css pk cc ecks mcs :: TlsIo Handle SystemRNG [String])
+openClient h css pk cc ecks mcs = do
+	ep <- createEntropyPool
+	let g = cprgCreate ep
+	(tc, ts) <- openClientSt g h css pk cc ecks mcs
+	tstv <- atomically $ newTVar ts
+	return $ TlsClient tc tstv
 
 withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 	RSA.PrivateKey -> CertificateChain ->
@@ -79,6 +88,13 @@ withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 	IO a
 withClient h css pk cc ecks mcs =
 	bracket (openClient h css pk cc ecks mcs) hlClose
+
+openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) => g ->
+	h -> [CipherSuite] -> RSA.PrivateKey -> CertificateChain ->
+	(sk, CertificateChain) -> Maybe CertificateStore ->
+	HandleMonad h (TlsClientConst h g, TlsClientState g)
+openClientSt g h css pk cc ecks mcs = second initialTlsState `liftM`
+	runOpenSt g h (helloHandshake css pk cc ecks mcs)
 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))

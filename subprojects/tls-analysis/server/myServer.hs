@@ -13,8 +13,9 @@ import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..), listenOn, accept)
 import TlsServer (
+	ValidateHandle(..),
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	withClient, getName,
+	withClient, getName, openClientSt,
 	readRsaKey, readCertificateChain, readCertificateStore)
 
 import qualified Data.ByteString as BS

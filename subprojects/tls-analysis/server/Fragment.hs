@@ -22,8 +22,12 @@ module Fragment (
 	clientVerifyHash,
 	clientVerifyHashEc,
 
-	TlsClient, runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
+	TlsClient(..), runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
 	checkName, getName,
+	runOpenSt,
+	TlsClientConst,
+	TlsClientState,
+	initialTlsState,
 
 	isEphemeralDH,
 	getRandomGen,

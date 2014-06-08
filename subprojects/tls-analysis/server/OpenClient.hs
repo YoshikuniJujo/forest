@@ -20,10 +20,12 @@ module OpenClient (
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,
 
-	TlsClient,
+	TlsClient(..),
 	TlsClientConst,
 	TlsClientState(..),
 	runOpen,
+	runOpenSt,
+	initialTlsState,
 
 	buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
@@ -124,18 +126,19 @@ runOpen :: Handle -> TlsIo Handle SystemRNG [String] -> IO TlsClient
 runOpen cl opn = do
 	ep <- createEntropyPool
 	(tc, gen) <- runOpenSt (cprgCreate ep) cl opn
-	let	csn = 1
-		ssn = 1
-		bfr = ""
-	stt <- atomically $ newTVar TlsClientState {
-		tlsBuffer = bfr,
-		tlsRandomGen = gen,
-		tlsClientSequenceNumber = csn,
-		tlsServerSequenceNumber = ssn }
+	stt <- atomically . newTVar $ initialTlsState gen
 	return $ TlsClient { tlsConst = tc, tlsState = stt }
 
+initialTlsState :: CPRG gen => gen -> TlsClientState gen
+initialTlsState g = TlsClientState {
+		tlsBuffer = "",
+		tlsRandomGen = g,
+		tlsClientSequenceNumber = 1,
+		tlsServerSequenceNumber = 1 }
+
 runOpenSt :: (HandleLike h, CPRG gen) => gen ->
-	h -> TlsIo h gen [String] -> HandleMonad h (TlsClientConst h gen, gen)
+	h -> TlsIo h gen [String] ->
+	HandleMonad h (TlsClientConst h gen, gen)
 runOpenSt gen cl opn = do
 	(ns, tlss) <- opn `runTlsIo` initTlsState gen cl
 	return . (, tlssRandomGen tlss) $ TlsClientConst {
