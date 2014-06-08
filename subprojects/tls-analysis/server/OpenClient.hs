@@ -30,6 +30,9 @@ module OpenClient (
 	checkName, getName,
 
 	isEphemeralDH,
+	getRandomGen,
+	putRandomGen,
+	getHandle,
 ) where
 
 import Prelude hiding (read)
@@ -117,11 +120,10 @@ instance (HandleLike h, CPRG g) =>
 	hlGetContent = tGetContentSt
 	hlClose = tCloseSt
 
-runOpen :: Handle -> TlsIo SystemRNG [String] -> IO TlsClient
+runOpen :: Handle -> TlsIo Handle SystemRNG [String] -> IO TlsClient
 runOpen cl opn = do
 	ep <- createEntropyPool
-	(tc, gen) <- runOpenSt cl opn
---	let	gen = cprgCreate ep
+	(tc, gen) <- runOpenSt (cprgCreate ep) cl opn
 	let	csn = 1
 		ssn = 1
 		bfr = ""
@@ -132,11 +134,10 @@ runOpen cl opn = do
 		tlsServerSequenceNumber = ssn }
 	return $ TlsClient { tlsConst = tc, tlsState = stt }
 
-runOpenSt :: CPRG gen =>
-	Handle -> TlsIo gen [String] -> IO (TlsClientConst Handle SystemRNG, gen)
-runOpenSt cl opn = do
-	ep <- createEntropyPool
-	(ns, tlss) <- opn `runTlsIo` initTlsState ep cl
+runOpenSt :: (HandleLike h, CPRG gen) => gen ->
+	h -> TlsIo h gen [String] -> HandleMonad h (TlsClientConst h gen, gen)
+runOpenSt gen cl opn = do
+	(ns, tlss) <- opn `runTlsIo` initTlsState gen cl
 	return . (, tlssRandomGen tlss) $ TlsClientConst {
 		tlsNames = ns,
 		tlsVersion = fromJust $ tlssVersion tlss,

@@ -14,6 +14,7 @@ module KeyExchange (
 ) where
 
 import Control.Applicative
+import Control.Monad
 import Data.Bits
 import Data.ASN1.Types
 import Data.ASN1.Encoding
@@ -30,6 +31,8 @@ import Fragment
 import ByteStringMonad
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+
+import Data.HandleLike
 
 class SecretKey sk where
 	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
@@ -117,8 +120,8 @@ class Base b where
 version :: Version
 version = Version 3 3
 	
-sndServerKeyExchange :: (Base b, SecretKey sk, CPRG gen) =>
-	b -> Secret b -> sk -> BS.ByteString -> TlsIo gen ()
+sndServerKeyExchange :: (HandleLike h, Base b, SecretKey sk, CPRG gen) =>
+	b -> Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
@@ -130,20 +133,21 @@ sndServerKeyExchange ps dhsk pk sr = do
 	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
 		[ContentHandshake version ske]
 
-rcvClientKeyExchange :: Base b => b -> Secret b -> Version -> TlsIo gen ()
+rcvClientKeyExchange :: (HandleLike h, Base b) =>
+	b -> Secret b -> Version -> TlsIo h gen ()
 rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let pms = calculateCommon dhps dhpn $ decodePublic dhps epms
-			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
+--			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
 
-readHandshake :: (Version -> Bool) -> TlsIo gen Handshake
+readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -158,10 +162,11 @@ readHandshake ck = do
 			AlertDescriptionUnexpectedMessage $
 			"Not Handshake: " ++ show cnt
 
-readContent :: (Version -> Bool) -> TlsIo gen Content
+readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
 readContent vc = do
-	c <- getContent (readBufferContentType vc) (readByteString (== version))
-		<* updateSequenceNumber Client
+	c <- const `liftM`
+		getContent (readBufferContentType vc) (readByteString (== version))
+		`ap` updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
 
