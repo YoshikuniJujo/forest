@@ -18,34 +18,47 @@ import qualified Data.ByteString.Char8 as BSC
 import System.IO
 import Numeric
 
+import System.FilePath
+import Control.Concurrent.STM
+
+import Data.Time
+import qualified Data.ByteString.Base64 as BASE64
+import System.Posix.Process
+import Data.Ratio
+import Crypto.Hash.SHA256 as SHA256
+
+import Random
+
 main :: IO ()
 main = do
 	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	vcid <- atomically $ newTVar 0
 	soc <- listenOn port
-	let g0 :: SystemRNG = cprgCreate $ createTestEntropyPool "Yoshikuni"
-	void . (`runStateT` g0) . forever $ do
+	let g0 :: StdGen = cprgCreate undefined
+	void . forever $ do
 		(h, _, _) <- liftIO $ accept soc
---		g <- StateT $ return . cprgFork
-		liftIO . forkIO $ server (DebugHandle h) g0 css rsa ec mcs
+		fp <- liftIO getName
+		print fp
+		liftIO . forkIO $ server (DebugHandle h fp) g0 css rsa ec mcs
 
-newtype DebugHandle = DebugHandle Handle deriving Show
+data DebugHandle = DebugHandle Handle FilePath deriving Show
 
 instance HandleLike DebugHandle where
 	type HandleMonad DebugHandle = IO
-	hlPut (DebugHandle h) bs = do
+	hlPut (DebugHandle h fp) bs = do
 --		BSC.putStrLn $ hexdump bs
-		BS.appendFile "test.srv" bs
+		BS.appendFile (fp <.> "srv") bs
 		hlPut h bs
-	hlGet (DebugHandle h) n = do
+	hlGet (DebugHandle h fp) n = do
 		bs <- hlGet h n
 --		BSC.putStrLn $ hexdump bs
-		BS.appendFile "test.clt" bs
+		BS.appendFile (fp <.> "clt") bs
 		return bs
-	hlClose (DebugHandle h) = hlClose h
-	hlDebug (DebugHandle h) = hlDebug h
+	hlClose (DebugHandle h _) = hlClose h
+	hlDebug (DebugHandle h _) = hlDebug h
 
 instance ValidateHandle DebugHandle where
-	vldt'' (DebugHandle h) = vldt'' h
+	vldt'' (DebugHandle h _) = vldt'' h
 
 hexdump :: BS.ByteString -> BS.ByteString
 hexdump = BSC.unlines . map (BSC.pack . unwords)
@@ -57,3 +70,23 @@ toTwo s = replicate (2 - length s) '0' ++ s
 separate :: Int -> [a] -> [[a]]
 separate _ [] = []
 separate n xs = take n xs : separate n (drop n xs)
+
+getName :: IO FilePath
+getName = do
+	now <- getCurrentTime
+	pid <- getProcessID
+	let	day = utctDay now
+		time = utctDayTime now
+		strs = [
+			show $ toModifiedJulianDay day,
+			show . numerator $ toRational time,
+			show pid ]
+	return . ("test" </>) . BSC.unpack . sub '/' '-' . BS.take 12 .
+		BASE64.encode .  SHA256.hash . BS.concat $ map BSC.pack strs
+
+sub :: Char -> Char -> BS.ByteString -> BS.ByteString
+sub pre post bs
+	| Just (c, bs') <- BSC.uncons bs = if c == pre
+		then BSC.cons post (sub pre post bs')
+		else BSC.cons c (sub pre post bs')
+	| otherwise = BS.empty

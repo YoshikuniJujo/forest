@@ -18,19 +18,18 @@ import qualified Data.ByteString.Char8 as BSC
 import System.IO
 import Numeric
 
+import Random
+
 main :: IO ()
 main = do
 	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn port
-	let g0 :: SystemRNG = cprgCreate $ createTestEntropyPool "Yoshikuni"
-	h <- openFile "test.clt" ReadMode
+	let g0 :: StdGen = cprgCreate undefined
+--	h <- openFile "5faj3Djst23W.clt" ReadMode
+--	h <- openFile "test/lTYwp81ePbUe.clt" ReadMode
+--	h <- openFile "test/M0DX4xktitrR.clt" ReadMode
+	h <- openFile "test/cjIjoSOkYHhC.clt" ReadMode
 	server (TestHandle h) g0 css rsa ec mcs
-	{-
-	void . (`runStateT` g0) . forever $ do
-		(h, _, _) <- liftIO $ accept soc
-		g <- StateT $ return . cprgFork
-		liftIO . forkIO $ server (DebugHandle h) g css rsa ec mcs
-		-}
 
 newtype TestHandle = TestHandle Handle deriving Show
 

@@ -308,12 +308,15 @@ clientCertificate cs = do
 clientKeyExchange :: (HandleLike h, CPRG gen) =>
 	RSA.PrivateKey -> Version -> TlsIo h gen ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
+	h <- getHandle
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms_) -> do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
+			lift . lift . hlDebug h $ "PRE MASTER SECRET: " `BS.append`
+				BSC.pack (show pms) `BS.append` "\n"
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -341,8 +344,9 @@ certificateVerify (PubKeyRSA pub) = do
 			let hash1 = RSA.ep pub s
 			unless (hash1 == hash0) . throwError $ Alert
 				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"client authentification failed"
+				AlertDescriptionDecryptError $
+				"client authentification failed "
+--				++ show hash1 ++ " " ++ show hash0
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage

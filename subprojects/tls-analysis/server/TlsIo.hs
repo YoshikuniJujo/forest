@@ -45,6 +45,7 @@ import Data.String
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.HashDescr as RSA
@@ -311,6 +312,7 @@ decryptRSA pk e = do
 
 generateKeys :: HandleLike h => BS.ByteString -> TlsIo h gen ()
 generateKeys pms = do
+	h <- getHandle
 	tlss@TlsState{
 		tlssVersion = mv,
 		tlssCachedCipherSuite = cs,
@@ -320,13 +322,15 @@ generateKeys pms = do
 		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA) -> return 20
 		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA256) -> return 32
 		_ -> throwError "generateKeys: not implemented"
+	lift . lift . hlDebug h . BSC.pack $ "CLIENT RANDOM: " ++ show mcr ++ "\n"
+	lift . lift . hlDebug h . BSC.pack $ "SERVER RANDOM: " ++ show msr ++ "\n"
 	case (mv, CT.ClientRandom <$> mcr, CT.ServerRandom <$> msr) of
 		(Just v, Just cr, Just sr) -> do
 			let	ms = CT.generateMasterSecret v pms cr sr
 				ems = CT.generateKeyBlock v cr sr ms $
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] = divide [mkl, mkl, 16, 16] ems
---			liftIO . putStrLn $ "KEYS: " ++ show [cwmk, swmk, cwk, swk]
+			lift . lift . hlDebug h . BSC.pack $ "KEYS: " ++ show [cwmk, swmk, cwk, swk] ++ "\n"
 			put $ tlss {
 				tlssMasterSecret = Just ms,
 				tlssClientWriteMacKey = Just cwmk,
