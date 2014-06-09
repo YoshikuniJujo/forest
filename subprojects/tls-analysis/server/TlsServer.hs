@@ -29,6 +29,7 @@ import "monads-tf" Control.Monad.State
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECDSA
@@ -155,12 +156,12 @@ handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	h <- getHandle
+	getCipherSuite >>= lift . lift . hlDebug h . BSC.pack . (++ "\n") . show
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
-		let (pn, gen') = DH.generateSecret gen ps -- DH.generatePrivate gen ps
+		let (pn, gen') = DH.generateSecret gen ps
 		putRandomGen gen'
 		return pn
---	pn <- liftIO $ DH.dhprivate ps
 	when isdh $ serverKeyExchange sks ps pn
 	serverToHelloDone mcs
 	mpn <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
@@ -171,7 +172,6 @@ handshake isdh ps cv sks skd mcs = do
 	clientFinished
 	serverChangeCipherSuite
 	serverFinished
-	lift . lift $ hlDebug h "FINISHED\n"
 	return $ maybe [] snd mpn
 
 clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])
