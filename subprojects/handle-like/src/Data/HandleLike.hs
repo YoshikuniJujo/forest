@@ -26,7 +26,7 @@ class Monad (HandleMonad h) => HandleLike h where
 			10 -> return ""
 			_ -> BS.cons b `liftM` hlGetLine h
 	hlGetContent = flip hlGet 1
-	hlDebug = hlPut
+	hlDebug _ _ = return ()
 	hlError _ msg = error $ BSC.unpack msg
 
 instance HandleLike Handle where
