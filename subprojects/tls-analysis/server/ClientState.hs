@@ -15,22 +15,36 @@ module ClientState (
 
 import Prelude hiding (read)
 
+import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
 
-{-
-
 data TlsClientState gen = TlsClientState {
 	tlsRandomGen :: gen,
-	tlsClientStateList :: [TlsClientStateOne gen] }
+	tlsNextClientId :: Int,
+	tlsClientStateList :: [(ClientId, TlsClientStateOne gen)] }
 
-data TlsClientStateOne gen {
+setClientState :: ClientId -> TlsClientStateOne gen ->
+	TlsClientState gen -> TlsClientState gen
+setClientState cid cso cs = cs {
+	tlsClientStateList = (cid, cso) : tlsClientStateList cs }
+
+getClientState :: ClientId -> TlsClientState gen -> TlsClientStateOne gen
+getClientState cid = fromJust . lookup cid . tlsClientStateList
+
+modifyClientState :: ClientId -> (TlsClientStateOne gen -> TlsClientStateOne gen) ->
+	TlsClientState gen -> TlsClientState gen
+modifyClientState cid f cs = let
+	cso = getClientState cid cs in
+	setClientState cid (f cso) cs
+
+data TlsClientStateOne gen = TlsClientStateOne {
 	tlsBuffer :: BS.ByteString,
 	tlsClientSequenceNumber :: Word64,
-	tlsServerSequenceNumber :: Word 64 }
+	tlsServerSequenceNumber :: Word64 }
 
--}
+{-
 
 data TlsClientState gen = TlsClientState {
 	tlsBuffer :: BS.ByteString,
@@ -38,16 +52,28 @@ data TlsClientState gen = TlsClientState {
 	tlsClientSequenceNumber :: Word64,
 	tlsServerSequenceNumber :: Word64 }
 
-data ClientId = ClientId Int deriving Show
+-}
+
+data ClientId = ClientId Int deriving (Show, Eq)
 
 newClientId :: TlsClientState gen -> (ClientId, TlsClientState gen)
-newClientId s = (ClientId 0, s)
+newClientId s = (ClientId cid ,) s {
+	tlsNextClientId = succ cid,
+	tlsClientStateList = (ClientId cid, cs) : sl }
+	where
+	cid = tlsNextClientId s
+	cs = TlsClientStateOne {
+		tlsBuffer = "",
+		tlsClientSequenceNumber = 1,
+		tlsServerSequenceNumber = 1 }
+	sl = tlsClientStateList s
 
 setBuffer :: ClientId -> BS.ByteString -> TlsClientState gen -> TlsClientState gen
-setBuffer cid bs st = st { tlsBuffer = bs }
+setBuffer cid = modifyClientState cid . sb
+	where sb bs st = st { tlsBuffer = bs }
 
 getBuffer :: ClientId -> TlsClientState gen -> BS.ByteString
-getBuffer cid = tlsBuffer
+getBuffer cid = tlsBuffer . fromJust . lookup cid . tlsClientStateList
 
 setRandomGen :: gen -> TlsClientState gen -> TlsClientState gen
 setRandomGen rg st = st { tlsRandomGen = rg }
@@ -57,17 +83,20 @@ getRandomGenSt = tlsRandomGen
 
 setClientSequenceNumber, setServerSequenceNumber ::
 	ClientId -> Word64 -> TlsClientState gen -> TlsClientState gen
-setClientSequenceNumber cid sn st = st { tlsClientSequenceNumber = sn }
-setServerSequenceNumber cid sn st = st { tlsServerSequenceNumber = sn }
+setClientSequenceNumber cid = modifyClientState cid . scsn
+	where scsn s st = st { tlsClientSequenceNumber = s }
+setServerSequenceNumber cid = modifyClientState cid . sssn
+	where sssn s st = st { tlsServerSequenceNumber = s }
 
 getClientSequenceNumber, getServerSequenceNumber ::
 	ClientId -> TlsClientState gen -> Word64
-getClientSequenceNumber cid = tlsClientSequenceNumber
-getServerSequenceNumber cid = tlsServerSequenceNumber
+getClientSequenceNumber cid =
+	tlsClientSequenceNumber . fromJust . lookup cid . tlsClientStateList
+getServerSequenceNumber cid =
+	tlsServerSequenceNumber . fromJust . lookup cid . tlsClientStateList
 
 initialTlsState :: CPRG gen => gen -> TlsClientState gen
 initialTlsState g = TlsClientState {
-		tlsBuffer = "",
-		tlsRandomGen = g,
-		tlsClientSequenceNumber = 1,
-		tlsServerSequenceNumber = 1 }
+	tlsRandomGen = g,
+	tlsNextClientId = 0,
+	tlsClientStateList = [] }
