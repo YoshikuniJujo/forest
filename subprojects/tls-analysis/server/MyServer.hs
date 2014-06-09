@@ -3,7 +3,7 @@
 module MyServer (
 	server,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
---	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
+	ValidateHandle(..),
 ) where
 
 import "monads-tf" Control.Monad.State
@@ -19,7 +19,6 @@ import qualified Data.ByteString.Char8 as BSC
 import TlsServer (
 	SecretKey, CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	ValidateHandle(..), evalClient, openClient, getName)
---	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> g -> [CipherSuite] ->
