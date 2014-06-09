@@ -24,7 +24,7 @@ import qualified Data.ByteString.Char8 as BSC
 import ReadEcPrivateKey
 
 import "crypto-random" Crypto.Random
-import "monads-tf" Control.Monad.Trans
+import "monads-tf" Control.Monad.State
 
 import KeyExchange
 import Crypto.Types.PubKey.RSA
@@ -45,10 +45,12 @@ main = do
 		else Just <$> readCertificateStore ["cacert.pem"]
 	soc <- listenOn port
 	let cs = optsToCipherSuites opts
-	forever $ do
-		(h, _, _) <- accept soc
-		g :: SystemRNG <- cprgCreate <$> createEntropyPool
-		void . forkIO $ server g h cs pk cc pkec ccec mcs
+	g0 :: SystemRNG <- cprgCreate <$> createEntropyPool
+	(`runStateT` g0) $ forever $ do
+		(h, _, _) <- liftIO $ accept soc
+		g <- StateT $ return . cprgFork
+		liftIO . void . forkIO $ server g h cs pk cc pkec ccec mcs
+	return ()
 
 server :: (CPRG g, SecretKey sk, ValidateHandle h) =>
 	g -> h -> [CipherSuite] -> PrivateKey -> CertificateChain ->
