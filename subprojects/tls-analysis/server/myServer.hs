@@ -1,9 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
 
 module Main (main) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forever, unless, void)
+import Control.Monad (forever, unless, void, liftM)
 import Control.Concurrent (forkIO)
 import Data.Maybe (fromMaybe)
 import Data.List (find)
@@ -15,13 +15,21 @@ import Network (PortID(..), listenOn, accept)
 import TlsServer (
 	ValidateHandle(..),
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	withClient, getName, openClientSt,
+	getNameSt, evalClient, openClientSt,
 	readRsaKey, readCertificateChain, readCertificateStore)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import ReadEcPrivateKey
+
+import "crypto-random" Crypto.Random
+import "monads-tf" Control.Monad.Trans
+
+import KeyExchange
+import Crypto.Types.PubKey.RSA
+import Data.X509
+import Data.X509.CertificateStore
 
 main :: IO ()
 main = do
@@ -39,11 +47,19 @@ main = do
 	let cs = optsToCipherSuites opts
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO . withClient h cs pk cc (pkec, ccec) mcs $
-			\cl -> do
-				doUntil BS.null (hlGetLine cl) >>=
-					mapM_ BSC.putStrLn
-				hlPut cl . answer . fromMaybe "Anonym" $ getName cl
+		g :: SystemRNG <- cprgCreate <$> createEntropyPool
+		void . forkIO $ server g h cs pk cc pkec ccec mcs
+
+server :: (CPRG g, SecretKey sk, ValidateHandle h) =>
+	g -> h -> [CipherSuite] -> PrivateKey -> CertificateChain ->
+	sk -> CertificateChain -> Maybe CertificateStore ->
+	HandleMonad h ()
+server g h cs pk cc pkec ccec mcs = (`evalClient` g) $ do
+	cl <- openClientSt h cs pk cc (pkec, ccec) mcs
+	doUntil BS.null (hlGetLine cl) >>=
+		lift . mapM_ (hlDebug h . (`BS.append` "\n"))
+	hlPut cl . answer . fromMaybe "Anonym" $ getNameSt cl
+	hlClose cl
 
 data Option
 	= OptDisableClientCert
@@ -115,5 +131,5 @@ answer name = BS.concat [
 	"001\r\n", "!\r\n",
 	"0\r\n\r\n" ]
 
-doUntil :: (a -> Bool) -> IO a -> IO [a]
-doUntil p rd = (\x -> if p x then return [x] else (x :) <$> doUntil p rd) =<< rd
+doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
+doUntil p rd = (\x -> if p x then return [x] else (x :) `liftM` doUntil p rd) =<< rd

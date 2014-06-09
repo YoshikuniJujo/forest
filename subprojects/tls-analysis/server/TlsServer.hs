@@ -2,8 +2,9 @@
 
 module TlsServer (
 	ValidateHandle(..),
-	TlsClient, openClient, withClient, openClientSt,
-	checkName, getName,
+	TlsClient, openClient, withClient,
+	openClientSt, evalClient,
+	checkName, getName, getNameSt,
 	readRsaKey, readCertificateChain, readCertificateStore,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
@@ -23,7 +24,7 @@ import System.IO
 import Content
 import Fragment
 
-import "monads-tf" Control.Monad.Trans
+import "monads-tf" Control.Monad.State
 
 import "crypto-random" Crypto.Random
 
@@ -39,7 +40,6 @@ import qualified DiffieHellman as DH
 import qualified EcDhe as ECDHE
 
 import Control.Concurrent.STM
-import Control.Arrow
 
 version :: Version
 version = Version 3 3
@@ -77,8 +77,10 @@ openClient :: DH.SecretKey sk =>
 	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
 openClient h css pk cc ecks mcs = do
 	ep <- createEntropyPool
-	let g = initialTlsState $ cprgCreate ep
-	(tc, ts) <- openClientSt g h css pk cc ecks mcs
+--	let g = initialTlsState $ cprgCreate ep
+--	(tc, ts) <- openClientSt h css pk cc ecks mcs `runStateT` g
+	(tc, ts) <- openClientSt h css pk cc ecks mcs `runClient`
+		(cprgCreate ep :: SystemRNG)
 	tstv <- atomically $ newTVar ts
 	return $ TlsClient tc tstv
 
@@ -89,12 +91,18 @@ withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 withClient h css pk cc ecks mcs =
 	bracket (openClient h css pk cc ecks mcs) hlClose
 
-openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) => TlsClientState g ->
+evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
+evalClient s g = fst `liftM` runClient s g
+
+runClient :: (Monad m, CPRG g) =>
+	StateT (TlsClientState g) m a -> g -> m (a, TlsClientState g)
+runClient s g = s `runStateT` initialTlsState g
+
+openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) =>
 	h -> [CipherSuite] -> RSA.PrivateKey -> CertificateChain ->
 	(sk, CertificateChain) -> Maybe CertificateStore ->
-	HandleMonad h (TlsClientConst h g, TlsClientState g)
-openClientSt g h css pk cc ecks mcs =
-	runOpenSt g h (helloHandshake css pk cc ecks mcs)
+	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
+openClientSt h css pk cc ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
@@ -146,6 +154,7 @@ handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	Bool -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
+	h <- getHandle
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
 		let (pn, gen') = DH.generateSecret gen ps -- DH.generatePrivate gen ps
@@ -162,6 +171,7 @@ handshake isdh ps cv sks skd mcs = do
 	clientFinished
 	serverChangeCipherSuite
 	serverFinished
+	lift . lift $ hlDebug h "FINISHED\n"
 	return $ maybe [] snd mpn
 
 clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])

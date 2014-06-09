@@ -29,7 +29,7 @@ module OpenClient (
 
 	buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
-	checkName, getName,
+	checkName, getName, getNameSt,
 
 	isEphemeralDH,
 	getRandomGen,
@@ -109,14 +109,18 @@ instance (HandleLike h, CPRG g) =>
 runOpen :: Handle -> TlsIo Handle SystemRNG [String] -> IO TlsClient
 runOpen cl opn = do
 	ep <- createEntropyPool
-	(tc, st) <- runOpenSt (initialTlsState $ cprgCreate ep) cl opn
+	(tc, st) <- runOpenSt cl opn `runStateT` initialTlsState (cprgCreate ep)
 	stt <- atomically $ newTVar st
 	return $ TlsClient { tlsConst = tc, tlsState = stt }
 
-runOpenSt :: (HandleLike h, CPRG gen) => TlsClientState gen ->
+runOpenSt :: (HandleLike h, CPRG gen) => h -> TlsIo h gen [String] ->
+	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
+runOpenSt cl opn = StateT $ \s -> runOpenSt_ s cl opn
+
+runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
 	h -> TlsIo h gen [String] ->
 	HandleMonad h (TlsClientConst h gen, TlsClientState gen)
-runOpenSt s cl opn = do
+runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
 	(ns, tlss) <- opn `runTlsIo` initTlsState (getRandomGenSt s') cl
 	let	s'' = setRandomGen (tlssRandomGen tlss) s'
@@ -136,7 +140,10 @@ checkName :: TlsClient -> String -> Bool
 checkName tc n = n `elem` tlsNames (tlsConst tc)
 
 getName :: TlsClient -> Maybe String
-getName tc = listToMaybe . tlsNames $ tlsConst tc
+getName = listToMaybe . tlsNames . tlsConst
+
+getNameSt :: TlsClientConst h g -> Maybe String
+getNameSt = listToMaybe . tlsNames 
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut = toStm1 tPutSt
