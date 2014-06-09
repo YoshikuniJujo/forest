@@ -3,26 +3,44 @@
 module Main (main) where
 
 import Control.Applicative ((<$>))
+import Control.Monad (unless, forever, void)
+import "monads-tf" Control.Monad.State (StateT(..), runStateT, liftIO)
 import Control.Concurrent (forkIO)
 import Data.List (find)
 import System.Environment (getArgs)
 import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..), listenOn, accept)
-import TlsServer (
+import "crypto-random" Crypto.Random (SystemRNG, CPRG(..), createEntropyPool)
+import MyServer (
+	server,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	readRsaKey, readCertificateChain, readCertificateStore)
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore)
 
-import ReadEcPrivateKey
-
-import "crypto-random" Crypto.Random
-import "monads-tf" Control.Monad.State
-
-import MyServer
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 
 main :: IO ()
 main = do
-	(opts, pn : kfp : cfp: _, errs) <- getOpt Permute options <$> getArgs
+	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	soc <- listenOn port
+	g0 :: SystemRNG <- cprgCreate <$> createEntropyPool
+	void . (`runStateT` g0) . forever $ do
+		(h, _, _) <- liftIO $ accept soc
+		g <- StateT $ return . cprgFork
+		liftIO . forkIO $ server h g css rsa ec mcs
+
+readCommandLine :: [String] -> IO (
+	PortID,
+	[CipherSuite],
+	(RSA.PrivateKey, X509.CertificateChain),
+	(ECDSA.PrivateKey, X509.CertificateChain),
+	Maybe X509.CertificateStore )
+readCommandLine args = do
+	let	(opts, pn : kfp : cfp : _, errs) = getOpt Permute options args
+		css = optsToCipherSuites opts
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
 	port <- (PortNumber . fromIntegral <$>) (readIO pn :: IO Int)
 	pk <- readRsaKey kfp
@@ -32,14 +50,7 @@ main = do
 	mcs <- if OptDisableClientCert `elem` opts
 		then return Nothing
 		else Just <$> readCertificateStore ["cacert.pem"]
-	soc <- listenOn port
-	let cs = optsToCipherSuites opts
-	g0 :: SystemRNG <- cprgCreate <$> createEntropyPool
-	_ <- (`runStateT` g0) $ forever $ do
-		(h, _, _) <- liftIO $ accept soc
-		g <- StateT $ return . cprgFork
-		liftIO . void . forkIO $ server g h cs pk cc pkec ccec mcs
-	return ()
+	return (port, css, (pk, cc), (pkec, ccec), mcs)
 
 data Option
 	= OptDisableClientCert

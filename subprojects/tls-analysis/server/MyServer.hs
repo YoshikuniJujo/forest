@@ -1,10 +1,16 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
 
-module MyServer (server) where
+module MyServer (
+	server,
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
+) where
 
 import Data.Maybe (fromMaybe)
 import Data.HandleLike (HandleLike(..))
 import TlsServer (
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
 	ValidateHandle(..), CipherSuite, getNameSt, evalClient, openClientSt)
 
 import qualified Data.ByteString as BS
@@ -20,10 +26,10 @@ import Data.X509
 import Data.X509.CertificateStore
 
 server :: (CPRG g, SecretKey sk, ValidateHandle h) =>
-	g -> h -> [CipherSuite] -> PrivateKey -> CertificateChain ->
-	sk -> CertificateChain -> Maybe CertificateStore ->
-	HandleMonad h ()
-server g h cs pk cc pkec ccec mcs = (`evalClient` g) $ do
+	h -> g -> [CipherSuite] ->
+	(PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
+	Maybe CertificateStore -> HandleMonad h ()
+server h g cs (pk, cc) (pkec, ccec) mcs = (`evalClient` g) $ do
 	cl <- openClientSt h cs pk cc (pkec, ccec) mcs
 	doUntil BS.null (hlGetLine cl) >>=
 		lift . mapM_ (hlDebug h . (`BS.append` "\n"))

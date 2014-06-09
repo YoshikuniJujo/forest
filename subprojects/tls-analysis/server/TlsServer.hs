@@ -5,7 +5,7 @@ module TlsServer (
 	TlsClient, openClient, withClient,
 	openClientSt, evalClient,
 	checkName, getName, getNameSt,
-	readRsaKey, readCertificateChain, readCertificateStore,
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
@@ -23,6 +23,7 @@ import Data.X509.CertificateStore
 import System.IO
 import Content
 import Fragment
+import ReadEcPrivateKey
 
 import "monads-tf" Control.Monad.State
 

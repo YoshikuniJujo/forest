@@ -111,7 +111,7 @@ runOpen cl opn = do
 	ep <- createEntropyPool
 	(tc, st) <- runOpenSt cl opn `runStateT` initialTlsState (cprgCreate ep)
 	stt <- atomically $ newTVar st
-	return $ TlsClient { tlsConst = tc, tlsState = stt }
+	return TlsClient { tlsConst = tc, tlsState = stt }
 
 runOpenSt :: (HandleLike h, CPRG gen) => h -> TlsIo h gen [String] ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
@@ -217,7 +217,7 @@ tGetWholeWithCtSt tc = do
 	v <- byteStringToVersion `liftM` lift (hlGet h 2)
 	enc <- lift . hlGet h . byteStringToInt =<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
-	modify $ setClientSequenceNumber (clientId tc) $ succ sn
+	modify . setClientSequenceNumber (clientId tc) $ succ sn
 	ret <- case dec hs sn ct v enc of
 		Right r -> return r
 		Left err -> error err
