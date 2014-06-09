@@ -1,6 +1,17 @@
-module ReadEcPrivateKey (readEcPrivKey) where
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+
+module ReadFile (
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
+) where
 
 import Control.Applicative
+
+import Data.X509
+import Data.X509.File
+import Data.X509.CertificateStore
+
+import qualified Crypto.PubKey.RSA as RSA
+
 import Data.Maybe
 import Data.Bits
 import Data.Word
@@ -9,6 +20,16 @@ import qualified Data.ByteString as BS
 
 import Crypto.Types.PubKey.ECDSA
 import Crypto.Types.PubKey.ECC
+
+readCertificateChain :: FilePath -> IO CertificateChain
+readCertificateChain = (CertificateChain <$>) . readSignedObject
+
+readRsaKey :: FilePath -> IO RSA.PrivateKey
+readRsaKey fp = do [PrivKeyRSA sk] <- readKeyFile fp; return sk
+
+readCertificateStore :: [FilePath] -> IO CertificateStore
+readCertificateStore fps =
+	makeCertificateStore . concat <$> mapM readSignedObject fps
 
 readEcPrivKey :: FilePath -> IO PrivateKey
 readEcPrivKey fp = do

@@ -5,7 +5,6 @@ module TlsServer (
 	TlsClient, openClient, withClient,
 	evalClient,
 	checkName, getName,
-	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 
 	DH.SecretKey,
@@ -19,13 +18,11 @@ import Data.List
 import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
-import Data.X509.File
 import Data.X509.Validation
 import Data.X509.CertificateStore
 import System.IO
 import Content
 import Fragment
-import ReadEcPrivateKey
 
 import "monads-tf" Control.Monad.State
 
@@ -455,13 +452,3 @@ readContent vc = do
 		`ap` updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
-
-readCertificateChain :: FilePath -> IO CertificateChain
-readCertificateChain = (CertificateChain <$>) . readSignedObject
-
-readRsaKey :: FilePath -> IO RSA.PrivateKey
-readRsaKey fp = do [PrivKeyRSA sk] <- readKeyFile fp; return sk
-
-readCertificateStore :: [FilePath] -> IO CertificateStore
-readCertificateStore fps =
-	makeCertificateStore . concat <$> mapM readSignedObject fps

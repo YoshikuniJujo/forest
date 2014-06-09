@@ -8,9 +8,9 @@ import Data.List (find)
 import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..))
-import TlsServer (
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+import ReadFile (
 	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore)
+import Types (CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..))
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
