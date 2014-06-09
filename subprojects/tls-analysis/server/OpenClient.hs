@@ -29,7 +29,7 @@ module OpenClient (
 
 	buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
-	checkName, getName, getNameSt,
+	checkName, getName,
 
 	isEphemeralDH,
 	getRandomGen,
@@ -139,11 +139,8 @@ runOpenSt_ s cl opn = do
 checkName :: TlsClient -> String -> Bool
 checkName tc n = n `elem` tlsNames (tlsConst tc)
 
-getName :: TlsClient -> Maybe String
-getName = listToMaybe . tlsNames . tlsConst
-
-getNameSt :: TlsClientConst h g -> Maybe String
-getNameSt = listToMaybe . tlsNames 
+getName :: TlsClientConst h g -> Maybe String
+getName = listToMaybe . tlsNames 
 
 tPut :: TlsClient -> BS.ByteString -> IO ()
 tPut = toStm1 tPutSt

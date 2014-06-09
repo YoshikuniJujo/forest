@@ -23,7 +23,7 @@ module Fragment (
 	clientVerifyHashEc,
 
 	TlsClient(..), runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
-	checkName, getName, getNameSt,
+	checkName, getName,
 	runOpenSt,
 	TlsClientConst,
 	TlsClientState,

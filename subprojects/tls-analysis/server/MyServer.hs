@@ -6,34 +6,30 @@ module MyServer (
 	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
 ) where
 
+import "monads-tf" Control.Monad.State
 import Data.Maybe (fromMaybe)
 import Data.HandleLike (HandleLike(..))
-import TlsServer (
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
-	ValidateHandle(..), CipherSuite, getNameSt, evalClient, openClientSt)
-
+import Data.X509
+import Data.X509.CertificateStore
+import "crypto-random" Crypto.Random
+import Crypto.PubKey.RSA
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
+import TlsServer (
+	SecretKey, CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	ValidateHandle(..), evalClient, openClient, getName,
+	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore)
 
-import "crypto-random" Crypto.Random
-import "monads-tf" Control.Monad.State
-
-import KeyExchange
-import Crypto.Types.PubKey.RSA
-import Data.X509
-import Data.X509.CertificateStore
-
-server :: (CPRG g, SecretKey sk, ValidateHandle h) =>
+server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> g -> [CipherSuite] ->
 	(PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
 	Maybe CertificateStore -> HandleMonad h ()
-server h g cs (pk, cc) (pkec, ccec) mcs = (`evalClient` g) $ do
-	cl <- openClientSt h cs pk cc (pkec, ccec) mcs
+server h g css rsa ec mcs = (`evalClient` g) $ do
+	cl <- openClient h css rsa ec mcs
 	doUntil BS.null (hlGetLine cl) >>=
 		lift . mapM_ (hlDebug h . (`BS.append` "\n"))
-	hlPut cl . answer . fromMaybe "Anonym" $ getNameSt cl
+	hlPut cl . answer . fromMaybe "Anonym" $ getName cl
 	hlClose cl
 
 answer :: String -> BS.ByteString
@@ -47,4 +43,5 @@ answer name = BS.concat [
 	"0\r\n\r\n" ]
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
-doUntil p rd = (\x -> if p x then return [x] else (x :) `liftM` doUntil p rd) =<< rd
+doUntil p rd =
+	(\x -> if p x then return [x] else (x :) `liftM` doUntil p rd) =<< rd

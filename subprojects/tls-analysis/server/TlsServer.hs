@@ -3,10 +3,12 @@
 module TlsServer (
 	ValidateHandle(..),
 	TlsClient, openClient, withClient,
-	openClientSt, evalClient,
-	checkName, getName, getNameSt,
+	evalClient,
+	checkName, getName,
 	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+
+	DH.SecretKey,
 ) where
 
 import Control.Applicative
@@ -73,15 +75,13 @@ validationCache = ValidationCache
 validationChecks :: ValidationChecks
 validationChecks = defaultChecks{ checkFQHN = False }
 
-openClient :: DH.SecretKey sk =>
+openClientIo :: DH.SecretKey sk =>
 	Handle -> [CipherSuite] ->
-	RSA.PrivateKey -> CertificateChain ->
-	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
-openClient h css pk cc ecks mcs = do
+	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
+	Maybe CertificateStore -> IO TlsClient
+openClientIo h css (pk, cc) ecks mcs = do
 	ep <- createEntropyPool
---	let g = initialTlsState $ cprgCreate ep
---	(tc, ts) <- openClientSt h css pk cc ecks mcs `runStateT` g
-	(tc, ts) <- openClientSt h css pk cc ecks mcs `runClient`
+	(tc, ts) <- openClient h css (pk, cc) ecks mcs `runClient`
 		(cprgCreate ep :: SystemRNG)
 	tstv <- atomically $ newTVar ts
 	return $ TlsClient tc tstv
@@ -91,7 +91,7 @@ withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
 	IO a
 withClient h css pk cc ecks mcs =
-	bracket (openClient h css pk cc ecks mcs) hlClose
+	bracket (openClientIo h css (pk, cc) ecks mcs) hlClose
 
 evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
 evalClient s g = fst `liftM` runClient s g
@@ -100,11 +100,12 @@ runClient :: (Monad m, CPRG g) =>
 	StateT (TlsClientState g) m a -> g -> m (a, TlsClientState g)
 runClient s g = s `runStateT` initialTlsState g
 
-openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) =>
-	h -> [CipherSuite] -> RSA.PrivateKey -> CertificateChain ->
-	(sk, CertificateChain) -> Maybe CertificateStore ->
+openClient :: (DH.SecretKey sk, ValidateHandle h, CPRG g) =>
+	h -> [CipherSuite] ->
+	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
+	Maybe CertificateStore ->
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
-openClientSt h css pk cc ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
+openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
