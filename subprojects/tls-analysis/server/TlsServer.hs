@@ -77,7 +77,7 @@ openClient :: DH.SecretKey sk =>
 	(sk, CertificateChain) -> Maybe CertificateStore -> IO TlsClient
 openClient h css pk cc ecks mcs = do
 	ep <- createEntropyPool
-	let g = cprgCreate ep
+	let g = initialTlsState $ cprgCreate ep
 	(tc, ts) <- openClientSt g h css pk cc ecks mcs
 	tstv <- atomically $ newTVar ts
 	return $ TlsClient tc tstv
@@ -89,11 +89,11 @@ withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
 withClient h css pk cc ecks mcs =
 	bracket (openClient h css pk cc ecks mcs) hlClose
 
-openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) => g ->
+openClientSt :: (DH.SecretKey sk, ValidateHandle h, CPRG g) => TlsClientState g ->
 	h -> [CipherSuite] -> RSA.PrivateKey -> CertificateChain ->
 	(sk, CertificateChain) -> Maybe CertificateStore ->
 	HandleMonad h (TlsClientConst h g, TlsClientState g)
-openClientSt g h css pk cc ecks mcs = second initialTlsState `liftM`
+openClientSt g h css pk cc ecks mcs =
 	runOpenSt g h (helloHandshake css pk cc ecks mcs)
 
 curve :: ECDHE.Curve
