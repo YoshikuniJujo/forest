@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module CryptoTools (
 	encryptMessage, decryptMessage, hashSha1, hashSha256,
@@ -26,6 +26,8 @@ import Crypto.Cipher.AES
 import qualified MasterSecret as MS
 import Tools
 
+import Debug.Trace
+
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
 hashSha1, hashSha256 :: Hash
@@ -52,7 +54,7 @@ decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 		"Recieved: " ++ show mac ++ "\n\t" ++
 		"ml: " ++ show ml ++ "\n"
 	where
-	bm = unpadd $ decrypt key enc
+	bm = unpadd $ decrypt key (trace ("enc = " ++ show enc ++ "\n") enc)
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
 	cmac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,
@@ -79,7 +81,11 @@ encrypt gen key pln = let
 unpadd :: BS.ByteString -> BS.ByteString
 unpadd bs = BS.take (BS.length bs - plen) bs
 	where
-	plen = fromIntegral (BS.last bs) + 1
+	plen = fromIntegral (myLast "unpadd" bs) + 1
+
+myLast :: String -> BS.ByteString -> Word8
+myLast msg "" = error msg
+myLast _ bs = BS.last bs
 
 decrypt :: BS.ByteString -> BS.ByteString -> BS.ByteString
 decrypt key ivenc = let

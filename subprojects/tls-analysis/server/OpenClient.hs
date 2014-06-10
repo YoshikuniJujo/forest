@@ -215,10 +215,11 @@ tGetWholeWithCtSt tc = do
 	enc <- lift . hlGet h . byteStringToInt =<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
-	ret <- case dec hs sn ct v enc of
-		Right r -> return r
-		Left err -> error err
-	return (ct, ret)
+	if (BS.null enc) then return (ct, "") else do
+		ret <- case dec hs sn ct v enc of
+			Right r -> return r
+			Left err -> error err
+		return (ct, ret)
 	where
 	(_vr, cs, h) = vrcshSt tc
 	key = tlsClientWriteKey tc
@@ -277,10 +278,13 @@ tCloseSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) ()
 tCloseSt tc = do
 	tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
+	{-
 	cn <- tGetWholeWithCtSt tc
 	case cn of
 		(ContentTypeAlert, "\SOH\NUL") -> return ()
-		_ -> lift $ hlError h "tClose: bad response"
+		_ -> lift . hlError h . BSC.pack $ "tClose: bad response: " ++
+			show cn
+			-}
 	lift $ hlClose h
 	where
 	h = tlsHandle tc

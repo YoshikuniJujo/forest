@@ -35,6 +35,7 @@ data ContentType
 	deriving (Show, Eq)
 
 byteStringToContentType :: BS.ByteString -> ContentType
+byteStringToContentType "" = error "Types.byteStringToContentType: empty"
 byteStringToContentType "\20" = ContentTypeChangeCipherSpec
 byteStringToContentType "\21" = ContentTypeAlert
 byteStringToContentType "\22" = ContentTypeHandshake

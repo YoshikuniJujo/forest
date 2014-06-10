@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import Control.Monad (forever, void)
+import Control.Monad (forever, void, unless)
 import "monads-tf" Control.Monad.State (StateT(..), runStateT, liftIO)
 import Control.Concurrent (forkIO)
 import System.Environment (getArgs)
@@ -18,6 +18,8 @@ import qualified Data.ByteString.Char8 as BSC
 import System.IO
 import Numeric
 
+import System.Directory
+
 import Random
 
 main :: IO ()
@@ -28,28 +30,37 @@ main = do
 --	h <- openFile "5faj3Djst23W.clt" ReadMode
 --	h <- openFile "test/lTYwp81ePbUe.clt" ReadMode
 --	h <- openFile "test/M0DX4xktitrR.clt" ReadMode
-	h <- openFile "test/cjIjoSOkYHhC.clt" ReadMode
-	server (TestHandle h) g0 css rsa ec mcs
+--	hcl <- openFile "test/cjIjoSOkYHhC.clt" ReadMode
+--	hsv <- openFile "test/cjIjoSOkYHhC.srv" ReadMode
+--	hcl <- openFile "test/mK4s1F91+46g.clt" ReadMode
+--	hsv <- openFile "test/mK4s1F91+46g.srv" ReadMode
+	hcl <- openFile "test/tzxr2zKTDtAY.clt" ReadMode
+	hsv <- openFile "test/tzxr2zKTDtAY.srv" ReadMode
+	server (TestHandle hcl hsv) g0 css rsa ec mcs
 
-newtype TestHandle = TestHandle Handle deriving Show
+data TestHandle = TestHandle Handle Handle deriving Show
 
 instance HandleLike TestHandle where
 	type HandleMonad TestHandle = IO
-	hlPut (TestHandle h) bs = do
-		BSC.putStrLn $ hexdump bs
+	hlPut (TestHandle _ h) bs = do
+--		BSC.putStrLn $ hexdump bs
+		bs0 <- BS.hGet h $ BS.length bs
+		unless (bs == bs0) . error $
+			"\n\tEXPECTED: " ++ show bs0 ++
+			"\n\tACTUAL  : " ++ show bs ++ "\n"
 --		BS.appendFile "test.srv" bs
 --		hlPut h bs
-	hlGet (TestHandle h) n = do
+	hlGet (TestHandle h _) n = do
 		BS.hGet h n
 --		bs <- hlGet h n
 --		BSC.putStrLn $ hexdump bs
 --		BS.appendFile "test.clt" bs
 --		return bs
-	hlClose (TestHandle h) = hlClose h
-	hlDebug (TestHandle h) = hlDebug h
+	hlClose (TestHandle cl sv) = hlClose cl >> hlClose sv
+	hlDebug (TestHandle cl sv) = BS.putStr
 
 instance ValidateHandle TestHandle where
-	vldt'' (TestHandle h) = vldt'' h
+	vldt'' (TestHandle _ _) = vldt'' (undefined :: Handle)
 
 hexdump :: BS.ByteString -> BS.ByteString
 hexdump = BSC.unlines . map (BSC.pack . unwords)

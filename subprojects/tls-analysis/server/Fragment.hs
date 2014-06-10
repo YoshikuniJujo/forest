@@ -71,6 +71,7 @@ readFragment = do
 readFragmentNoHash :: HandleLike h => TlsIo h gen Fragment
 readFragmentNoHash = do
 	RawFragment ct v ebody <- readRawFragment
+	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct v ebody
 	return $ Fragment ct v body
 
