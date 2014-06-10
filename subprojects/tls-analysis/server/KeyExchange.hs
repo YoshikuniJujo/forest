@@ -25,9 +25,8 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
--- import Content
 import ByteStringMonad
-import Parts
+import Types
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 

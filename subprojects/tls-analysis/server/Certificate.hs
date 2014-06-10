@@ -163,7 +163,7 @@ instance Parsable DigitallySigned where
 
 parseDigitallySigned :: ByteStringM DigitallySigned
 parseDigitallySigned = DigitallySigned
-	<$> ((,) <$> parse <*> parseSignatureAlgorithm)
+	<$> ((,) <$> parse <*> parse)
 	<*> takeLen 2
 
 digitallySignedToByteString :: DigitallySigned -> ByteString

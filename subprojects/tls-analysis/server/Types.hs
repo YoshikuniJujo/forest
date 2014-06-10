@@ -7,10 +7,15 @@ module Types (
 	Random(..), CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 
 	NamedCurve(..),
+
+	SignatureAlgorithm(..),
+	HashAlgorithm(..),
+	Parsable(..),
 ) where
 
 import Data.Word
 import qualified Data.ByteString as BS
+import ByteStringMonad
 
 data Fragment
 	= Fragment ContentType Version BS.ByteString
@@ -79,3 +84,63 @@ data NamedCurve
 	| Secp521r1
 	| NamedCurveRaw Word16
 	deriving Show
+
+data SignatureAlgorithm
+	= SignatureAlgorithmRsa
+	| SignatureAlgorithmDsa
+	| SignatureAlgorithmEcdsa
+	| SignatureAlgorithmRaw Word8
+	deriving Show
+
+data HashAlgorithm
+	= HashAlgorithmSha1
+	| HashAlgorithmSha224
+	| HashAlgorithmSha256
+	| HashAlgorithmSha384
+	| HashAlgorithmSha512
+	| HashAlgorithmRaw Word8
+	deriving Show
+
+instance Parsable HashAlgorithm where
+	parse = parseHashAlgorithm
+	toByteString = hashAlgorithmToByteString
+	listLength _ = Just 1
+
+parseHashAlgorithm :: ByteStringM HashAlgorithm
+parseHashAlgorithm = do
+	ha <- headBS
+	return $ case ha of
+		2 -> HashAlgorithmSha1
+		3 -> HashAlgorithmSha224
+		4 -> HashAlgorithmSha256
+		5 -> HashAlgorithmSha384
+		6 -> HashAlgorithmSha512
+		_ -> HashAlgorithmRaw ha
+
+hashAlgorithmToByteString :: HashAlgorithm -> ByteString
+hashAlgorithmToByteString HashAlgorithmSha1 = "\x02"
+hashAlgorithmToByteString HashAlgorithmSha224 = "\x03"
+hashAlgorithmToByteString HashAlgorithmSha256 = "\x04"
+hashAlgorithmToByteString HashAlgorithmSha384 = "\x05"
+hashAlgorithmToByteString HashAlgorithmSha512 = "\x06"
+hashAlgorithmToByteString (HashAlgorithmRaw w) = pack [w]
+
+instance Parsable SignatureAlgorithm where
+	parse = parseSignatureAlgorithm
+	toByteString = signatureAlgorithmToByteString
+	listLength _ = Just 1
+
+parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
+parseSignatureAlgorithm = do
+	sa <- headBS
+	return $ case sa of
+		1 -> SignatureAlgorithmRsa
+		2 -> SignatureAlgorithmDsa
+		3 -> SignatureAlgorithmEcdsa
+		_ -> SignatureAlgorithmRaw sa
+
+signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
+signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
+signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
+signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
+signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]

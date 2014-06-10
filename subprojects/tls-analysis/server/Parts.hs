@@ -4,7 +4,6 @@
 module Parts (
 	Version(..), Parsable(..), Random(..), CipherSuite(..),
 	HashAlgorithm(..), SignatureAlgorithm(..),
-	parseSignatureAlgorithm,
 
 	Parsable'(..),
 
@@ -109,71 +108,6 @@ cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
 
-data HashAlgorithm
-	= HashAlgorithmSha1
-	| HashAlgorithmSha224
-	| HashAlgorithmSha256
-	| HashAlgorithmSha384
-	| HashAlgorithmSha512
-	| HashAlgorithmRaw Word8
-	deriving Show
-
-instance Parsable HashAlgorithm where
-	parse = parseHashAlgorithm
-	toByteString = hashAlgorithmToByteString
-	listLength _ = Just 1
-
-parseHashAlgorithm :: ByteStringM HashAlgorithm
-parseHashAlgorithm = do
-	ha <- headBS
-	return $ case ha of
-		2 -> HashAlgorithmSha1
-		3 -> HashAlgorithmSha224
-		4 -> HashAlgorithmSha256
-		5 -> HashAlgorithmSha384
-		6 -> HashAlgorithmSha512
-		_ -> HashAlgorithmRaw ha
-
-hashAlgorithmToByteString :: HashAlgorithm -> ByteString
-hashAlgorithmToByteString HashAlgorithmSha1 = "\x02"
-hashAlgorithmToByteString HashAlgorithmSha224 = "\x03"
-hashAlgorithmToByteString HashAlgorithmSha256 = "\x04"
-hashAlgorithmToByteString HashAlgorithmSha384 = "\x05"
-hashAlgorithmToByteString HashAlgorithmSha512 = "\x06"
-hashAlgorithmToByteString (HashAlgorithmRaw w) = pack [w]
-
-data SignatureAlgorithm
-	= SignatureAlgorithmRsa
-	| SignatureAlgorithmDsa
-	| SignatureAlgorithmEcdsa
-	| SignatureAlgorithmRaw Word8
-	deriving Show
-
-instance Parsable SignatureAlgorithm where
-	parse = parseSignatureAlgorithm
-	toByteString = signatureAlgorithmToByteString
-	listLength _ = Just 1
-
-parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
-parseSignatureAlgorithm = do
-	sa <- headBS
-	return $ case sa of
-		1 -> SignatureAlgorithmRsa
-		2 -> SignatureAlgorithmDsa
-		3 -> SignatureAlgorithmEcdsa
-		_ -> SignatureAlgorithmRaw sa
-
-signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
-signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
-signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
-signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
-signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = pack [w]
-
-instance Parsable Version where
-	parse = parseVersion
-	toByteString = versionToByteString
-	listLength _ = Nothing
-
 parseVersion :: ByteStringM Version
 parseVersion = do
 	[vmjr, vmnr] <- takeWords 2
@@ -203,3 +137,8 @@ namedCurveToByteString (Secp256r1) = word16ToByteString 23
 namedCurveToByteString (Secp384r1) = word16ToByteString 24
 namedCurveToByteString (Secp521r1) = word16ToByteString 25
 namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc
+
+instance Parsable Version where
+	parse = parseVersion
+	toByteString = versionToByteString
+	listLength _ = Nothing
