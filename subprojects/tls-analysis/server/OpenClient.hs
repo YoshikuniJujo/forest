@@ -215,7 +215,7 @@ tGetWholeWithCtSt tc = do
 	enc <- lift . hlGet h . byteStringToInt =<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
-	if (BS.null enc) then return (ct, "") else do
+	if BS.null enc then return (ct, "") else do
 		ret <- case dec hs sn ct v enc of
 			Right r -> return r
 			Left err -> error err

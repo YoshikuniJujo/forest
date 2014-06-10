@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 
 module CommandLine (readCommandLine) where
 

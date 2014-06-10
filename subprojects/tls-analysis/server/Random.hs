@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Random (
 	StdGen

@@ -26,8 +26,6 @@ import Crypto.Cipher.AES
 import qualified MasterSecret as MS
 import Tools
 
-import Debug.Trace
-
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
 hashSha1, hashSha256 :: Hash

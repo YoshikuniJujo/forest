@@ -158,7 +158,7 @@ handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	Bool -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
-	h <- getHandle
+--	h <- getHandle
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
 		let (pn, gen') = DH.generateSecret gen ps
@@ -311,7 +311,7 @@ clientCertificate cs = do
 clientKeyExchange :: (HandleLike h, CPRG gen) =>
 	RSA.PrivateKey -> Version -> TlsIo h gen ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
-	h <- getHandle
+--	h <- getHandle
 	hs <- readHandshake (== version)
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms_) -> do
@@ -350,7 +350,7 @@ certificateVerify (PubKeyRSA pub) = do
 			let hash1 = RSA.ep pub s
 			unless (hash1 == hash0) . throwError $ Alert
 				AlertLevelFatal
-				AlertDescriptionDecryptError $
+				AlertDescriptionDecryptError -- $
 				"client authentification failed "
 --				++ show hash1 ++ " " ++ show hash0
 		_ -> throwError $ Alert

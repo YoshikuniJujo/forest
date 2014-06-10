@@ -3,7 +3,8 @@
 module Fragment (
 	Fragment(..), RawFragment(..), ContentType(..), Version,
 	readBufferContentType, readByteString,
-	readFragment, readFragmentNoHash, fragmentUpdateHash, writeFragment,
+--	readFragment,
+	readFragmentNoHash, fragmentUpdateHash, writeFragment,
 	readRawFragment, writeRawFragment,
 
 	setClientRandom, setServerRandom, setVersion,
@@ -58,6 +59,7 @@ readByteString vc n = buffered n $ do
 	unless (vc v) $ throwError alertVersion
 	return (ct, bs)
 
+{-
 readFragment :: HandleLike h => TlsIo h gen Fragment
 readFragment = do
 	RawFragment ct v ebody <- readRawFragment
@@ -67,6 +69,7 @@ readFragment = do
 		ContentTypeHandshake -> updateHash body
 		_ -> return ()
 	return $ Fragment ct v body
+	-}
 
 readFragmentNoHash :: HandleLike h => TlsIo h gen Fragment
 readFragmentNoHash = do

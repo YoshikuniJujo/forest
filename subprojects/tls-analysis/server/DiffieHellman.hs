@@ -24,7 +24,7 @@ import KeyExchange
 import ByteStringMonad
 
 dhparams :: DH.Params
-dhparams = unsafePerformIO $ do
+dhparams = unsafePerformIO $ -- do
 	readIO =<< readFile "dh-params.txt"
 {-
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies #-}
 
 module ReadFile (
 	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,

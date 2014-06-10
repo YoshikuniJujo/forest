@@ -45,7 +45,6 @@ import Data.String
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.PubKey.HashDescr as RSA
@@ -312,7 +311,7 @@ decryptRSA pk e = do
 
 generateKeys :: HandleLike h => BS.ByteString -> TlsIo h gen ()
 generateKeys pms = do
-	h <- getHandle
+--	h <- getHandle
 	tlss@TlsState{
 		tlssVersion = mv,
 		tlssCachedCipherSuite = cs,
