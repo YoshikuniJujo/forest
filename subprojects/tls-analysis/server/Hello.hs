@@ -33,6 +33,7 @@ import Data.Word
 
 -- import Types
 
+{-
 import Parts(
 	ContentType(..),
 	Version(..), Parsable(..),
@@ -51,6 +52,7 @@ import Parts(
 
 	takeLen',
  )
+ -}
 import Extension
 
 data ClientHello

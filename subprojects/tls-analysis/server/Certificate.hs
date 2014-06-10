@@ -23,7 +23,7 @@ import Data.Word
 
 -- import ByteStringMonad
 import qualified Data.ByteString as BS
-import Parts
+import Types
 
 -- import PreMasterSecret
 -- import DigitallySigned

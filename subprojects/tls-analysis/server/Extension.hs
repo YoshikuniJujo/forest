@@ -3,7 +3,11 @@ module Extension (
 
 	BS.concat, emptyBS, ByteStringM, takeBS, section',
 
-	Parsable'(..),
+	Parsable'(..), Parsable(..), takeLen',
+	lenBodyToByteString, headBS, Random(..), Version(..), CipherSuite(..),
+	CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	SignatureAlgorithm(..), HashAlgorithm(..), ContentType(..),
+	evalByteStringM,
 ) where
 
 import Prelude hiding (head, concat)
