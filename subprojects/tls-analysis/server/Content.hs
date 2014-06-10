@@ -30,39 +30,39 @@ getContent :: Monad m =>
 	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
 getContent rct rd = do
 	ct <- rct
-	parseContent ((snd `liftM`) . rd) ct (Version 3 3)
+	parseContent ((snd `liftM`) . rd) ct
 
 parseContent :: Monad m =>
-	(Int -> m BS.ByteString) -> ContentType -> Version -> m Content
-parseContent rd ContentTypeChangeCipherSpec v =
-	ContentChangeCipherSpec v `liftM` parse' rd
-parseContent rd ContentTypeAlert v = do
+	(Int -> m BS.ByteString) -> ContentType -> m Content
+parseContent rd ContentTypeChangeCipherSpec =
+	ContentChangeCipherSpec `liftM` parse' rd
+parseContent rd ContentTypeAlert = do
 	[al, ad] <- BS.unpack `liftM` rd 2
-	return $ ContentAlert v al ad
-parseContent rd ContentTypeHandshake v = ContentHandshake v `liftM` parse' rd
-parseContent _ ContentTypeApplicationData _ = undefined
-parseContent _ _ _ = undefined
+	return $ ContentAlert al ad
+parseContent rd ContentTypeHandshake = ContentHandshake `liftM` parse' rd
+parseContent _ ContentTypeApplicationData = undefined
+parseContent _ _ = undefined
 
 contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
 contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
 	(ct, BS.concat $ map snd fs)
 
 contentToByteString :: Content -> (ContentType, BS.ByteString)
-contentToByteString (ContentChangeCipherSpec _ ccs) =
+contentToByteString (ContentChangeCipherSpec ccs) =
 	(ContentTypeChangeCipherSpec, changeCipherSpecToByteString ccs)
-contentToByteString (ContentAlert _ al ad) = (ContentTypeAlert, BS.pack [al, ad])
-contentToByteString (ContentHandshake _ hss) =
+contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
+contentToByteString (ContentHandshake hss) =
 	(ContentTypeHandshake, toByteString' hss)
-contentToByteString (ContentApplicationData _ body) =
+contentToByteString (ContentApplicationData body) =
 	(ContentTypeApplicationData, body)
-contentToByteString (ContentRaw ct _ body) = (ct, body)
+contentToByteString (ContentRaw ct body) = (ct, body)
 
 data Content
-	= ContentChangeCipherSpec Version ChangeCipherSpec
-	| ContentAlert Version Word8 Word8
-	| ContentHandshake Version Handshake
-	| ContentApplicationData Version BS.ByteString
-	| ContentRaw ContentType Version BS.ByteString
+	= ContentChangeCipherSpec ChangeCipherSpec
+	| ContentAlert Word8 Word8
+	| ContentHandshake Handshake
+	| ContentApplicationData BS.ByteString
+	| ContentRaw ContentType BS.ByteString
 	deriving Show
 
 data ChangeCipherSpec

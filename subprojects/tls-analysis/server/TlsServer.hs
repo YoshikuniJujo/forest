@@ -216,7 +216,7 @@ serverHello csssv css cc ccec = do
 			Just c@(CipherSuite ECDHE_ECDSA _) -> (c, ccec)
 			Just c -> (c, cc)
 			_ -> error "bad"
-		cont = map (ContentHandshake version) $ catMaybes [
+		cont = map ContentHandshake $ catMaybes [
 			Just . HandshakeServerHello $ ServerHello
 				version sr sessionId
 				cs compressionMethod Nothing,
@@ -235,7 +235,7 @@ serverKeyExchange sk ps pn = do
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
 	Maybe CertificateStore -> TlsIo h gen ()
 serverToHelloDone mcs = do
-	let	cont = map (ContentHandshake version) $ catMaybes [
+	let	cont = map ContentHandshake $ catMaybes [
 			case mcs of
 				Just cs -> Just . HandshakeCertificateRequest
 					. CertificateRequest
@@ -409,11 +409,7 @@ clientChangeCipherSuite :: HandleLike h => TlsIo h gen ()
 clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
-		ContentChangeCipherSpec v ChangeCipherSpec -> do
-			unless (v == version) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionProtocolVersion
-				"bad version"
+		ContentChangeCipherSpec ChangeCipherSpec -> do
 			flushCipherSuite Client
 		_ -> throwError $ Alert
 			AlertLevelFatal
@@ -426,11 +422,7 @@ clientFinished = do
 --	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	cnt <- readContent (== version)
 	case cnt of
-		ContentHandshake v (HandshakeFinished f) -> do
-			unless (v == version) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionProtocolVersion
-				"bad version"
+		ContentHandshake (HandshakeFinished f) -> do
 			unless (f == fhc) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError
@@ -443,19 +435,19 @@ clientFinished = do
 serverChangeCipherSuite :: (HandleLike h, CPRG gen) => TlsIo h gen ()
 serverChangeCipherSuite = do
 	uncurry writeByteString . contentToByteString $
-		ContentChangeCipherSpec version ChangeCipherSpec
+		ContentChangeCipherSpec ChangeCipherSpec
 	flushCipherSuite Server
 
 serverFinished :: (HandleLike h, CPRG gen) => TlsIo h gen ()
 serverFinished = uncurry writeByteString . contentToByteString .
-	ContentHandshake version . HandshakeFinished =<< finishedHash Server
+	ContentHandshake . HandshakeFinished =<< finishedHash Server
 
 readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
-		ContentHandshake v hs
-			| ck v -> return hs
+		ContentHandshake hs
+			| True -> return hs
 			| otherwise -> throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionProtocolVersion
@@ -483,7 +475,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 				(DH.encodeBase ps)
 				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
 				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
-		cont = [ContentHandshake version ske]
+		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
 	updateHash bs
