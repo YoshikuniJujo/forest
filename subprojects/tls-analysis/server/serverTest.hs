@@ -1,36 +1,33 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables,
- 	TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module Main (main) where
 
+import Control.Applicative((<$>))
 import Control.Monad (unless, forM_)
+import Data.List (nub, sort)
+import Data.HandleLike (HandleLike(..))
+import System.IO (Handle, IOMode(..), openFile, hClose)
+import System.Directory (getDirectoryContents)
+import System.FilePath (dropExtensions, (</>), (<.>))
 import System.Environment (getArgs)
 import "crypto-random" Crypto.Random (cprgCreate)
+
+import qualified Data.ByteString as BS
+
 import MyServer (server, ValidateHandle(..))
 import CommandLine (readCommandLine)
-
-import Data.HandleLike
-import qualified Data.ByteString as BS
-import System.IO
-
-import System.Directory
-
-import Random
-
-import System.FilePath
-import Control.Applicative
-import Data.List
+import Random (StdGen)
 
 main :: IO ()
 main = do
 	(_port, _css, rsa, ec, mcs) <- readCommandLine =<< getArgs
-	let g0 :: StdGen = cprgCreate undefined
-	names <- getNames
-	forM_ (map ("test" </>) names) $ \n -> do
+	let g = cprgCreate undefined :: StdGen
+	fps <- getPaths
+	forM_ (map ("test" </>) fps) $ \n -> do
 		css <- readIO =<< readFile (n <.> "css")
-		hcl <- openFile (n <.> "clt") ReadMode
-		hsv <- openFile (n <.> "srv") ReadMode
-		server (TestHandle hcl hsv) g0 css rsa ec mcs
+		cl <- openFile (n <.> "clt") ReadMode
+		sv <- openFile (n <.> "srv") ReadMode
+		server (TestHandle cl sv) g css rsa ec mcs
 
 data TestHandle = TestHandle Handle Handle deriving Show
 
@@ -42,14 +39,13 @@ instance HandleLike TestHandle where
 			"\n\tEXPECTED: " ++ show bs0 ++
 			"\n\tACTUAL  : " ++ show bs ++ "\n"
 	hlGet (TestHandle h _) = BS.hGet h
-	hlClose (TestHandle cl sv) = hlClose cl >> hlClose sv
+	hlClose (TestHandle cl sv) = hClose cl >> hClose sv
 	hlDebug _ n
 		| n > 3 = BS.putStr
 		| otherwise = const $ return ()
 
 instance ValidateHandle TestHandle where
-	vldt'' (TestHandle _ _) = vldt'' (undefined :: Handle)
+	validate (TestHandle _ _) = validate (undefined :: Handle)
 
-getNames :: IO [FilePath]
-getNames = tail . nub . sort . map dropExtensions <$>
-	getDirectoryContents "test"
+getPaths :: IO [FilePath]
+getPaths = tail . nub . sort . map dropExtensions <$> getDirectoryContents "test"

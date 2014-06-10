@@ -61,7 +61,7 @@ instance HandleLike DebugHandle where
 	hlDebug (DebugHandle h _ _) = hlDebug h
 
 instance ValidateHandle DebugHandle where
-	vldt'' (DebugHandle h _ _) = vldt'' h
+	validate (DebugHandle h _ _) = validate h
 
 getName :: IO FilePath
 getName = do

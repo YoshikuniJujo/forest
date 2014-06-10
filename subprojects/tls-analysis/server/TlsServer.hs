@@ -17,7 +17,7 @@ import Data.List
 import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
-import Data.X509.Validation
+import qualified Data.X509.Validation as X509
 import Data.X509.CertificateStore
 import System.IO
 import Content
@@ -63,13 +63,13 @@ clientCertificateType = ClientCertificateTypeRsaSign
 clientCertificateAlgorithm :: (HashAlgorithm, SignatureAlgorithm)
 clientCertificateAlgorithm = (HashAlgorithmSha256, SignatureAlgorithmRsa)
 
-validationCache :: ValidationCache
-validationCache = ValidationCache
-	(\_ _ _ -> return ValidationCacheUnknown)
+validationCache :: X509.ValidationCache
+validationCache = X509.ValidationCache
+	(\_ _ _ -> return X509.ValidationCacheUnknown)
 	(\_ _ _ -> return ())
 
-validationChecks :: ValidationChecks
-validationChecks = defaultChecks{ checkFQHN = False }
+validationChecks :: X509.ValidationChecks
+validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
 openClientIo :: DH.SecretKey sk =>
 	Handle -> [CipherSuite] ->
@@ -249,35 +249,13 @@ serverToHelloDone mcs = do
 	writeByteString ct bs
 	updateHash bs
 
-class Monad m => ValidateM m where
-	vldt :: CertificateStore -> CertificateChain -> m [FailedReason]
-
-instance ValidateM IO where
-	vldt cs = validate
-		HashSHA256 defaultHooks validationChecks cs validationCache ("", "")
-
-class Validate v where
-	type ValidateMonad v
-	vldt' :: v -> CertificateStore -> CertificateChain ->
-		ValidateMonad v [FailedReason]
-
-data IoValidate = IoValidate deriving Show
-
-instance Validate IoValidate where
-	type ValidateMonad IoValidate = IO
-	vldt' _ cs = validate
-		HashSHA256 defaultHooks validationChecks cs validationCache ("", "")
-
-type family HandleValidate h
-type instance HandleValidate Handle = IoValidate
-
 class HandleLike h => ValidateHandle h where
-	vldt'' :: h -> CertificateStore -> CertificateChain ->
-		HandleMonad h [FailedReason]
+	validate :: h -> CertificateStore -> CertificateChain ->
+		HandleMonad h [X509.FailedReason]
 
 instance ValidateHandle Handle where
-	vldt'' _ cs = validate
-		HashSHA256 defaultHooks validationChecks cs validationCache ("", "")
+	validate _ cs = X509.validate
+		HashSHA256 X509.defaultHooks validationChecks cs validationCache ("", "")
 
 clientCertificate :: ValidateHandle h => CertificateStore -> TlsIo h gen (PubKey, [String])
 clientCertificate cs = do
@@ -292,16 +270,16 @@ clientCertificate cs = do
 			"TlsServer.clientCertificate: not certificate"
 	where
 	chk h cc = do
-		rs <- lift .lift $ vldt'' h cs cc
+		rs <- lift .lift $ validate h cs cc
 		unless (null rs) . throwError $ Alert AlertLevelFatal
 			(selectAlert rs)
 			("TlsServer.clientCertificate: Validate Failure: "
 				++ show rs)
 		return undefined
 	selectAlert rs
-		| Expired `elem` rs = AlertDescriptionCertificateExpired
-		| InFuture `elem` rs = AlertDescriptionCertificateExpired
-		| UnknownCA `elem` rs = AlertDescriptionUnknownCa
+		| X509.Expired `elem` rs = AlertDescriptionCertificateExpired
+		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
+		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
 	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>= asn1CharacterToString
 	cn = getDnElement DnCommonName . certSubjectDN
@@ -409,7 +387,7 @@ clientChangeCipherSuite :: HandleLike h => TlsIo h gen ()
 clientChangeCipherSuite = do
 	cnt <- readContent (== version)
 	case cnt of
-		ContentChangeCipherSpec ChangeCipherSpec -> do
+		ContentChangeCipherSpec ChangeCipherSpec ->
 			flushCipherSuite Client
 		_ -> throwError $ Alert
 			AlertLevelFatal
@@ -422,7 +400,7 @@ clientFinished = do
 --	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	cnt <- readContent (== version)
 	case cnt of
-		ContentHandshake (HandshakeFinished f) -> do
+		ContentHandshake (HandshakeFinished f) ->
 			unless (f == fhc) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError
