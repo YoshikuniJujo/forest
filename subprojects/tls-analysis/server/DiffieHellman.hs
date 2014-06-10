@@ -25,9 +25,12 @@ import ByteStringMonad
 
 dhparams :: DH.Params
 dhparams = unsafePerformIO $ do
+	readIO =<< readFile "dh-params.txt"
+{-
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	let	(ps, _g') = DH.generateParams g 512 2
 	return ps
+	-}
 
 dhprivate :: Base b => b -> IO (Secret b)
 dhprivate b = do
