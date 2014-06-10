@@ -7,9 +7,6 @@ module OpenClient (
 	randomByteString,
 	Partner(..),
 
-	readContentType, writeContentType, readVersion, writeVersion,
-	readLen, writeLen,
-
 	setVersion, setClientRandom, setServerRandom,
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
@@ -35,6 +32,15 @@ module OpenClient (
 	getRandomGen,
 	putRandomGen,
 	getHandle,
+
+	write,
+	read,
+	contentTypeToByteString,
+	versionToByteString,
+	intToByteString,
+	byteStringToContentType,
+	byteStringToVersion,
+	byteStringToInt,
 ) where
 
 import Prelude hiding (read)

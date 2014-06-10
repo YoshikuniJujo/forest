@@ -7,9 +7,6 @@ module TlsIo (
 	randomByteString,
 	Partner(..), runTlsIo, initTlsState,
 
-	readContentType, writeContentType, readVersion, writeVersion,
-	readLen, writeLen,
-
 	setVersion, setClientRandom, setServerRandom,
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
@@ -25,7 +22,6 @@ module TlsIo (
 	alertToByteString,
 	CT.MSVersion(..),
 	CT.lenBodyToByteString,
-	CT.byteStringToInt,
 	CT.decryptMessage, CT.hashSha1, CT.hashSha256,
 	CT.encryptMessage,
 
@@ -33,6 +29,15 @@ module TlsIo (
 	getRandomGen,
 	putRandomGen,
 	getHandle,
+
+	write,
+	read,
+	CT.contentTypeToByteString,
+	CT.versionToByteString,
+	CT.intToByteString,
+	CT.byteStringToContentType,
+	CT.byteStringToVersion,
+	CT.byteStringToInt,
 ) where
 
 import Prelude hiding (read)
@@ -237,24 +242,6 @@ randomByteString len = do
 	return r
 
 data Partner = Server | Client deriving (Show, Eq)
-
-readContentType :: HandleLike h => TlsIo h gen CT.ContentType
-readContentType = CT.byteStringToContentType `liftM` read 1
-
-writeContentType :: HandleLike h => CT.ContentType -> TlsIo h gen ()
-writeContentType = write . CT.contentTypeToByteString
-
-readVersion :: HandleLike h => TlsIo h gen CT.Version
-readVersion = CT.byteStringToVersion `liftM` read 2
-
-writeVersion :: HandleLike h => CT.Version -> TlsIo h gen ()
-writeVersion = write . CT.versionToByteString
-
-readLen :: HandleLike h => Int -> TlsIo h gen BS.ByteString
-readLen n = read . CT.byteStringToInt =<< read n
-
-writeLen :: HandleLike h => Int -> BS.ByteString -> TlsIo h gen ()
-writeLen n bs = write (CT.intToByteString n $ BS.length bs) >> write bs
 
 read :: HandleLike h => Int -> TlsIo h gen BS.ByteString
 read n = do

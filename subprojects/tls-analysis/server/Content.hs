@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Content (
-	Content(..), getContent, contentToFragment, contentListToFragment,
+	Content(..), getContent,
 	ChangeCipherSpec(..),
 
 	Handshake(..),
@@ -43,28 +43,19 @@ parseContent rd ContentTypeHandshake v = ContentHandshake v `liftM` parse' rd
 parseContent _ ContentTypeApplicationData _ = undefined
 parseContent _ _ _ = undefined
 
-contentListToFragment :: [Content] -> Fragment
-contentListToFragment cs = let
-	fs@(Fragment ct vsn _ : _) = map contentToFragment cs in
-	Fragment ct vsn . BS.concat $ map (\(Fragment _ _ b) -> b) fs
-
 contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
-contentListToByteString cs = let Fragment ct _ bs = contentListToFragment cs in
-	(ct, bs)
-
-contentToFragment :: Content -> Fragment
-contentToFragment (ContentChangeCipherSpec v ccs) =
-	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
-contentToFragment (ContentAlert v al ad) =
-	Fragment ContentTypeAlert v $ BS.pack [al, ad]
-contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
-	toByteString' hss
-contentToFragment (ContentApplicationData v body) =
-	Fragment ContentTypeApplicationData v body
-contentToFragment (ContentRaw ct v body) = Fragment ct v body
+contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
+	(ct, BS.concat $ map snd fs)
 
 contentToByteString :: Content -> (ContentType, BS.ByteString)
-contentToByteString c = let Fragment ct _ bs = contentToFragment c in (ct, bs)
+contentToByteString (ContentChangeCipherSpec _ ccs) =
+	(ContentTypeChangeCipherSpec, changeCipherSpecToByteString ccs)
+contentToByteString (ContentAlert _ al ad) = (ContentTypeAlert, BS.pack [al, ad])
+contentToByteString (ContentHandshake _ hss) =
+	(ContentTypeHandshake, toByteString' hss)
+contentToByteString (ContentApplicationData _ body) =
+	(ContentTypeApplicationData, body)
+contentToByteString (ContentRaw ct _ body) = (ct, body)
 
 data Content
 	= ContentChangeCipherSpec Version ChangeCipherSpec
@@ -93,7 +84,3 @@ parseChangeCipherSpec' rd = do
 changeCipherSpecToByteString :: ChangeCipherSpec -> BS.ByteString
 changeCipherSpecToByteString ChangeCipherSpec = BS.pack [1]
 changeCipherSpecToByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
-
-data Fragment
-	= Fragment ContentType Version BS.ByteString
-	deriving Show

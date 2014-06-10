@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Fragment (
-	readBufferContentType,
+	readBufContentType,
 	readByteString,
 	writeByteString,
 	updateHash,
@@ -46,52 +46,30 @@ import "crypto-random" Crypto.Random
 
 import Data.HandleLike
 
-readBufferContentType :: HandleLike h => (Version -> Bool) -> TlsIo h gen ContentType
-readBufferContentType vc =
-	getContentType vc $ (\(Fragment ct v bs) -> (ct, v, bs)) `liftM` readFragmentNoHash
+readBufContentType :: HandleLike h => (Version -> Bool) -> TlsIo h gen ContentType
+readBufContentType vc = getContentType vc readFragment
 
-readByteString ::
-	HandleLike h => (Version -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
+readByteString :: HandleLike h =>
+	(Version -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
 readByteString vc n = buffered n $ do
-	Fragment ct v bs <- readFragmentNoHash
+	(ct, v, bs) <- readFragment
 	unless (vc v) $ throwError alertVersion
 	return (ct, bs)
 
-{-
-readFragment :: HandleLike h => TlsIo h gen Fragment
+readFragment :: HandleLike h => TlsIo h gen (ContentType, Version, BS.ByteString)
 readFragment = do
-	RawFragment ct v ebody <- readRawFragment
+	ct <- byteStringToContentType `liftM` read 1
+	v <- byteStringToVersion `liftM` read 2
+	ebody <- read . byteStringToInt =<< read 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct v ebody
-	case ct of
-		ContentTypeHandshake -> updateHash body
-		_ -> return ()
-	return $ Fragment ct v body
-	-}
-
-readFragmentNoHash :: HandleLike h => TlsIo h gen Fragment
-readFragmentNoHash = do
-	RawFragment ct v ebody <- readRawFragment
-	when (BS.null ebody) $ throwError "readFragment: ebody is null"
-	body <- tlsDecryptMessage ct v ebody
-	return $ Fragment ct v body
+	return (ct, v, body)
 
 writeByteString :: (HandleLike h, CPRG gen) =>
 	ContentType -> BS.ByteString -> TlsIo h gen ()
-writeByteString ct bs = writeRawFragment .
-	RawFragment ct (Version 3 3) =<< tlsEncryptMessage ct (Version 3 3) bs
-
-readRawFragment :: HandleLike h => TlsIo h gen RawFragment
-readRawFragment = RawFragment `liftM` readContentType `ap` readVersion `ap` readLen 2
-
-writeRawFragment :: HandleLike h => RawFragment -> TlsIo h gen ()
-writeRawFragment (RawFragment ct v bs) =
-	writeContentType ct >> writeVersion v >> writeLen 2 bs
-	
-data RawFragment
-	= RawFragment ContentType Version BS.ByteString
-	deriving Show
-
-data Fragment
-	= Fragment ContentType Version BS.ByteString
-	deriving Show
+writeByteString ct bs = do
+	enc <- tlsEncryptMessage ct (Version 3 3) bs
+	write $ BS.concat [
+		contentTypeToByteString ct,
+		versionToByteString (Version 3 3),
+		intToByteString 2 $ BS.length enc, enc ]

@@ -466,7 +466,7 @@ readHandshake ck = do
 
 readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
 readContent vc = do
-	c <- const `liftM` getContent (readBufferContentType vc) (readByteString (== version))
+	c <- const `liftM` getContent (readBufContentType vc) (readByteString (== version))
 		`ap` updateSequenceNumber Client
 	case contentToByteString c of
 		(ContentTypeHandshake, bs) -> updateHash bs
