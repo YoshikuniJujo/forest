@@ -322,15 +322,15 @@ generateKeys pms = do
 		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA) -> return 20
 		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA256) -> return 32
 		_ -> throwError "generateKeys: not implemented"
-	lift . lift . hlDebug h . BSC.pack $ "CLIENT RANDOM: " ++ show mcr ++ "\n"
-	lift . lift . hlDebug h . BSC.pack $ "SERVER RANDOM: " ++ show msr ++ "\n"
+--	lift . lift . hlDebug h . BSC.pack $ "CLIENT RANDOM: " ++ show mcr ++ "\n"
+--	lift . lift . hlDebug h . BSC.pack $ "SERVER RANDOM: " ++ show msr ++ "\n"
 	case (mv, CT.ClientRandom <$> mcr, CT.ServerRandom <$> msr) of
 		(Just v, Just cr, Just sr) -> do
 			let	ms = CT.generateMasterSecret v pms cr sr
 				ems = CT.generateKeyBlock v cr sr ms $
 					mkl * 2 + 32
 				[cwmk, swmk, cwk, swk] = divide [mkl, mkl, 16, 16] ems
-			lift . lift . hlDebug h . BSC.pack $ "KEYS: " ++ show [cwmk, swmk, cwk, swk] ++ "\n"
+--			lift . lift . hlDebug h . BSC.pack $ "KEYS: " ++ show [cwmk, swmk, cwk, swk] ++ "\n"
 			put $ tlss {
 				tlssMasterSecret = Just ms,
 				tlssClientWriteMacKey = Just cwmk,

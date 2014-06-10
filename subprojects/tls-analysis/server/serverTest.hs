@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import Control.Monad (forever, void, unless)
+import Control.Monad (forever, void, unless, forM_)
 import "monads-tf" Control.Monad.State (StateT(..), runStateT, liftIO)
 import Control.Concurrent (forkIO)
 import System.Environment (getArgs)
@@ -22,9 +22,13 @@ import System.Directory
 
 import Random
 
+import System.FilePath
+import Control.Applicative
+import Data.List
+
 main :: IO ()
 main = do
-	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(port, _css, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn port
 	let g0 :: StdGen = cprgCreate undefined
 --	h <- openFile "5faj3Djst23W.clt" ReadMode
@@ -34,9 +38,12 @@ main = do
 --	hsv <- openFile "test/cjIjoSOkYHhC.srv" ReadMode
 --	hcl <- openFile "test/mK4s1F91+46g.clt" ReadMode
 --	hsv <- openFile "test/mK4s1F91+46g.srv" ReadMode
-	hcl <- openFile "test/tzxr2zKTDtAY.clt" ReadMode
-	hsv <- openFile "test/tzxr2zKTDtAY.srv" ReadMode
-	server (TestHandle hcl hsv) g0 css rsa ec mcs
+	names <- getNames
+	forM_ (map ("test" </>) names) $ \n -> do
+		css <- readIO =<< readFile (n <.> "css")
+		hcl <- openFile (n <.> "clt") ReadMode
+		hsv <- openFile (n <.> "srv") ReadMode
+		server (TestHandle hcl hsv) g0 css rsa ec mcs
 
 data TestHandle = TestHandle Handle Handle deriving Show
 
@@ -72,3 +79,7 @@ toTwo s = replicate (2 - length s) '0' ++ s
 separate :: Int -> [a] -> [[a]]
 separate _ [] = []
 separate n xs = take n xs : separate n (drop n xs)
+
+getNames :: IO [FilePath]
+getNames = tail . nub . sort . map dropExtensions <$>
+	getDirectoryContents "test"

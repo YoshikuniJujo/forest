@@ -27,7 +27,8 @@ server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 server h g css rsa ec mcs = (`evalClient` g) $ do
 	cl <- openClient h css rsa ec mcs
 	doUntil BS.null (hlGetLine cl) >>=
-		lift . mapM_ (hlDebug h . (`BS.append` "\n"))
+		const (return ())
+--		lift . mapM_ (hlDebug h . (`BS.append` "\n"))
 	hlPut cl . answer . fromMaybe "Anonym" $ getName cl
 	hlClose cl
 

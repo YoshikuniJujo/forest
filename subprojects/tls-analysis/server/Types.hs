@@ -58,7 +58,7 @@ data CipherSuiteKeyEx
 	| ECDHE_ECDSA
 	| ECDHE_PSK
 	| KeyExNULL
-	deriving (Show, Eq)
+	deriving (Show, Read, Eq)
 
 data CipherSuiteMsgEnc
 	= AES_128_CBC_SHA
@@ -66,12 +66,12 @@ data CipherSuiteMsgEnc
 	| CAMELLIA_128_CBC_SHA
 	| NULL_SHA
 	| MsgEncNULL
-	deriving (Show, Eq)
+	deriving (Show, Read, Eq)
 
 data CipherSuite
 	= CipherSuite CipherSuiteKeyEx CipherSuiteMsgEnc
 	| CipherSuiteRaw Word8 Word8
-	deriving (Show, Eq)
+	deriving (Show, Read, Eq)
 
 data NamedCurve
 	= Secp256r1

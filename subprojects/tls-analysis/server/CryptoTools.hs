@@ -54,7 +54,7 @@ decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 		"Recieved: " ++ show mac ++ "\n\t" ++
 		"ml: " ++ show ml ++ "\n"
 	where
-	bm = unpadd $ decrypt key (trace ("enc = " ++ show enc ++ "\n") enc)
+	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
 	cmac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,

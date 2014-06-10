@@ -315,8 +315,8 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
-			lift . lift . hlDebug h $ "PRE MASTER SECRET: " `BS.append`
-				BSC.pack (show pms) `BS.append` "\n"
+--			lift . lift . hlDebug h $ "PRE MASTER SECRET: " `BS.append`
+--				BSC.pack (show pms) `BS.append` "\n"
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage

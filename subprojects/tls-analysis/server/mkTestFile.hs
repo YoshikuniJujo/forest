@@ -37,28 +37,34 @@ main = do
 	let g0 :: StdGen = cprgCreate undefined
 	void . forever $ do
 		(h, _, _) <- liftIO $ accept soc
+		hSetBuffering h NoBuffering
 		fp <- liftIO getName
 		print fp
-		liftIO . forkIO $ server (DebugHandle h fp) g0 css rsa ec mcs
+		writeFile (fp <.> "css") $ show css ++ "\n"
+		cl <- openFile (fp <.> "clt") WriteMode
+		sv <- openFile (fp <.> "srv") WriteMode
+		liftIO . forkIO $ server (DebugHandle h cl sv) g0 css rsa ec mcs
 
-data DebugHandle = DebugHandle Handle FilePath deriving Show
+data DebugHandle = DebugHandle Handle Handle Handle deriving Show
 
 instance HandleLike DebugHandle where
 	type HandleMonad DebugHandle = IO
-	hlPut (DebugHandle h fp) bs = do
+	hlPut (DebugHandle h _ sv) bs = do
 --		BSC.putStrLn $ hexdump bs
-		BS.appendFile (fp <.> "srv") bs
+--		BS.appendFile (fp <.> "srv") bs
+		BS.hPut sv bs
 		hlPut h bs
-	hlGet (DebugHandle h fp) n = do
+	hlGet (DebugHandle h cl _) n = do
 		bs <- hlGet h n
 --		BSC.putStrLn $ hexdump bs
-		BS.appendFile (fp <.> "clt") bs
+--		BS.appendFile (fp <.> "clt") bs
+		BS.hPut cl bs
 		return bs
-	hlClose (DebugHandle h _) = hlClose h
-	hlDebug (DebugHandle h _) = hlDebug h
+	hlClose (DebugHandle h cl sv) = hlClose h >> hlClose cl >> hlClose sv
+	hlDebug (DebugHandle h _ _) = hlDebug h
 
 instance ValidateHandle DebugHandle where
-	vldt'' (DebugHandle h _) = vldt'' h
+	vldt'' (DebugHandle h _ _) = vldt'' h
 
 hexdump :: BS.ByteString -> BS.ByteString
 hexdump = BSC.unlines . map (BSC.pack . unwords)
