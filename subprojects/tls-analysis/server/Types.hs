@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables,
+	FlexibleInstances, TypeFamilies, TupleSections #-}
 
 module Types (
 	Version(..), byteStringToVersion, versionToByteString,
@@ -11,6 +12,7 @@ module Types (
 	HashAlgorithm(..),
 	Parsable(..),
 	Parsable'(..),
+	Parsable''(..),
 
 	lenBodyToByteString, Word8, headBS,
 
@@ -38,6 +40,7 @@ module Types (
 	throwError,
 ) where
 
+import Control.Arrow
 import Data.Word
 import qualified Data.ByteString as BS
 -- import ByteStringMonad
@@ -207,6 +210,37 @@ class Parsable' a where
 	parse' :: Monad m => (Int -> m BS.ByteString) -> m a
 	toByteString' :: a -> ByteString
 
+class Parsable'' a where
+	parse'' :: BS.ByteString -> Either String (a, BS.ByteString)
+	toByteString'' :: a -> ByteString
+	listLength'' :: a -> Maybe Int
+
+type Parse a = BS.ByteString -> Either String (a, BS.ByteString)
+
+list' :: Parse a -> BS.ByteString -> Either String [a]
+list' _ bs | BS.null bs = Right []
+list' prs bs = do
+	(x, r) <- prs bs
+	case r of
+		"" -> return [x]
+		_ -> (x :) <$> list' prs r
+
+class Endable m where
+	isEnd :: m Bool
+
+instance Endable ByteStringM where
+	isEnd = BS.null `liftM` get
+
+{-
+instance (Parsable a, Parsable' a) => Parsable' [a] where
+	parse' rd = case listLength (undefined :: a) of
+--		Just n -> section'' rd n . (list . parse')
+		_ -> list $ parse' rd
+	toByteString' = case listLength (undefined :: a) of
+		Just n -> lenBodyToByteString n . BS.concat . map toByteString
+		_ -> error "Parsable [a]: Not set list len"
+		-}
+
 instance Parsable a => Parsable [a] where
 	parse = case listLength (undefined :: a) of
 		Just n -> section n $ list parse
@@ -215,6 +249,29 @@ instance Parsable a => Parsable [a] where
 		Just n -> lenBodyToByteString n . BS.concat . map toByteString
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
+
+instance Parsable'' a => Parsable'' [a] where
+	parse'' bs = case listLength'' (undefined :: a) of
+		Just n -> do
+			(bs1, bs2) <- splitLen n bs
+			(, bs2) <$> list' parse'' bs1
+		_ -> (, "") <$> list' parse'' bs
+	toByteString'' = case listLength'' (undefined :: a) of
+		Just n -> lenBodyToByteString n . BS.concat . map toByteString''
+		_ -> BS.concat . map toByteString''
+	listLength'' _ = Nothing
+
+splitLen :: Int -> BS.ByteString -> Either String (BS.ByteString, BS.ByteString)
+splitLen n bs = do
+	unless (BS.length bs >= n) $ Left "Types.splitLen"
+	let (l, bs') = first byteStringToInt $ BS.splitAt n bs
+	unless (BS.length bs' >= l) $ Left "Types.splitLen"
+	return $ BS.splitAt l bs'
+
+{-
+let (l, bs') = first byteStringToInt $ BS.splitAt n bs in
+	BS.splitAt l bs'
+	-}
 
 instance (Parsable a, Parsable b) => Parsable (a, b) where
 	parse = (,) <$> parse <*> parse
@@ -279,23 +336,16 @@ takeLen' rd n = do
 emptyBS :: ByteStringM Bool
 emptyBS = (== BS.empty) <$> get
 
-list1 :: ByteStringM a -> ByteStringM [a]
+list1 :: (Monad m, Endable m) => m a -> m [a]
 list1 m = do
 	x <- m
-	e <- emptyBS
-	if e then return [x] else (x :) <$> list1 m
+	e <- isEnd
+	if e then return [x] else (x :) `liftM` list1 m
 
-list :: ByteStringM a -> ByteStringM [a]
+list :: (Monad m, Endable m) => m a -> m [a]
 list m = do
-	e <- emptyBS
-	if e then return [] else (:) <$> m <*> list m
-
-{-
-list' :: Monad m => (Int -> m BS.ByteString) ->
-	((Int -> m BS.ByteString) -> m a) -> m [a]
-list' rd m = do
-	e <- empty
-	-}
+	e <- isEnd
+	if e then return [] else (:) `liftM` m `ap` list m
 
 section' :: Monad m => (Int -> m BS.ByteString) -> Int -> ByteStringM a -> m a
 section' rd n m = do
@@ -305,6 +355,20 @@ section' rd n m = do
 	case e of
 		Right x -> return x
 		Left err -> error err
+
+-- type FromByteString m a = (Int -> m BS.ByteString) -> m a
+
+{-
+-- section'' :: Monad m =>
+--	(Int -> m BS.ByteString) -> Int -> FromByteString n a -> m a
+section'' rd n m = do
+	l <- takeInt' rd n
+	bs <- rd l
+	let e = evalByteStringM (m takeBS) bs
+	case e of
+		Right x -> return x
+		Left err -> error err
+		-}
 
 section :: Int -> ByteStringM a -> ByteStringM a
 section n m = do

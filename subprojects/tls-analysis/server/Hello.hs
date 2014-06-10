@@ -84,6 +84,12 @@ parseClientHello = do
 	mel <- if e then return Nothing else Just <$> parseExtensionList takeBS
 	return $ ClientHello pv r sid css cms mel
 
+{-
+parseClientHello' :: (Int -> m ByteString) -> m ClientHello
+parseClientHello' rd = do
+	
+	-}
+
 clientHelloToByteString :: ClientHello -> ByteString
 clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
 	toByteString' pv,

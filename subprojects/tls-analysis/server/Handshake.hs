@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Handshake (
-	Parsable'(..),
+--	Parsable'(..),
+	takeHandshake,
+	handshakeToByteString,
 	Handshake(..),
 	handshakeDoesServerHelloFinish, handshakeDoesFinish,
 	handshakeDoesClientKeyExchange,
@@ -67,9 +69,11 @@ data Handshake
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
 
+{-
 instance Parsable' Handshake where
-	parse' = parseHandshake'
+	parse' = takeHandshake
 	toByteString' = handshakeToByteString
+	-}
 
 handshakeMakeVerify :: ByteString -> Handshake
 handshakeMakeVerify = HandshakeCertificateVerify .
@@ -115,8 +119,8 @@ handshakeGetFinish _ = Nothing
 handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
 handshakeMakeClientKeyExchange = HandshakeClientKeyExchange
 
-parseHandshake' :: Monad m => (Int -> m BS.ByteString) -> m Handshake
-parseHandshake' rd = do
+takeHandshake :: Monad m => (Int -> m BS.ByteString) -> m Handshake
+takeHandshake rd = do
 	mt <- parseHandshakeType' rd
 	section' rd 3 $ case mt of
 		HandshakeTypeClientHello -> HandshakeClientHello `liftM` parse
