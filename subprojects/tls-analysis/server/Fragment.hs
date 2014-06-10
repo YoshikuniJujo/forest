@@ -3,8 +3,8 @@
 module Fragment (
 	readBufferContentType,
 	readByteString,
-	fragmentUpdateHash,
-	writeFragment,
+	writeByteString,
+	updateHash,
 
 	setClientRandom, setServerRandom, setVersion,
 	getClientRandom, getServerRandom, getCipherSuite,
@@ -76,13 +76,10 @@ readFragmentNoHash = do
 	body <- tlsDecryptMessage ct v ebody
 	return $ Fragment ct v body
 
-fragmentUpdateHash :: HandleLike h => Fragment -> TlsIo h gen ()
-fragmentUpdateHash (Fragment ContentTypeHandshake _ b) = updateHash b
-fragmentUpdateHash _ = return ()
-
-writeFragment :: (HandleLike h, CPRG gen) => Fragment -> TlsIo h gen ()
-writeFragment (Fragment ct v bs) =
-	writeRawFragment . RawFragment ct v =<< tlsEncryptMessage ct v bs
+writeByteString :: (HandleLike h, CPRG gen) =>
+	ContentType -> BS.ByteString -> TlsIo h gen ()
+writeByteString ct bs = writeRawFragment .
+	RawFragment ct (Version 3 3) =<< tlsEncryptMessage ct (Version 3 3) bs
 
 readRawFragment :: HandleLike h => TlsIo h gen RawFragment
 readRawFragment = RawFragment `liftM` readContentType `ap` readVersion `ap` readLen 2
@@ -93,4 +90,8 @@ writeRawFragment (RawFragment ct v bs) =
 	
 data RawFragment
 	= RawFragment ContentType Version BS.ByteString
+	deriving Show
+
+data Fragment
+	= Fragment ContentType Version BS.ByteString
 	deriving Show

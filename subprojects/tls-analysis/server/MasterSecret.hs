@@ -19,7 +19,8 @@ module MasterSecret (
 	P.Version(..), P.versionToByteString, P.byteStringToVersion,
 	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
 
-	P.Fragment(..), P.Random(..),
+--	P.Fragment(..),
+	P.Random(..),
 	P.CipherSuite(..), P.CipherSuiteKeyEx(..), P.CipherSuiteMsgEnc(..),
 
 --	P.Random(..),

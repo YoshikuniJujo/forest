@@ -13,7 +13,7 @@ module CryptoTools (
 	MS.versionToByteString, MS.contentTypeToByteString,
 	MS.CipherSuite(..), MS.CipherSuiteKeyEx(..), MS.CipherSuiteMsgEnc(..),
 	MS.Random(..),
-	MS.Fragment(..),
+--	MS.Fragment(..),
 ) where
 
 import Data.Word

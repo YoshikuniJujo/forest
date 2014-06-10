@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module OpenClient (
-	Fragment(..), Version, ContentType(..),
+	Version(..), ContentType(..),
 	TlsIo, liftIO, throwError, catchError,
 	randomByteString,
 	Partner(..),

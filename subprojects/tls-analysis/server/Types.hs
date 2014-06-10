@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Types (
-	Fragment(..),
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Random(..), CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
@@ -16,10 +15,6 @@ module Types (
 import Data.Word
 import qualified Data.ByteString as BS
 import ByteStringMonad
-
-data Fragment
-	= Fragment ContentType Version BS.ByteString
-	deriving Show
 
 data Version
 	= Version Word8 Word8

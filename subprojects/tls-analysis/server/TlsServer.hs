@@ -10,7 +10,6 @@ module TlsServer (
 	DH.SecretKey,
 ) where
 
-import Control.Applicative
 import Control.Monad
 import Control.Exception
 import Data.Maybe
@@ -213,16 +212,18 @@ serverHello csssv css cc ccec = do
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
 	mcs <- getCipherSuite
-	let (cs, cccc) = case mcs of
-		Just c@(CipherSuite ECDHE_ECDSA _) -> (c, ccec)
-		Just c -> (c, cc)
-		_ -> error "bad"
---	liftIO . putStrLn $ "CIPHER SUITE: " ++ show cs
-	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
-		map (ContentHandshake version) $ catMaybes [
-		Just . HandshakeServerHello $ ServerHello version sr sessionId
-			cs compressionMethod Nothing,
-		Just $ HandshakeCertificate cccc ]
+	let	(cs, cccc) = case mcs of
+			Just c@(CipherSuite ECDHE_ECDSA _) -> (c, ccec)
+			Just c -> (c, cc)
+			_ -> error "bad"
+		cont = map (ContentHandshake version) $ catMaybes [
+			Just . HandshakeServerHello $ ServerHello
+				version sr sessionId
+				cs compressionMethod Nothing,
+			Just $ HandshakeCertificate cccc ]
+		(ct, bs) = contentListToByteString cont
+	writeByteString ct bs
+	updateHash bs
 
 serverKeyExchange :: HandleLike h => (DH.Base b, DH.SecretKey sk, CPRG gen) =>
 	sk -> b -> DH.Secret b -> TlsIo h gen ()
@@ -233,18 +234,20 @@ serverKeyExchange sk ps pn = do
 
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
 	Maybe CertificateStore -> TlsIo h gen ()
-serverToHelloDone mcs =
-	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment .
-		map (ContentHandshake version) $ catMaybes [
-		case mcs of
-			Just cs -> Just . HandshakeCertificateRequest
-				. CertificateRequest
-					[clientCertificateType]
-					[clientCertificateAlgorithm]
-				. map (certIssuerDN . signedObject . getSigned)
-				$ listCertificates cs
-			_ -> Nothing,
-		Just HandshakeServerHelloDone]
+serverToHelloDone mcs = do
+	let	cont = map (ContentHandshake version) $ catMaybes [
+			case mcs of
+				Just cs -> Just . HandshakeCertificateRequest
+					. CertificateRequest
+						[clientCertificateType]
+						[clientCertificateAlgorithm]
+					. map (certIssuerDN . signedObject . getSigned)
+					$ listCertificates cs
+				_ -> Nothing,
+			Just HandshakeServerHelloDone]
+		(ct, bs) = contentListToByteString cont
+	writeByteString ct bs
+	updateHash bs
 
 class Monad m => ValidateM m where
 	vldt :: CertificateStore -> CertificateChain -> m [FailedReason]
@@ -439,12 +442,12 @@ clientFinished = do
 
 serverChangeCipherSuite :: (HandleLike h, CPRG gen) => TlsIo h gen ()
 serverChangeCipherSuite = do
-	writeFragment . contentToFragment $
+	uncurry writeByteString . contentToByteString $
 		ContentChangeCipherSpec version ChangeCipherSpec
 	flushCipherSuite Server
 
 serverFinished :: (HandleLike h, CPRG gen) => TlsIo h gen ()
-serverFinished = writeFragment . contentToFragment .
+serverFinished = uncurry writeByteString . contentToByteString .
 	ContentHandshake version . HandshakeFinished =<< finishedHash Server
 
 readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
@@ -465,7 +468,9 @@ readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
 readContent vc = do
 	c <- const `liftM` getContent (readBufferContentType vc) (readByteString (== version))
 		`ap` updateSequenceNumber Client
-	fragmentUpdateHash $ contentToFragment c
+	case contentToByteString c of
+		(ContentTypeHandshake, bs) -> updateHash bs
+		_ -> return ()
 	return c
 	
 sndServerKeyExchange :: (HandleLike h, DH.Base b, DH.SecretKey sk, CPRG gen) =>
@@ -478,8 +483,10 @@ sndServerKeyExchange ps dhsk pk sr = do
 				(DH.encodeBase ps)
 				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
 				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
-	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
-		[ContentHandshake version ske]
+		cont = [ContentHandshake version ske]
+		(ct, bs) = contentListToByteString cont
+	writeByteString ct bs
+	updateHash bs
 
 rcvClientKeyExchange :: (HandleLike h, DH.Base b) =>
 	b -> DH.Secret b -> Version -> TlsIo h gen ()

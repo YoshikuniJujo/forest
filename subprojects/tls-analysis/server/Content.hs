@@ -13,6 +13,11 @@ module Content (
 	CertificateRequest(..),
 	ClientCertificateType(..), HashAlgorithm(..), SignatureAlgorithm(..),
 	DigitallySigned(..),
+
+	contentToByteString,
+	contentListToByteString,
+
+	ContentType(..),
 ) where
 
 import Control.Monad
@@ -43,6 +48,10 @@ contentListToFragment cs = let
 	fs@(Fragment ct vsn _ : _) = map contentToFragment cs in
 	Fragment ct vsn . BS.concat $ map (\(Fragment _ _ b) -> b) fs
 
+contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
+contentListToByteString cs = let Fragment ct _ bs = contentListToFragment cs in
+	(ct, bs)
+
 contentToFragment :: Content -> Fragment
 contentToFragment (ContentChangeCipherSpec v ccs) =
 	Fragment ContentTypeChangeCipherSpec v $ changeCipherSpecToByteString ccs
@@ -53,6 +62,9 @@ contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
 contentToFragment (ContentApplicationData v body) =
 	Fragment ContentTypeApplicationData v body
 contentToFragment (ContentRaw ct v body) = Fragment ct v body
+
+contentToByteString :: Content -> (ContentType, BS.ByteString)
+contentToByteString c = let Fragment ct _ bs = contentToFragment c in (ct, bs)
 
 data Content
 	= ContentChangeCipherSpec Version ChangeCipherSpec
@@ -81,3 +93,7 @@ parseChangeCipherSpec' rd = do
 changeCipherSpecToByteString :: ChangeCipherSpec -> BS.ByteString
 changeCipherSpecToByteString ChangeCipherSpec = BS.pack [1]
 changeCipherSpecToByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+
+data Fragment
+	= Fragment ContentType Version BS.ByteString
+	deriving Show
