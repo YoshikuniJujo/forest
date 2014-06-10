@@ -49,7 +49,7 @@ contentToFragment (ContentChangeCipherSpec v ccs) =
 contentToFragment (ContentAlert v al ad) =
 	Fragment ContentTypeAlert v $ BS.pack [al, ad]
 contentToFragment (ContentHandshake v hss) = Fragment ContentTypeHandshake v $
-	toByteString hss
+	toByteString' hss
 contentToFragment (ContentApplicationData v body) =
 	Fragment ContentTypeApplicationData v body
 contentToFragment (ContentRaw ct v body) = Fragment ct v body
@@ -67,20 +67,9 @@ data ChangeCipherSpec
 	| ChangeCipherSpecRaw Word8
 	deriving Show
 
-instance Parsable ChangeCipherSpec where
-	parse = parseChangeCipherSpec
-	toByteString = changeCipherSpecToByteString
-	listLength _ = Nothing
-
 instance Parsable' ChangeCipherSpec where
 	parse' = parseChangeCipherSpec'
-
-parseChangeCipherSpec :: ByteStringM ChangeCipherSpec
-parseChangeCipherSpec = do
-	ccs <- headBS
-	return $ case ccs of
-		1 -> ChangeCipherSpec
-		_ -> ChangeCipherSpecRaw ccs
+	toByteString' = changeCipherSpecToByteString
 
 parseChangeCipherSpec' :: Monad m => (Int -> m BS.ByteString) -> m ChangeCipherSpec
 parseChangeCipherSpec' rd = do

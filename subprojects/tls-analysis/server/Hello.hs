@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hello (
-	Parsable(..), ByteStringM,
+	Parsable(..),
+	ByteStringM,
 	ClientHello(..),
 --	clientHelloOnlyKnownCipherSuite,
 	clientHelloClientRandom, clientHelloClientVersion,
@@ -52,13 +53,6 @@ data ClientHello
 	| ClientHelloRaw ByteString
 	deriving Show
 
-{-
-clientHelloOnlyKnownCipherSuite :: ClientHello -> ClientHello
-clientHelloOnlyKnownCipherSuite (ClientHello pv r sid css cms mel) =
-	ClientHello pv r sid (TLS_RSA_WITH_AES_128_CBC_SHA : css) cms mel
-clientHelloOnlyKnownCipherSuite ch = ch
--}
-
 clientHelloClientRandom :: ClientHello -> Maybe Random
 clientHelloClientRandom (ClientHello _ r _ _ _ _) = Just r
 clientHelloClientRandom _ = Nothing
@@ -84,9 +78,9 @@ parseClientHello = do
 
 clientHelloToByteString :: ClientHello -> ByteString
 clientHelloToByteString (ClientHello pv r sid css cms mel) = concat [
-	toByteString pv,
+	toByteString' pv,
 	toByteString r,
-	sessionIdToByteString sid,
+	toByteString' sid,
 	toByteString css,
 --	compressionMethodListToByteString cms,
 	toByteString cms,
@@ -131,10 +125,10 @@ pvrsid' rd = (,,) `liftM` parse' rd `ap` parse' rd `ap` parse' rd
 
 serverHelloToByteString :: ServerHello -> ByteString
 serverHelloToByteString (ServerHello pv r sid cs cm mes) = concat [
-	toByteString pv,
+	toByteString' pv,
 	toByteString r,
 	sessionIdToByteString sid,
-	toByteString cs,
+	toByteString' cs,
 	compressionMethodToByteString cm,
 	maybe "" extensionListToByteString mes
  ]
@@ -172,3 +166,4 @@ sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
 
 instance Parsable' SessionId where
 	parse' rd = SessionId `liftM` takeLen' rd 1
+	toByteString' = sessionIdToByteString

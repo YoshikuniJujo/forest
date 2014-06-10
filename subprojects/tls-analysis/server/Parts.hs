@@ -47,14 +47,10 @@ parseRandom = Random <$> takeBS 32
 
 instance Parsable' Random where
 	parse' rd = Random `liftM` rd 32
+	toByteString' = randomToByteString
 
 randomToByteString :: Random -> ByteString
 randomToByteString (Random r) = r
-
-instance Parsable CipherSuite where
-	parse = parseCipherSuite
-	toByteString = cipherSuiteToByteString
-	listLength _ = Just 2
 
 parseCipherSuite :: ByteStringM CipherSuite
 parseCipherSuite = do
@@ -92,6 +88,12 @@ parseCipherSuite' rd = do
 
 instance Parsable' CipherSuite where
 	parse' = parseCipherSuite'
+	toByteString' = cipherSuiteToByteString
+
+instance Parsable CipherSuite where
+	parse = parseCipherSuite
+	toByteString = cipherSuiteToByteString
+	listLength _ = Just 2
 
 cipherSuiteToByteString :: CipherSuite -> ByteString
 cipherSuiteToByteString (CipherSuite KeyExNULL MsgEncNULL) = "\x00\x00"
@@ -108,15 +110,11 @@ cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
 
-parseVersion :: ByteStringM Version
-parseVersion = do
-	[vmjr, vmnr] <- takeWords 2
-	return $ Version vmjr vmnr
-
 instance Parsable' Version where
 	parse' rd = do
 		[vmjr, vmnr] <- takeWords' rd 2
 		return $ Version vmjr vmnr
+	toByteString' = versionToByteString
 
 instance Parsable NamedCurve where
 	parse = parseNamedCurve
@@ -137,8 +135,3 @@ namedCurveToByteString (Secp256r1) = word16ToByteString 23
 namedCurveToByteString (Secp384r1) = word16ToByteString 24
 namedCurveToByteString (Secp521r1) = word16ToByteString 25
 namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc
-
-instance Parsable Version where
-	parse = parseVersion
-	toByteString = versionToByteString
-	listLength _ = Nothing

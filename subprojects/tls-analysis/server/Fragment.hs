@@ -1,11 +1,10 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Fragment (
-	Fragment(..), RawFragment(..), ContentType(..), Version,
-	readBufferContentType, readByteString,
---	readFragment,
-	readFragmentNoHash, fragmentUpdateHash, writeFragment,
-	readRawFragment, writeRawFragment,
+	readBufferContentType,
+	readByteString,
+	fragmentUpdateHash,
+	writeFragment,
 
 	setClientRandom, setServerRandom, setVersion,
 	getClientRandom, getServerRandom, getCipherSuite,
@@ -55,7 +54,6 @@ readByteString ::
 	HandleLike h => (Version -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
 readByteString vc n = buffered n $ do
 	Fragment ct v bs <- readFragmentNoHash
---	liftIO . putStrLn $ "VERSION: " ++ show v
 	unless (vc v) $ throwError alertVersion
 	return (ct, bs)
 

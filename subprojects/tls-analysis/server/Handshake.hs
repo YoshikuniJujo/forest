@@ -1,14 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Handshake (
-	Parsable(..),
 	Parsable'(..),
 	Handshake(..),
 	handshakeDoesServerHelloFinish, handshakeDoesFinish,
 	handshakeDoesClientKeyExchange,
 	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
 	handshakeClientVersion, handshakeServerVersion,
---	handshakeOnlyKnownCipherSuite,
 
 	handshakeGetFinish,
 
@@ -44,7 +42,6 @@ module Handshake (
 import Prelude hiding (head, take, concat)
 
 import Control.Monad
-import Control.Applicative ((<$>))
 
 import Data.Word
 import qualified Data.ByteString as BS
@@ -52,16 +49,12 @@ import qualified Data.ByteString as BS
 import Hello
 import Certificate
 import Data.ByteString(ByteString, pack)
--- import ByteStringMonad
--- import ToByteString
--- import Parts
--- import KeyExchange
 
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
-	| HandshakeServerKeyExchange ByteString -- ServerKeyExchange
+	| HandshakeServerKeyExchange ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
@@ -70,13 +63,9 @@ data Handshake
 	| HandshakeRaw HandshakeType ByteString
 	deriving Show
 
-instance Parsable Handshake where
-	parse = parseHandshake
-	toByteString = handshakeToByteString
-	listLength _ = Nothing
-
 instance Parsable' Handshake where
 	parse' = parseHandshake'
+	toByteString' = handshakeToByteString
 
 handshakeMakeVerify :: ByteString -> Handshake
 handshakeMakeVerify = HandshakeCertificateVerify .
@@ -142,25 +131,6 @@ parseHandshake' rd = do
 		HandshakeTypeFinished -> HandshakeFinished `liftM` whole
 		_ -> HandshakeRaw mt `liftM` whole
 
-parseHandshake :: ByteStringM Handshake
-parseHandshake = do
-	mt <- parseHandshakeType
-	section 3 $ case mt of
-		HandshakeTypeClientHello -> HandshakeClientHello <$> parse
-		HandshakeTypeServerHello -> HandshakeServerHello <$> parse
-		HandshakeTypeCertificate -> HandshakeCertificate <$> parse
-		HandshakeTypeServerKeyExchange -> HandshakeCertificate <$> parse
-		HandshakeTypeCertificateRequest ->
-			HandshakeCertificateRequest <$> parse
-		HandshakeTypeServerHelloDone ->
-			const HandshakeServerHelloDone <$> whole
-		HandshakeTypeCertificateVerify ->
-			HandshakeCertificateVerify <$> parse
-		HandshakeTypeClientKeyExchange ->
-			HandshakeClientKeyExchange <$> parse
-		HandshakeTypeFinished -> HandshakeFinished <$> whole
-		_ -> HandshakeRaw mt <$> whole
-
 handshakeToByteString :: Handshake -> ByteString
 handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientHello $ toByteString ch
@@ -195,21 +165,6 @@ data HandshakeType
 	| HandshakeTypeFinished
 	| HandshakeTypeRaw Word8
 	deriving Show
-
-parseHandshakeType :: ByteStringM HandshakeType
-parseHandshakeType = do
-	ht <- headBS
-	return $ case ht of
-		1 -> HandshakeTypeClientHello
-		2 -> HandshakeTypeServerHello
-		11 -> HandshakeTypeCertificate
-		12 -> HandshakeTypeServerKeyExchange
-		13 -> HandshakeTypeCertificateRequest
-		14 -> HandshakeTypeServerHelloDone
-		15 -> HandshakeTypeCertificateVerify
-		16 -> HandshakeTypeClientKeyExchange
-		20 -> HandshakeTypeFinished
-		_ -> HandshakeTypeRaw ht
 
 parseHandshakeType' :: Monad m => (Int -> m BS.ByteString) -> m HandshakeType
 parseHandshakeType' rd = do

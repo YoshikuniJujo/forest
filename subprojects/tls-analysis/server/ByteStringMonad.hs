@@ -38,6 +38,7 @@ class Parsable a where
 
 class Parsable' a where
 	parse' :: Monad m => (Int -> m BS.ByteString) -> m a
+	toByteString' :: a -> ByteString
 
 instance Parsable a => Parsable [a] where
 	parse = case listLength (undefined :: a) of
@@ -47,13 +48,6 @@ instance Parsable a => Parsable [a] where
 		Just n -> lenBodyToByteString n . BS.concat . map toByteString
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
-
-{-
-instance (Parsable a, Parsable' a) => Parsable' [a] where
-	parse' rd = case listLength (undefined :: a) of
-		Just n -> section' rd n $ list parse
---		_ -> list parse
--}
 
 instance (Parsable a, Parsable b) => Parsable (a, b) where
 	parse = (,) <$> parse <*> parse
@@ -144,7 +138,6 @@ section' rd n m = do
 	case e of
 		Right x -> return x
 		Left err -> error err
---	e <- evalByteStringM m
 
 section :: Int -> ByteStringM a -> ByteStringM a
 section n m = do
@@ -158,23 +151,3 @@ whole = do w <- get; put ""; return w
 
 word16ToByteString :: Word16 -> ByteString
 word16ToByteString w = BS.pack [fromIntegral (w `shiftR` 8), fromIntegral w]
-
-{-
-byteStringToInt :: ByteString -> Int
-byteStringToInt bs = wordsToInt (BS.length bs - 1) $ BS.unpack bs
-
-wordsToInt :: Int -> [Word8] -> Int
-wordsToInt n _ | n < 0 = 0
-wordsToInt _ [] = 0
-wordsToInt n (x : xs) = fromIntegral x `shift` (n * 8) .|. wordsToInt (n - 1) xs
-
-intToByteString :: Int -> Int -> ByteString
-intToByteString n = BS.pack . reverse . intToWords n
-
-intToWords :: Int -> Int -> [Word8]
-intToWords 0 _ = []
-intToWords n i = fromIntegral i : intToWords (n - 1) (i `shiftR` 8)
-
-lenBodyToByteString :: Int -> ByteString -> ByteString
-lenBodyToByteString n bs = intToByteString n (BS.length bs) `BS.append` bs
--}

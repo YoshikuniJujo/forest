@@ -29,3 +29,7 @@ class Base b where
 	decodePublic :: ByteString -> Public b
 
 baseは
+
+2014-06-10 Tue.
+
+FragmentとContentの関係をもう一度見直す。
