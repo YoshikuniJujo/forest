@@ -168,7 +168,7 @@ handshake isdh ps cv sks skd mcs = do
 	serverToHelloDone mcs
 	mpn <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
 	dhe <- isEphemeralDH
-	if dhe then DH.rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
+	if dhe then rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -179,6 +179,8 @@ handshake isdh ps cv sks skd mcs = do
 clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(Version mj _) -> mj == 3
+--	h <- getHandle
+--	lift . lift . hlDebug h 0 . BSC.pack $ "CLIENT HELLO: " ++ show hs ++ "\n"
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
@@ -227,7 +229,7 @@ serverKeyExchange :: HandleLike h => (DH.Base b, DH.SecretKey sk, CPRG gen) =>
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 	Just rsr <- getServerRandom
-	when dh $ DH.sndServerKeyExchange ps pn sk rsr
+	when dh $ sndServerKeyExchange ps pn sk rsr
 
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
 	Maybe CertificateStore -> TlsIo h gen ()
@@ -465,3 +467,30 @@ readContent vc = do
 		`ap` updateSequenceNumber Client
 	fragmentUpdateHash $ contentToFragment c
 	return c
+	
+sndServerKeyExchange :: (HandleLike h, DH.Base b, DH.SecretKey sk, CPRG gen) =>
+	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
+sndServerKeyExchange ps dhsk pk sr = do
+	Just cr <- getClientRandom
+	let	ske = HandshakeServerKeyExchange . DH.serverKeyExchangeToByteString .
+			DH.addSign pk cr sr $
+			DH.ServerKeyExchange
+				(DH.encodeBase ps)
+				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
+				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
+	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
+		[ContentHandshake version ske]
+
+rcvClientKeyExchange :: (HandleLike h, DH.Base b) =>
+	b -> DH.Secret b -> Version -> TlsIo h gen ()
+rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
+	hs <- readHandshake (== version)
+	case hs of
+		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
+--			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
+			let pms = DH.calculateCommon dhps dhpn $ DH.decodePublic dhps epms
+--			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
+			generateKeys pms
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientKeyExchange: not client key exchange"

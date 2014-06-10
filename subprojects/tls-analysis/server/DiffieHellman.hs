@@ -3,13 +3,15 @@
 
 module DiffieHellman (
 	dhparams, dhprivate,
-	sndServerKeyExchange,
-	rcvClientKeyExchange,
 	DH.PrivateNumber,
 	Base(..),
-	SecretKey,
+	SecretKey(..),
 
 	byteStringToInteger,
+
+	ServerKeyExchange(..),
+	addSign,
+	serverKeyExchangeToByteString,
 ) where
 
 import Control.Applicative

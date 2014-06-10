@@ -2,19 +2,18 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module KeyExchange (
-	Base(..), SecretKey,
-
-	sndServerKeyExchange,
-	rcvClientKeyExchange,
+	Base(..), SecretKey(..),
 
 	integerToByteString,
 	byteStringToInteger,
 
 	decodeSignature,
+
+	ServerKeyExchange(..),
+	addSign,
+	serverKeyExchangeToByteString,
 ) where
 
-import Control.Applicative
-import Control.Monad
 import Data.Bits
 import Data.ASN1.Types
 import Data.ASN1.Encoding
@@ -26,13 +25,11 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import Content
-import Fragment
+-- import Content
 import ByteStringMonad
+import Parts
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-
-import Data.HandleLike
 
 class SecretKey sk where
 	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
@@ -116,59 +113,6 @@ class Base b where
 	decodeBase :: BS.ByteString -> b
 	encodePublic :: b -> Public b -> BS.ByteString
 	decodePublic :: b -> BS.ByteString -> Public b
-
-version :: Version
-version = Version 3 3
-	
-sndServerKeyExchange :: (HandleLike h, Base b, SecretKey sk, CPRG gen) =>
-	b -> Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
-sndServerKeyExchange ps dhsk pk sr = do
-	Just cr <- getClientRandom
-	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
-			addSign pk cr sr $
-			ServerKeyExchange
-				(encodeBase ps)
-				(encodePublic ps $ calculatePublic ps dhsk)
-				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
-	((>>) <$> writeFragment <*> fragmentUpdateHash) . contentListToFragment $
-		[ContentHandshake version ske]
-
-rcvClientKeyExchange :: (HandleLike h, Base b) =>
-	b -> Secret b -> Version -> TlsIo h gen ()
-rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
-	hs <- readHandshake (== version)
-	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
---			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
-			let pms = calculateCommon dhps dhpn $ decodePublic dhps epms
---			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
-			generateKeys pms
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
-
-readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
-readHandshake ck = do
-	cnt <- readContent ck
-	case cnt of
-		ContentHandshake v hs
-			| ck v -> return hs
-			| otherwise -> throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionProtocolVersion
-				"Not supported layer version"
-		_ -> throwError . Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage $
-			"Not Handshake: " ++ show cnt
-
-readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
-readContent vc = do
-	c <- const `liftM`
-		getContent (readBufferContentType vc) (readByteString (== version))
-		`ap` updateSequenceNumber Client
-	fragmentUpdateHash $ contentToFragment c
-	return c
 
 decodeSignature :: BS.ByteString -> ECDSA.Signature
 decodeSignature bs = let
