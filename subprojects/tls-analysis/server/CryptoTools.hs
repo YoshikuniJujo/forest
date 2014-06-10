@@ -7,7 +7,7 @@ module CryptoTools (
 	MS.ClientRandom(..), MS.ServerRandom(..),
 	MS.generateMasterSecret, MS.generateKeyBlock, MS.generateFinished,
 
-	lenBodyToByteString, intToByteString, byteStringToInt,
+	MS.lenBodyToByteString, MS.intToByteString, MS.byteStringToInt,
 	MS.Version(..), MS.ContentType(..),
 	MS.byteStringToVersion, MS.byteStringToContentType,
 	MS.versionToByteString, MS.contentTypeToByteString,
@@ -24,7 +24,7 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
-import Tools
+-- import Tools
 
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
@@ -41,7 +41,7 @@ encryptMessage (hs, _) gen key sn mk ct v msg =
 	mac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,
 		MS.versionToByteString v,
-		lenBodyToByteString 2 msg]
+		MS.lenBodyToByteString 2 msg]
 
 decryptMessage :: Hash ->
 	BS.ByteString -> Word64 -> BS.ByteString ->
@@ -57,12 +57,12 @@ decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 	cmac = calcMac hs sn mk $ BS.concat [
 		MS.contentTypeToByteString ct,
 		MS.versionToByteString v,
-		lenBodyToByteString 2 body]
+		MS.lenBodyToByteString 2 body]
 
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
 calcMac hs sn mk inp =
-	MS.hmac hs 64 mk $ word64ToByteString sn `BS.append` inp
+	MS.hmac hs 64 mk $ MS.word64ToByteString sn `BS.append` inp
 
 padd :: BS.ByteString -> BS.ByteString
 padd bs = bs `BS.append` pd

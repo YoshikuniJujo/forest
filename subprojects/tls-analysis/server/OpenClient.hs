@@ -56,7 +56,7 @@ import "crypto-random" Crypto.Random
 import Data.HandleLike
 
 import TlsIo
-import Types
+-- import Types
 import ClientState
 
 import "monads-tf" Control.Monad.State

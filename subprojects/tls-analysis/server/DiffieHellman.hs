@@ -23,7 +23,7 @@ import "crypto-random" Crypto.Random
 
 import KeyExchange
 
-import ByteStringMonad
+-- import ByteStringMonad
 
 dhparams :: DH.Params
 dhparams = unsafePerformIO $ -- do

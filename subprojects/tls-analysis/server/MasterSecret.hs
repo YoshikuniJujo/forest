@@ -38,9 +38,10 @@ module MasterSecret (
 
 --	P.list1, P.whole, P.ByteStringM, P.evalByteStringM, P.headBS,
 
---	P.word64ToByteString, P.lenBodyToByteString,
+	P.word64ToByteString, P.lenBodyToByteString,
 
---	P.byteStringToInt, P.intToByteString, P.showKeySingle, P.showKey,
+	P.byteStringToInt, P.intToByteString,
+--	P.showKeySingle, P.showKey,
 ) where
 
 -- import MAC

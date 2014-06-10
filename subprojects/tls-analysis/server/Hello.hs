@@ -6,7 +6,8 @@ module Hello (
 	ClientHello(..),
 --	clientHelloOnlyKnownCipherSuite,
 	clientHelloClientRandom, clientHelloClientVersion,
-	CipherSuite(..), Random(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	Random(..),
 	SignatureAlgorithm(..), HashAlgorithm(..), CompressionMethod(..),
 	SessionId(..), Version(..),
 
@@ -17,6 +18,8 @@ module Hello (
 	evalByteStringM, lenBodyToByteString, takeBS, section',
 
 	Parsable'(..),
+
+	ContentType(..),
  ) where
 
 import Prelude hiding (concat, take)
@@ -31,7 +34,10 @@ import Data.Word
 -- import Types
 
 import Parts(
-	Version(..), Parsable(..), CipherSuite(..), Random(..),
+	ContentType(..),
+	Version(..), Parsable(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	Random(..),
 
 --	Parsable'(..),
 

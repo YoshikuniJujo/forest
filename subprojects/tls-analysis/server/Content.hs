@@ -24,7 +24,7 @@ import Control.Monad
 import Data.Word
 import qualified Data.ByteString as BS
 import Handshake
-import Types
+-- import Types
 
 getContent :: Monad m =>
 	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content

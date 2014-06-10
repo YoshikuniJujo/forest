@@ -12,6 +12,14 @@ module KeyExchange (
 	ServerKeyExchange(..),
 	addSign,
 	serverKeyExchangeToByteString,
+
+	Parsable(..),
+	headBS,
+	NamedCurve(..),
+	lenBodyToByteString,
+
+	takeLen,
+	evalByteStringM,
 ) where
 
 import Data.Bits
@@ -25,7 +33,7 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import ByteStringMonad
+-- import ByteStringMonad
 import Types
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -68,14 +76,14 @@ instance SecretKey RSA.PrivateKey where
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
 addSign :: SecretKey sk =>
-	sk -> ByteString -> ByteString -> ServerKeyExchange -> ServerKeyExchange
+	sk -> BS.ByteString -> BS.ByteString -> ServerKeyExchange -> ServerKeyExchange
 addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
 	sn = sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
 	ServerKeyExchange ps ys ha sa sn
 
 data ServerKeyExchange
 --	= ServerKeyExchange ByteString ByteString Word8 Word8 BS.ByteString
-	= ServerKeyExchange ByteString ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
+	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
 	deriving Show
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString

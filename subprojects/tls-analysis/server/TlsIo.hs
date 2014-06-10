@@ -38,6 +38,10 @@ module TlsIo (
 	CT.byteStringToContentType,
 	CT.byteStringToVersion,
 	CT.byteStringToInt,
+
+	CT.ContentType(..),
+	CT.CipherSuite(..), CT.CipherSuiteKeyEx(..), CT.CipherSuiteMsgEnc(..),
+	CT.Version(..),
 ) where
 
 import Prelude hiding (read)

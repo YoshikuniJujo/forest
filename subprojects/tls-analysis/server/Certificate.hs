@@ -19,8 +19,9 @@ import Data.ASN1.Encoding
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
 import Numeric
+import Data.Word
 
-import ByteStringMonad
+-- import ByteStringMonad
 import qualified Data.ByteString as BS
 import Parts
 
@@ -28,7 +29,7 @@ import Parts
 -- import DigitallySigned
 
 data Certificate
-	= CertificateRaw ByteString
+	= CertificateRaw BS.ByteString
 	deriving Show
 
 instance Parsable X509.CertificateChain where
@@ -43,7 +44,7 @@ parseCertificateChain = do
 		Right cc -> return cc
 		Left (n, err) -> throwError $ show n ++ " " ++ err
 
-certificateChainToByteString :: X509.CertificateChain -> ByteString
+certificateChainToByteString :: X509.CertificateChain -> BS.ByteString
 certificateChainToByteString = certificateListToByteString . encodeCert
 
 decodeCert :: [Certificate] -> Either (Int, String) X509.CertificateChain
@@ -57,20 +58,20 @@ encodeCert = (\(X509.CertificateChainRaw ccr) -> map CertificateRaw ccr) .
 parseCertificateList :: ByteStringM [Certificate]
 parseCertificateList = section 3 $ list parseCertificate
 
-certificateListToByteString :: [Certificate] -> ByteString
+certificateListToByteString :: [Certificate] -> BS.ByteString
 certificateListToByteString =
 	lenBodyToByteString 3 . BS.concat . map certificateToByteString
 
 parseCertificate :: ByteStringM Certificate
 parseCertificate = CertificateRaw <$> takeLen 3
 
-certificateToByteString :: Certificate -> ByteString
+certificateToByteString :: Certificate -> BS.ByteString
 certificateToByteString (CertificateRaw crt) = lenBodyToByteString 3 crt
 
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
 		[(HashAlgorithm, SignatureAlgorithm)] [X509.DistinguishedName]
-	| CertificateRequestRaw ByteString
+	| CertificateRequestRaw BS.ByteString
 	deriving Show
 
 instance Parsable CertificateRequest where
@@ -92,7 +93,7 @@ parseCertificateRequest = do
 			Left err -> throwError err
 	return $ CertificateRequest ccts hasas dns
 
-certificateRequestToByteString :: CertificateRequest -> ByteString
+certificateRequestToByteString :: CertificateRequest -> BS.ByteString
 certificateRequestToByteString (CertificateRequest ccts hsas bss) = BS.concat [
 	lenBodyToByteString 1 . BS.concat $
 		map clientCertificateTypeToByteString ccts,
@@ -117,14 +118,14 @@ parseClientCertificateType = do
 		1 -> ClientCertificateTypeRsaSign
 		_ -> ClientCertificateTypeRaw cct
 
-clientCertificateTypeToByteString :: ClientCertificateType -> ByteString
+clientCertificateTypeToByteString :: ClientCertificateType -> BS.ByteString
 clientCertificateTypeToByteString ClientCertificateTypeRsaSign = "\x01"
 clientCertificateTypeToByteString (ClientCertificateTypeRaw w) = BS.pack [w]
 
 -- data SignatureAnd
 
 data EncryptedPreMasterSecret
-	= EncryptedPreMasterSecret { getEncryptedPreMasterSecret :: ByteString }
+	= EncryptedPreMasterSecret { getEncryptedPreMasterSecret :: BS.ByteString }
 
 instance Show EncryptedPreMasterSecret where
 	show (EncryptedPreMasterSecret epms) = "(EncryptedPreMasterSecret " ++
@@ -135,8 +136,8 @@ instance Parsable EncryptedPreMasterSecret where
 	toByteString = encryptedPreMasterSecretToByteString
 	listLength _ = Nothing
 
-showKeyPMS :: ByteString -> String
-showKeyPMS = concatMap showH . unpack
+showKeyPMS :: BS.ByteString -> String
+showKeyPMS = concatMap showH . BS.unpack
 
 showH :: Word8 -> String
 showH w = replicate (2 - length s) '0' ++ s
@@ -147,13 +148,13 @@ parseEncryptedPreMasterSecret :: ByteStringM EncryptedPreMasterSecret
 parseEncryptedPreMasterSecret = EncryptedPreMasterSecret <$> whole
 --	takeLen 2
 
-encryptedPreMasterSecretToByteString :: EncryptedPreMasterSecret -> ByteString
+encryptedPreMasterSecretToByteString :: EncryptedPreMasterSecret -> BS.ByteString
 encryptedPreMasterSecretToByteString (EncryptedPreMasterSecret epms) = epms
 --	lenBodyToByteString 2 epms
 
 data DigitallySigned
-	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) ByteString
-	| DigitallySignedRaw ByteString
+	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) BS.ByteString
+	| DigitallySignedRaw BS.ByteString
 	deriving Show
 
 instance Parsable DigitallySigned where
@@ -166,7 +167,7 @@ parseDigitallySigned = DigitallySigned
 	<$> ((,) <$> parse <*> parse)
 	<*> takeLen 2
 
-digitallySignedToByteString :: DigitallySigned -> ByteString
+digitallySignedToByteString :: DigitallySigned -> BS.ByteString
 digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
 	toByteString ha,
 	toByteString sa,

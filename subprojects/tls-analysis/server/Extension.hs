@@ -1,7 +1,7 @@
 module Extension (
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
-	concat, emptyBS, ByteStringM, takeBS, section',
+	BS.concat, emptyBS, ByteStringM, takeBS, section',
 
 	Parsable'(..),
 ) where
@@ -13,16 +13,18 @@ import Control.Monad
 
 import qualified Data.ByteString as BS
 
-import ByteStringMonad
+-- import ByteStringMonad
 -- import ToByteString
 import Data.Bits
+import Data.Word
+import Types
 
 type ExtensionList = [Extension]
 
 parseExtensionList :: Monad m => (Int -> m BS.ByteString) -> m ExtensionList
 parseExtensionList rd = section' rd 2 . list $ parseExtension takeBS
 
-extensionListToByteString :: ExtensionList -> ByteString
+extensionListToByteString :: ExtensionList -> BS.ByteString
 extensionListToByteString =
 	lenBodyToByteString 2 .  BS.concat . map extensionToByteString
 
@@ -30,10 +32,10 @@ data Extension
 	= ExtensionServerName [ServerName]
 	| ExtensionEllipticCurve [NamedCurve]
 	| ExtensionEcPointFormat [EcPointFormat]
-	| ExtensionSessionTicketTls ByteString
-	| ExtensionNextProtocolNegotiation ByteString
-	| ExtensionRenegotiationInfo ByteString
-	| ExtensionRaw ExtensionType ByteString
+	| ExtensionSessionTicketTls BS.ByteString
+	| ExtensionNextProtocolNegotiation BS.ByteString
+	| ExtensionRenegotiationInfo BS.ByteString
+	| ExtensionRaw ExtensionType BS.ByteString
 	deriving Show
 
 parseExtension :: Monad m => (Int -> m BS.ByteString) -> m Extension
@@ -54,23 +56,23 @@ parseExtension rd = do
 			ExtensionRenegotiationInfo <$> takeLen 1
 		_ -> ExtensionRaw et <$> whole
 
-extensionToByteString :: Extension -> ByteString
+extensionToByteString :: Extension -> BS.ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
 	ExtensionRaw ExtensionTypeServerName . lenBodyToByteString 2 .
-		concat $ map serverNameToByteString sns
+		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEllipticCurve . lenBodyToByteString 2 .
-		concat $ map namedCurveToByteString ecs
+		BS.concat $ map namedCurveToByteString ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEcPointFormat . lenBodyToByteString 1 .
-		concat $ map ecPointFormatToByteString epf
+		BS.concat $ map ecPointFormatToByteString epf
 extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
 	ExtensionRaw ExtensionTypeSessionTicketTls stt
 extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
 	ExtensionRaw ExtensionTypeNextProtocolNegotiation npn
 extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString .
 	ExtensionRaw ExtensionTypeRenegotiationInfo $ lenBodyToByteString 1 ri
-extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `append`
+extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `BS.append`
 	lenBodyToByteString 2 body
 
 data ExtensionType
@@ -97,7 +99,7 @@ parseExtensionType rd = do
 		65281 -> ExtensionTypeRenegotiationInfo
 		_ -> ExtensionTypeRaw et
 
-extensionTypeToByteString :: ExtensionType -> ByteString
+extensionTypeToByteString :: ExtensionType -> BS.ByteString
 extensionTypeToByteString ExtensionTypeServerName = word16ToByteString 0
 extensionTypeToByteString ExtensionTypeEllipticCurve = word16ToByteString 10
 extensionTypeToByteString ExtensionTypeEcPointFormat = word16ToByteString 11
@@ -107,8 +109,8 @@ extensionTypeToByteString ExtensionTypeRenegotiationInfo = word16ToByteString 65
 extensionTypeToByteString (ExtensionTypeRaw et) = word16ToByteString et
 
 data ServerName
-	= ServerNameHostName ByteString
-	| ServerNameRaw NameType ByteString
+	= ServerNameHostName BS.ByteString
+	| ServerNameRaw NameType BS.ByteString
 	deriving Show
 
 parseServerName :: ByteStringM ServerName
@@ -118,11 +120,11 @@ parseServerName = do
 		NameTypeHostName -> ServerNameHostName <$> whole
 		_ -> ServerNameRaw nt <$> whole
 
-serverNameToByteString :: ServerName -> ByteString
+serverNameToByteString :: ServerName -> BS.ByteString
 serverNameToByteString (ServerNameHostName nm) = serverNameToByteString $
 	ServerNameRaw NameTypeHostName nm
 serverNameToByteString (ServerNameRaw nt nm) =
-	nameTypeToByteString nt `append` lenBodyToByteString 2 nm
+	nameTypeToByteString nt `BS.append` lenBodyToByteString 2 nm
 
 data NameType
 	= NameTypeHostName
@@ -136,10 +138,11 @@ parseNameType = do
 		0 -> NameTypeHostName
 		_ -> NameTypeRaw nt
 
-nameTypeToByteString :: NameType -> ByteString
-nameTypeToByteString NameTypeHostName = pack [0]
-nameTypeToByteString (NameTypeRaw nt) = pack [nt]
+nameTypeToByteString :: NameType -> BS.ByteString
+nameTypeToByteString NameTypeHostName = BS.pack [0]
+nameTypeToByteString (NameTypeRaw nt) = BS.pack [nt]
 
+{-
 data NamedCurve
 	= Secp256r1
 	| Secp384r1
@@ -161,6 +164,7 @@ namedCurveToByteString (Secp256r1) = word16ToByteString 23
 namedCurveToByteString (Secp384r1) = word16ToByteString 24
 namedCurveToByteString (Secp521r1) = word16ToByteString 25
 namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc
+-}
 
 data EcPointFormat
 	= EcPointFormatUncompressed
@@ -174,6 +178,6 @@ parseEcPointFormat = do
 		0 -> EcPointFormatUncompressed
 		_ -> EcPointFormatRaw epf
 
-ecPointFormatToByteString :: EcPointFormat -> ByteString
-ecPointFormatToByteString EcPointFormatUncompressed = pack [0]
-ecPointFormatToByteString (EcPointFormatRaw epf) = pack [epf]
+ecPointFormatToByteString :: EcPointFormat -> BS.ByteString
+ecPointFormatToByteString EcPointFormatUncompressed = BS.pack [0]
+ecPointFormatToByteString (EcPointFormatRaw epf) = BS.pack [epf]

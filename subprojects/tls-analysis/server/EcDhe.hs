@@ -5,7 +5,9 @@ module EcDhe (Curve, secp256r1, decodeSignature) where
 
 import Crypto.Types.PubKey.ECC
 import Crypto.PubKey.ECC.Prim
-import Parts
+-- import Parts
+-- import ByteStringMonad
+-- import Types
 import qualified Data.ByteString as BS
 import KeyExchange
 -- import Base

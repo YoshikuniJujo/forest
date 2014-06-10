@@ -2,7 +2,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Parts (
-	Version(..), Parsable(..), Random(..), CipherSuite(..),
+	Version(..), Parsable(..), Random(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	HashAlgorithm(..), SignatureAlgorithm(..),
 
 	Parsable'(..),
@@ -10,7 +11,7 @@ module Parts (
 --	list1,
 	whole, ByteStringM, evalByteStringM, headBS,
 
-	lenBodyToByteString, emptyBS, concat,
+	lenBodyToByteString, emptyBS, BS.concat,
 
 	byteStringToInt, intToByteString,
 	section, takeWords, takeLen, takeBS,
@@ -18,6 +19,11 @@ module Parts (
 	takeLen',
 
 	NamedCurve(..),
+	ContentType(..),
+
+	throwError,
+	list,
+	list1,
 ) where
 
 import Prelude hiding (head, take, concat)
@@ -30,12 +36,12 @@ import Control.Monad
 import qualified Data.ByteString as BS
 
 import Types
-import ByteStringMonad
+-- import ByteStringMonad
 -- import ToByteString
 
 instance Show Random where
 	show (Random r) =
-		"(Random " ++ concatMap (`showHex` "") (unpack r) ++ ")"
+		"(Random " ++ concatMap (`showHex` "") (BS.unpack r) ++ ")"
 
 instance Parsable Random where
 	parse = parseRandom
@@ -49,7 +55,7 @@ instance Parsable' Random where
 	parse' rd = Random `liftM` rd 32
 	toByteString' = randomToByteString
 
-randomToByteString :: Random -> ByteString
+randomToByteString :: Random -> BS.ByteString
 randomToByteString (Random r) = r
 
 parseCipherSuite :: ByteStringM CipherSuite
@@ -95,7 +101,7 @@ instance Parsable CipherSuite where
 	toByteString = cipherSuiteToByteString
 	listLength _ = Just 2
 
-cipherSuiteToByteString :: CipherSuite -> ByteString
+cipherSuiteToByteString :: CipherSuite -> BS.ByteString
 cipherSuiteToByteString (CipherSuite KeyExNULL MsgEncNULL) = "\x00\x00"
 cipherSuiteToByteString (CipherSuite RSA AES_128_CBC_SHA) = "\x00\x2f"
 cipherSuiteToByteString (CipherSuite DHE_RSA AES_128_CBC_SHA) = "\x00\x33"
@@ -107,7 +113,7 @@ cipherSuiteToByteString (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA) = "\xc0\x09"
 cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA) = "\xc0\x13"
 cipherSuiteToByteString (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256) = "\xc0\x23"
 cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
-cipherSuiteToByteString (CipherSuiteRaw w1 w2) = pack [w1, w2]
+cipherSuiteToByteString (CipherSuiteRaw w1 w2) = BS.pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
 
 instance Parsable' Version where
@@ -115,23 +121,3 @@ instance Parsable' Version where
 		[vmjr, vmnr] <- takeWords' rd 2
 		return $ Version vmjr vmnr
 	toByteString' = versionToByteString
-
-instance Parsable NamedCurve where
-	parse = parseNamedCurve
-	toByteString = namedCurveToByteString
-	listLength _ = Nothing
-
-parseNamedCurve :: ByteStringM NamedCurve
-parseNamedCurve = do
-	nc <- takeWord16
-	return $ case nc of
-		23 -> Secp256r1
-		24 -> Secp384r1
-		25 -> Secp521r1
-		_ -> NamedCurveRaw nc
-
-namedCurveToByteString :: NamedCurve -> ByteString
-namedCurveToByteString (Secp256r1) = word16ToByteString 23
-namedCurveToByteString (Secp384r1) = word16ToByteString 24
-namedCurveToByteString (Secp521r1) = word16ToByteString 25
-namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc

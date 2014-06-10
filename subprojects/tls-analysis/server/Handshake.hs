@@ -24,6 +24,8 @@ module Handshake (
 
 	Random(..),
 	CipherSuite(..),
+	CipherSuiteKeyEx(..),
+	CipherSuiteMsgEnc(..),
 
 	SignatureAlgorithm(..),
 	HashAlgorithm(..),
@@ -36,6 +38,8 @@ module Handshake (
 	headBS, takeBS,
 --	list1,
 	whole, ByteStringM, evalByteStringM,
+
+	ContentType(..),
 
 ) where
 
