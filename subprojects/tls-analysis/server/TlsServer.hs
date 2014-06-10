@@ -150,12 +150,17 @@ handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen) =>
 	Bool -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo Handle gen [String]
 	-}
+
+lenSpace :: Int -> String -> String
+lenSpace n str = str ++ replicate (n - length str) ' '
+
 handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	Bool -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	h <- getHandle
-	getCipherSuite >>= lift . lift . hlDebug h . BSC.pack . (++ "\n") . show
+	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
+		. lenSpace 50 . {- (++ "\n") . -} show
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
 		let (pn, gen') = DH.generateSecret gen ps
@@ -335,7 +340,8 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 
 certificateVerify :: HandleLike h => PubKey -> TlsIo h gen ()
 certificateVerify (PubKeyRSA pub) = do
---	liftIO . putStrLn $ "VERIFY WITH RSA"
+	h <- getHandle
+	lift . lift . hlDebug h 5 $ " - VERIFY WITH RSA\n"
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== version)
 	case hs of
@@ -359,7 +365,8 @@ certificateVerify (PubKeyRSA pub) = do
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
 certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
---	liftIO . putStrLn $ "VERIFY WITH ECDSA"
+	h <- getHandle
+	lift . lift . hlDebug h 5 $ " - VERIFY WITH ECDSA\n"
 	hash0 <- clientVerifyHashEc
 --	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
 	hs <- readHandshake (== version)

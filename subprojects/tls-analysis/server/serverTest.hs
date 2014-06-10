@@ -64,7 +64,9 @@ instance HandleLike TestHandle where
 --		BS.appendFile "test.clt" bs
 --		return bs
 	hlClose (TestHandle cl sv) = hlClose cl >> hlClose sv
-	hlDebug (TestHandle cl sv) = BS.putStr
+	hlDebug _ n
+		| n > 3 = BS.putStr
+		| otherwise = const $ return ()
 
 instance ValidateHandle TestHandle where
 	vldt'' (TestHandle _ _) = vldt'' (undefined :: Handle)
