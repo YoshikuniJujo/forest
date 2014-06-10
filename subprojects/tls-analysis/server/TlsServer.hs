@@ -159,8 +159,6 @@ handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	h <- getHandle
-	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
-		. lenSpace 50 . {- (++ "\n") . -} show
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
 		let (pn, gen') = DH.generateSecret gen ps
@@ -341,6 +339,8 @@ clientKeyExchange sk (Version cvmjr cvmnr) = do
 certificateVerify :: HandleLike h => PubKey -> TlsIo h gen ()
 certificateVerify (PubKeyRSA pub) = do
 	h <- getHandle
+	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
+		. lenSpace 50 . {- (++ "\n") . -} show
 	lift . lift . hlDebug h 5 $ " - VERIFY WITH RSA\n"
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== version)
@@ -366,6 +366,8 @@ certificateVerify (PubKeyRSA pub) = do
 			("Not implement such algorithm: " ++ show a)
 certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	h <- getHandle
+	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
+		. lenSpace 50 . {- (++ "\n") . -} show
 	lift . lift . hlDebug h 5 $ " - VERIFY WITH ECDSA\n"
 	hash0 <- clientVerifyHashEc
 --	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
