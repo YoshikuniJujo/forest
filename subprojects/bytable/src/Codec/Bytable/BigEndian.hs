@@ -12,7 +12,7 @@ instance Bytable Int where
 		| BS.length bs <= 4 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Int: too large"
-	toByteString = integralToByteString
+	toByteString = integralToByteStringN 4
 
 instance Bytable Integer where
 	fromByteString bs = Right $ byteStringToNum bs
@@ -23,14 +23,14 @@ instance Bytable Word16 where
 		| BS.length bs <= 2 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word16: too large"
-	toByteString = integralToByteString
+	toByteString = integralToByteStringN 2
 
 instance Bytable Word32 where
 	fromByteString bs
 		| BS.length bs <= 4 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word32: too large"
-	toByteString = integralToByteString
+	toByteString = integralToByteStringN 4
 
 byteStringToNum :: (Num n, Bits n) => BS.ByteString -> n
 byteStringToNum = wordsToNum . reverse . BS.unpack
@@ -41,6 +41,11 @@ wordsToNum (w : ws) = fromIntegral w .|. wordsToNum ws `shiftL` 8
 
 integralToByteString :: (Integral n, Bits n) => n -> BS.ByteString
 integralToByteString = BS.pack . reverse . integralToWords
+
+integralToByteStringN :: (Integral n, Bits n) => Int -> n -> BS.ByteString
+integralToByteStringN n = BS.pack .
+	(\ws -> replicate (n - length ws) 0 ++ ws) .
+	reverse . integralToWords
 
 integralToWords :: (Integral n, Bits n) => n -> [Word8]
 integralToWords 0 = []
