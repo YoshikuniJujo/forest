@@ -2,6 +2,7 @@
 
 module Codec.Bytable (
 	Bytable(..),
+	Parsable(..),
 	BytableM(..), evalBytableM, execBytableM,
 	head, take, null, list,
 ) where
@@ -42,6 +43,9 @@ class Bytable b where
 instance Bytable BS.ByteString where
 	fromByteString = Right
 	toByteString = id
+
+class Parsable p where
+	parse :: BytableM p
 
 head :: BytableM Word8
 head = BytableM $ \bs -> case BS.uncons bs of
