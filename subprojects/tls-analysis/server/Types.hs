@@ -2,6 +2,8 @@
 	FlexibleInstances, TypeFamilies, TupleSections #-}
 
 module Types (
+	Bytable(..),
+
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Random(..), CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
@@ -22,12 +24,12 @@ module Types (
 	intToByteString,
 	byteStringToInt,
 	takeLen,
+	takeLen',
 	evalByteStringM,
 
 	takeWords, takeWords',
 	takeBS,
 	ByteStringM,
-	takeLen',
 	section,
 	emptyBS,
 	whole,
@@ -35,9 +37,12 @@ module Types (
 	namedCurveToByteString,
 	list,
 	list1,
-	parseNamedCurve,
+--	parseNamedCurve,
 	section',
 	throwError,
+
+	splitLen,
+	list',
 ) where
 
 import Control.Arrow
@@ -56,6 +61,9 @@ import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Error
 
 import Numeric
+
+import qualified Codec.Bytable as B
+import Codec.Bytable.BigEndian ()
 
 data Version
 	= Version Word8 Word8
@@ -181,19 +189,28 @@ signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
 signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
 signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = BS.pack [w]
 
+{-
 instance Parsable NamedCurve where
 	parse = parseNamedCurve
 	toByteString = namedCurveToByteString
 	listLength _ = Nothing
 
 parseNamedCurve :: ByteStringM NamedCurve
-parseNamedCurve = do
-	nc <- takeWord16
-	return $ case nc of
+parseNamedCurve = either error id . byteStringToNamedCurve <$> takeBS 2
+	-}
+
+instance B.Bytable NamedCurve where
+	fromByteString = byteStringToNamedCurve
+	toByteString = namedCurveToByteString
+
+byteStringToNamedCurve :: ByteString -> Either String NamedCurve
+byteStringToNamedCurve bs = case BS.unpack bs of
+	[w1, w2] -> Right $ case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
 		23 -> Secp256r1
 		24 -> Secp384r1
 		25 -> Secp521r1
-		_ -> NamedCurveRaw nc
+		nc -> NamedCurveRaw nc
+	_ -> Left "Types.byteStringToNamedCurve"
 
 namedCurveToByteString :: NamedCurve -> ByteString
 namedCurveToByteString (Secp256r1) = word16ToByteString 23
@@ -213,7 +230,10 @@ class Parsable' a where
 class Parsable'' a where
 	parse'' :: BS.ByteString -> Either String (a, BS.ByteString)
 	toByteString'' :: a -> ByteString
-	listLength'' :: a -> Maybe Int
+
+class Bytable a where
+	fromByteString :: BS.ByteString -> Either String a
+	toByteString_ :: a -> ByteString
 
 type Parse a = BS.ByteString -> Either String (a, BS.ByteString)
 
@@ -231,16 +251,6 @@ class Endable m where
 instance Endable ByteStringM where
 	isEnd = BS.null `liftM` get
 
-{-
-instance (Parsable a, Parsable' a) => Parsable' [a] where
-	parse' rd = case listLength (undefined :: a) of
---		Just n -> section'' rd n . (list . parse')
-		_ -> list $ parse' rd
-	toByteString' = case listLength (undefined :: a) of
-		Just n -> lenBodyToByteString n . BS.concat . map toByteString
-		_ -> error "Parsable [a]: Not set list len"
-		-}
-
 instance Parsable a => Parsable [a] where
 	parse = case listLength (undefined :: a) of
 		Just n -> section n $ list parse
@@ -250,28 +260,12 @@ instance Parsable a => Parsable [a] where
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
 
-instance Parsable'' a => Parsable'' [a] where
-	parse'' bs = case listLength'' (undefined :: a) of
-		Just n -> do
-			(bs1, bs2) <- splitLen n bs
-			(, bs2) <$> list' parse'' bs1
-		_ -> (, "") <$> list' parse'' bs
-	toByteString'' = case listLength'' (undefined :: a) of
-		Just n -> lenBodyToByteString n . BS.concat . map toByteString''
-		_ -> BS.concat . map toByteString''
-	listLength'' _ = Nothing
-
 splitLen :: Int -> BS.ByteString -> Either String (BS.ByteString, BS.ByteString)
 splitLen n bs = do
 	unless (BS.length bs >= n) $ Left "Types.splitLen"
 	let (l, bs') = first byteStringToInt $ BS.splitAt n bs
 	unless (BS.length bs' >= l) $ Left "Types.splitLen"
 	return $ BS.splitAt l bs'
-
-{-
-let (l, bs') = first byteStringToInt $ BS.splitAt n bs in
-	BS.splitAt l bs'
-	-}
 
 instance (Parsable a, Parsable b) => Parsable (a, b) where
 	parse = (,) <$> parse <*> parse
@@ -328,11 +322,6 @@ takeLen n = do
 	len <- takeInt n
 	takeBS len
 
-takeLen' :: Monad m => (Int -> m BS.ByteString) -> Int -> m BS.ByteString
-takeLen' rd n = do
-	len <- takeInt' rd n
-	rd len
-
 emptyBS :: ByteStringM Bool
 emptyBS = (== BS.empty) <$> get
 
@@ -346,6 +335,11 @@ list :: (Monad m, Endable m) => m a -> m [a]
 list m = do
 	e <- isEnd
 	if e then return [] else (:) `liftM` m `ap` list m
+
+takeLen' :: Monad m => (Int -> m BS.ByteString) -> Int -> m ByteString
+takeLen' rd n = do
+	l <- takeInt' rd n
+	rd l
 
 section' :: Monad m => (Int -> m BS.ByteString) -> Int -> ByteStringM a -> m a
 section' rd n m = do
@@ -417,6 +411,10 @@ instance Parsable Random where
 	toByteString = randomToByteString
 	listLength _ = Nothing
 
+instance B.Bytable Random where
+	fromByteString = Right . Random
+	toByteString (Random bs) = bs
+
 parseRandom :: ByteStringM Random
 parseRandom = Random <$> takeBS 32
 
@@ -427,10 +425,9 @@ instance Parsable' Random where
 randomToByteString :: Random -> BS.ByteString
 randomToByteString (Random r) = r
 
-parseCipherSuite :: ByteStringM CipherSuite
-parseCipherSuite = do
-	[w1, w2] <- takeWords 2
-	return $ case (w1, w2) of
+byteStringToCipherSuite :: BS.ByteString -> Either String CipherSuite
+byteStringToCipherSuite bs = case BS.unpack bs of
+	[w1, w2] -> Right $ case (w1, w2) of
 		(0x00, 0x00) -> CipherSuite KeyExNULL MsgEncNULL
 		(0x00, 0x2f) -> CipherSuite RSA AES_128_CBC_SHA
 		(0x00, 0x33) -> CipherSuite DHE_RSA AES_128_CBC_SHA
@@ -443,23 +440,18 @@ parseCipherSuite = do
 		(0xc0, 0x23) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
 		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
 		_ -> CipherSuiteRaw w1 w2
+	_ -> Left "Types.byteStringToCipherSuite"
+
+parseCipherSuite :: ByteStringM CipherSuite
+parseCipherSuite = either error id . byteStringToCipherSuite <$> takeBS 2
 
 parseCipherSuite' :: Monad m => (Int -> m BS.ByteString) -> m CipherSuite
-parseCipherSuite' rd = do
-	[w1, w2] <- takeWords' rd 2
-	return $ case (w1, w2) of
-		(0x00, 0x00) -> CipherSuite KeyExNULL MsgEncNULL
-		(0x00, 0x2f) -> CipherSuite RSA AES_128_CBC_SHA
-		(0x00, 0x33) -> CipherSuite DHE_RSA AES_128_CBC_SHA
-		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
-		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
-		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
-		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
-		(0xc0, 0x09) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
-		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
-		(0xc0, 0x23) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256
-		(0xc0, 0x27) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA256
-		_ -> CipherSuiteRaw w1 w2
+parseCipherSuite' rd =
+	(either error id . byteStringToCipherSuite) `liftM` takeLen' rd 2
+
+instance B.Bytable CipherSuite where
+	fromByteString = byteStringToCipherSuite
+	toByteString = cipherSuiteToByteString
 
 instance Parsable' CipherSuite where
 	parse' = parseCipherSuite'
@@ -490,3 +482,9 @@ instance Parsable' Version where
 		[vmjr, vmnr] <- takeWords' rd 2
 		return $ Version vmjr vmnr
 	toByteString' = versionToByteString
+
+instance B.Bytable Version where
+	fromByteString bs = case BS.unpack bs of
+		[vmjr, vmnr] -> Right $ Version vmjr vmnr
+		_ -> Left "Types.hs: B.Bytable Version"
+	toByteString (Version vmjr vmnr) = BS.pack [vmjr, vmnr]

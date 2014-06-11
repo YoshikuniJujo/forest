@@ -1,9 +1,14 @@
 module Extension (
+	parseExtensionList',
+	Bytable(..),
+
+	takeLen',
+
 	ExtensionList, parseExtensionList, extensionListToByteString,
 
 	BS.concat, emptyBS, ByteStringM, takeBS, section',
 
-	Parsable'(..), Parsable(..), takeLen',
+	Parsable'(..), Parsable(..),
 	lenBodyToByteString, headBS, Random(..), Version(..), CipherSuite(..),
 	CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	SignatureAlgorithm(..), HashAlgorithm(..), ContentType(..),
@@ -17,16 +22,22 @@ import Control.Monad
 
 import qualified Data.ByteString as BS
 
--- import ByteStringMonad
--- import ToByteString
 import Data.Bits
 import Data.Word
-import Types
+import NewTypes
+
+import qualified Codec.Bytable as B
+import Codec.Bytable.BigEndian
 
 type ExtensionList = [Extension]
 
 parseExtensionList :: Monad m => (Int -> m BS.ByteString) -> m ExtensionList
 parseExtensionList rd = section' rd 2 . list $ parseExtension takeBS
+
+parseExtensionList' :: B.BytableM [Extension]
+parseExtensionList' = do
+	len <- B.take 2
+	B.list len B.parse
 
 extensionListToByteString :: ExtensionList -> BS.ByteString
 extensionListToByteString =
@@ -42,23 +53,68 @@ data Extension
 	| ExtensionRaw ExtensionType BS.ByteString
 	deriving Show
 
+instance B.Bytable Extension where
+	fromByteString = B.evalBytableM B.parse
+	toByteString = extensionToByteString
+
+instance B.Parsable Extension where
+	parse = parseExtension'
+
+parseExtension' :: B.BytableM Extension
+parseExtension' = do
+	et <- B.take 2
+	len0 <- B.take 2
+	case et of
+		ExtensionTypeServerName -> do
+			len <- B.take 2
+			ExtensionServerName <$> B.list len B.parse
+		ExtensionTypeEllipticCurve -> do
+			len <- B.take 2
+			ExtensionEllipticCurve <$> B.list len (B.take 2)
+		ExtensionTypeEcPointFormat -> do
+			len <- B.take 1
+			ExtensionEcPointFormat <$> B.list len (B.take 1)
+		ExtensionTypeSessionTicketTls ->
+			ExtensionSessionTicketTls <$> B.take len0
+		ExtensionTypeNextProtocolNegotiation ->
+			ExtensionNextProtocolNegotiation <$> B.take len0
+		ExtensionTypeRenegotiationInfo -> do
+			len <- B.take 1
+			ExtensionRenegotiationInfo <$> B.take len
+		_ -> ExtensionRaw et <$> B.take len0
+
 parseExtension :: Monad m => (Int -> m BS.ByteString) -> m Extension
 parseExtension rd = do
-	et <- parseExtensionType rd
-	section' rd 2 $ case et of
-		ExtensionTypeServerName -> section 2 $
-			ExtensionServerName <$> list1 parseServerName
-		ExtensionTypeEllipticCurve -> section 2 $
-			ExtensionEllipticCurve <$> list1 parseNamedCurve
-		ExtensionTypeEcPointFormat -> section 1 $
-			ExtensionEcPointFormat <$> list1 parseEcPointFormat
-		ExtensionTypeSessionTicketTls ->
-			ExtensionSessionTicketTls <$> whole
-		ExtensionTypeNextProtocolNegotiation ->
-			ExtensionNextProtocolNegotiation <$> whole
-		ExtensionTypeRenegotiationInfo ->
-			ExtensionRenegotiationInfo <$> takeLen 1
-		_ -> ExtensionRaw et <$> whole
+	et <- (either error id . B.fromByteString) `liftM` rd 2
+	len0 <- byteStringToInt `liftM` rd 2
+	case et of
+		ExtensionTypeServerName -> do
+			len <- byteStringToInt `liftM` rd 2
+			bs <- rd len
+			return . ExtensionServerName . either error id $
+				B.evalBytableM (B.list len B.parse) bs
+		ExtensionTypeEllipticCurve -> do
+			len <- byteStringToInt `liftM` rd 2
+			bs <- rd len
+			return . ExtensionEllipticCurve . either error id $
+				B.evalBytableM (B.list len $ B.take 2) bs
+		ExtensionTypeEcPointFormat -> do
+			len <- byteStringToInt `liftM` rd 1
+			bs <- rd len
+			return . ExtensionEcPointFormat . either error id $
+				B.evalBytableM (B.list len $ B.take 1) bs
+		ExtensionTypeSessionTicketTls -> do
+			bs <- rd len0
+			return $ ExtensionSessionTicketTls bs
+		ExtensionTypeNextProtocolNegotiation -> do
+			bs <- rd len0
+			return $ ExtensionNextProtocolNegotiation bs
+		ExtensionTypeRenegotiationInfo -> do
+			len <- byteStringToInt `liftM` rd 1
+			bs <- rd len
+			return $ ExtensionRenegotiationInfo bs
+		_ -> do	bs <- rd len0
+			return $ ExtensionRaw et bs
 
 extensionToByteString :: Extension -> BS.ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
@@ -90,18 +146,23 @@ data ExtensionType
 	deriving Show
 
 parseExtensionType :: Monad m => (Int -> m BS.ByteString) -> m ExtensionType
-parseExtensionType rd = do
---	et <- takeWord16
-	[et1, et0] <- BS.unpack `liftM` rd 2
-	let et = fromIntegral et1 `shiftL` 8 .|. fromIntegral et0
-	return $ case et of
+parseExtensionType rd = (either error id . byteStringToExtensionType) `liftM` rd 2
+
+instance B.Bytable ExtensionType where
+	fromByteString = byteStringToExtensionType
+	toByteString = extensionTypeToByteString
+
+byteStringToExtensionType :: BS.ByteString -> Either String ExtensionType
+byteStringToExtensionType bs = case BS.unpack bs of
+	[w1, w2] -> Right $ case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
 		0 -> ExtensionTypeServerName
 		10 -> ExtensionTypeEllipticCurve
 		11 -> ExtensionTypeEcPointFormat
 		35 -> ExtensionTypeSessionTicketTls
 		13172 -> ExtensionTypeNextProtocolNegotiation
 		65281 -> ExtensionTypeRenegotiationInfo
-		_ -> ExtensionTypeRaw et
+		et -> ExtensionTypeRaw et
+	_ -> Left "Extension.byteStringToExtensionType"
 
 extensionTypeToByteString :: ExtensionType -> BS.ByteString
 extensionTypeToByteString ExtensionTypeServerName = word16ToByteString 0
@@ -117,12 +178,21 @@ data ServerName
 	| ServerNameRaw NameType BS.ByteString
 	deriving Show
 
-parseServerName :: ByteStringM ServerName
+instance B.Parsable ServerName where
+	parse = parseServerName
+
+instance B.Bytable ServerName where
+	fromByteString = B.evalBytableM parseServerName
+	toByteString = serverNameToByteString
+
+parseServerName :: B.BytableM ServerName
 parseServerName = do
-	nt <- parseNameType
-	section 2 $ case nt of
-		NameTypeHostName -> ServerNameHostName <$> whole
-		_ -> ServerNameRaw nt <$> whole
+	nt <- B.take 1
+	len <- B.take 2
+	nm <- B.take len
+	return $ case nt of
+		NameTypeHostName -> ServerNameHostName nm
+		_ -> ServerNameRaw nt nm
 
 serverNameToByteString :: ServerName -> BS.ByteString
 serverNameToByteString (ServerNameHostName nm) = serverNameToByteString $
@@ -135,40 +205,23 @@ data NameType
 	| NameTypeRaw Word8
 	deriving Show
 
+instance B.Bytable NameType where
+	fromByteString = byteStringToNameType
+	toByteString = nameTypeToByteString
+
 parseNameType :: ByteStringM NameType
-parseNameType = do
-	nt <- headBS
-	return $ case nt of
+parseNameType = either error id . byteStringToNameType <$> takeBS 1
+
+byteStringToNameType :: BS.ByteString -> Either String NameType
+byteStringToNameType bs = case BS.unpack bs of
+	[nt] -> Right $ case nt of
 		0 -> NameTypeHostName
 		_ -> NameTypeRaw nt
+	_ -> Left "Extension.byteStringToNameType"
 
 nameTypeToByteString :: NameType -> BS.ByteString
 nameTypeToByteString NameTypeHostName = BS.pack [0]
 nameTypeToByteString (NameTypeRaw nt) = BS.pack [nt]
-
-{-
-data NamedCurve
-	= Secp256r1
-	| Secp384r1
-	| Secp521r1
-	| NamedCurveRaw Word16
-	deriving Show
-
-parseNamedCurve :: ByteStringM NamedCurve
-parseNamedCurve = do
-	nc <- takeWord16
-	return $ case nc of
-		23 -> Secp256r1
-		24 -> Secp384r1
-		25 -> Secp521r1
-		_ -> NamedCurveRaw nc
-
-namedCurveToByteString :: NamedCurve -> ByteString
-namedCurveToByteString (Secp256r1) = word16ToByteString 23
-namedCurveToByteString (Secp384r1) = word16ToByteString 24
-namedCurveToByteString (Secp521r1) = word16ToByteString 25
-namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc
--}
 
 data EcPointFormat
 	= EcPointFormatUncompressed
@@ -176,11 +229,18 @@ data EcPointFormat
 	deriving Show
 
 parseEcPointFormat :: ByteStringM EcPointFormat
-parseEcPointFormat = do
-	epf <- headBS
-	return $ case epf of
+parseEcPointFormat = either error id . byteStringToEcPointFormat <$> takeBS 1
+
+instance B.Bytable EcPointFormat where
+	fromByteString = byteStringToEcPointFormat
+	toByteString = ecPointFormatToByteString
+
+byteStringToEcPointFormat :: BS.ByteString -> Either String EcPointFormat
+byteStringToEcPointFormat bs = case BS.unpack bs of
+	[epf] -> Right $ case epf of
 		0 -> EcPointFormatUncompressed
 		_ -> EcPointFormatRaw epf
+	_ -> Left "Extension.byteStringToEcPointFormat"
 
 ecPointFormatToByteString :: EcPointFormat -> BS.ByteString
 ecPointFormatToByteString EcPointFormatUncompressed = BS.pack [0]

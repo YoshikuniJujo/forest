@@ -21,21 +21,16 @@ import Data.ASN1.Types
 import Numeric
 import Data.Word
 
--- import ByteStringMonad
 import qualified Data.ByteString as BS
 import Types
-
--- import PreMasterSecret
--- import DigitallySigned
 
 data Certificate
 	= CertificateRaw BS.ByteString
 	deriving Show
 
-instance Parsable X509.CertificateChain where
-	parse = parseCertificateChain
-	toByteString = certificateChainToByteString
-	listLength _ = Nothing
+instance Bytable X509.CertificateChain where
+	fromByteString = evalByteStringM parseCertificateChain
+	toByteString_ = certificateChainToByteString
 
 parseCertificateChain :: ByteStringM X509.CertificateChain
 parseCertificateChain = do
@@ -74,10 +69,9 @@ data CertificateRequest
 	| CertificateRequestRaw BS.ByteString
 	deriving Show
 
-instance Parsable CertificateRequest where
-	parse = parseCertificateRequest
-	toByteString = certificateRequestToByteString
-	listLength _ = Nothing
+instance Bytable CertificateRequest where
+	fromByteString = evalByteStringM parseCertificateRequest
+	toByteString_ = certificateRequestToByteString
 
 parseCertificateRequest :: ByteStringM CertificateRequest
 parseCertificateRequest = do
@@ -131,10 +125,16 @@ instance Show EncryptedPreMasterSecret where
 	show (EncryptedPreMasterSecret epms) = "(EncryptedPreMasterSecret " ++
 		showKeyPMS epms ++ ")"
 
+{-
 instance Parsable EncryptedPreMasterSecret where
 	parse = parseEncryptedPreMasterSecret
 	toByteString = encryptedPreMasterSecretToByteString
 	listLength _ = Nothing
+	-}
+
+instance Bytable EncryptedPreMasterSecret where
+	fromByteString = evalByteStringM parseEncryptedPreMasterSecret
+	toByteString_ = encryptedPreMasterSecretToByteString
 
 showKeyPMS :: BS.ByteString -> String
 showKeyPMS = concatMap showH . BS.unpack
@@ -157,10 +157,9 @@ data DigitallySigned
 	| DigitallySignedRaw BS.ByteString
 	deriving Show
 
-instance Parsable DigitallySigned where
-	parse = parseDigitallySigned
-	toByteString = digitallySignedToByteString
-	listLength _ = Nothing
+instance Bytable DigitallySigned where
+	fromByteString = evalByteStringM parseDigitallySigned
+	toByteString_ = digitallySignedToByteString
 
 parseDigitallySigned :: ByteStringM DigitallySigned
 parseDigitallySigned = DigitallySigned

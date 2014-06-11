@@ -11,7 +11,8 @@ module Content (
 	CompressionMethod(..),
 	EncryptedPreMasterSecret(..),
 	CertificateRequest(..),
-	ClientCertificateType(..), HashAlgorithm(..), SignatureAlgorithm(..),
+	ClientCertificateType(..),
+	HashAlgorithm(..), SignatureAlgorithm(..),
 	DigitallySigned(..),
 
 	contentToByteString,
@@ -24,7 +25,6 @@ import Control.Monad
 import Data.Word
 import qualified Data.ByteString as BS
 import Handshake
--- import Types
 
 getContent :: Monad m =>
 	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
@@ -35,10 +35,9 @@ getContent rct rd = do
 parseContent :: Monad m =>
 	(Int -> m BS.ByteString) -> ContentType -> m Content
 parseContent rd ContentTypeChangeCipherSpec =
-	ContentChangeCipherSpec `liftM` takeChangeCipherSpec rd
-parseContent rd ContentTypeAlert = do
-	[al, ad] <- BS.unpack `liftM` rd 2
-	return $ ContentAlert al ad
+	(ContentChangeCipherSpec . either error id . fromByteString) `liftM` rd 1
+parseContent rd ContentTypeAlert =
+	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
 parseContent rd ContentTypeHandshake = ContentHandshake `liftM` takeHandshake rd
 parseContent _ ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
@@ -49,7 +48,7 @@ contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs i
 
 contentToByteString :: Content -> (ContentType, BS.ByteString)
 contentToByteString (ContentChangeCipherSpec ccs) =
-	(ContentTypeChangeCipherSpec, changeCipherSpecToByteString ccs)
+	(ContentTypeChangeCipherSpec, toByteString_ ccs)
 contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
 contentToByteString (ContentHandshake hss) =
 	(ContentTypeHandshake, handshakeToByteString hss)
@@ -70,13 +69,10 @@ data ChangeCipherSpec
 	| ChangeCipherSpecRaw Word8
 	deriving Show
 
-takeChangeCipherSpec :: Monad m => (Int -> m BS.ByteString) -> m ChangeCipherSpec
-takeChangeCipherSpec rd = do
-	[ccs] <- BS.unpack `liftM` rd 1
-	return $ case ccs of
-		1 -> ChangeCipherSpec
-		_ -> ChangeCipherSpecRaw ccs
-
-changeCipherSpecToByteString :: ChangeCipherSpec -> BS.ByteString
-changeCipherSpecToByteString ChangeCipherSpec = BS.pack [1]
-changeCipherSpecToByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+instance Bytable ChangeCipherSpec where
+	fromByteString bs = case BS.unpack bs of
+			[1] -> Right ChangeCipherSpec
+			[ccs] -> Right $ ChangeCipherSpecRaw ccs
+			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
+	toByteString_ ChangeCipherSpec = BS.pack [1]
+	toByteString_ (ChangeCipherSpecRaw ccs) = BS.pack [ccs]

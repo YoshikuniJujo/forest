@@ -1,165 +1,86 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Handshake (
---	Parsable'(..),
-	takeHandshake,
-	handshakeToByteString,
-	Handshake(..),
-	handshakeDoesServerHelloFinish, handshakeDoesFinish,
-	handshakeDoesClientKeyExchange,
-	handshakeClientRandom, handshakeServerRandom, handshakeCipherSuite,
-	handshakeClientVersion, handshakeServerVersion,
+	Handshake(..), takeHandshake, handshakeToByteString,
+	ContentType(..), Bytable(..),
 
-	handshakeGetFinish,
-
-	HandshakeType(HandshakeTypeFinished),
-	CertificateChain,
-	handshakeCertificateRequest,
-	handshakeMakeVerify,
-	handshakeMakeClientKeyExchange,
-
-	ServerHello(..),
-	ClientHello(..),
+	ClientHello(..), ServerHello(..),
+		Version(..), Random(..), SessionId(..),
+		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+		CompressionMethod(..),
 	CertificateRequest(..),
-	ClientCertificateType(..),
+		ClientCertificateType(..),
+		SignatureAlgorithm(..), HashAlgorithm(..),
 	EncryptedPreMasterSecret(..),
-
-	Random(..),
-	CipherSuite(..),
-	CipherSuiteKeyEx(..),
-	CipherSuiteMsgEnc(..),
-
-	SignatureAlgorithm(..),
-	HashAlgorithm(..),
-	CompressionMethod(..),
-	SessionId(..),
-	Version(..),
-
 	DigitallySigned(..),
-
-	headBS, takeBS,
---	list1,
-	whole, ByteStringM, evalByteStringM,
-
-	ContentType(..),
-
 ) where
 
-import Prelude hiding (head, take, concat)
+import qualified Codec.Bytable as B
 
-import Control.Monad
-
-import Data.Word
+import Control.Monad (liftM)
+import Data.Word (Word8)
 import qualified Data.ByteString as BS
 
 import Hello
+--	(Bytable(..), ClientHello(..), ServerHello(..), takeLen', lenBodyToByteString)
 import Certificate
-import Data.ByteString(ByteString, pack)
 
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
 	| HandshakeCertificate CertificateChain
-	| HandshakeServerKeyExchange ByteString
+	| HandshakeServerKeyExchange BS.ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
 	| HandshakeClientKeyExchange EncryptedPreMasterSecret
-	| HandshakeFinished ByteString
-	| HandshakeRaw HandshakeType ByteString
+	| HandshakeFinished BS.ByteString
+	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
-
-{-
-instance Parsable' Handshake where
-	parse' = takeHandshake
-	toByteString' = handshakeToByteString
-	-}
-
-handshakeMakeVerify :: ByteString -> Handshake
-handshakeMakeVerify = HandshakeCertificateVerify .
-	DigitallySigned (HashAlgorithmSha256, SignatureAlgorithmRsa)
-
-handshakeClientRandom :: Handshake -> Maybe Random
-handshakeClientRandom (HandshakeClientHello ch) = clientHelloClientRandom ch
-handshakeClientRandom _ = Nothing
-
-handshakeServerRandom :: Handshake -> Maybe Random
-handshakeServerRandom (HandshakeServerHello sh) = serverHelloServerRandom sh
-handshakeServerRandom _ = Nothing
-
-handshakeClientVersion :: Handshake -> Maybe Version
-handshakeClientVersion (HandshakeClientHello ch) = clientHelloClientVersion ch
-handshakeClientVersion _ = Nothing
-
-handshakeServerVersion :: Handshake -> Maybe Version
-handshakeServerVersion (HandshakeServerHello ch) = serverHelloServerVersion ch
-handshakeServerVersion _ = Nothing
-
-handshakeCipherSuite :: Handshake -> Maybe CipherSuite
-handshakeCipherSuite (HandshakeServerHello sh) = serverHelloCipherSuite sh
-handshakeCipherSuite _ = Nothing
-
-handshakeDoesServerHelloFinish :: Handshake -> Bool
-handshakeDoesServerHelloFinish HandshakeServerHelloDone = True
-handshakeDoesServerHelloFinish (HandshakeRaw HandshakeTypeFinished _) = True
-handshakeDoesServerHelloFinish _ = False
-
-handshakeDoesClientKeyExchange :: Handshake -> Bool
-handshakeDoesClientKeyExchange (HandshakeClientKeyExchange _) = True
-handshakeDoesClientKeyExchange _ = False
-
-handshakeDoesFinish :: Handshake -> Bool
-handshakeDoesFinish (HandshakeRaw HandshakeTypeFinished _) = True
-handshakeDoesFinish _ = False
-
-handshakeGetFinish :: Handshake -> Maybe ByteString
-handshakeGetFinish (HandshakeFinished f) = Just f
-handshakeGetFinish _ = Nothing
-
-handshakeMakeClientKeyExchange :: EncryptedPreMasterSecret -> Handshake
-handshakeMakeClientKeyExchange = HandshakeClientKeyExchange
 
 takeHandshake :: Monad m => (Int -> m BS.ByteString) -> m Handshake
 takeHandshake rd = do
-	mt <- parseHandshakeType' rd
-	section' rd 3 $ case mt of
-		HandshakeTypeClientHello -> HandshakeClientHello `liftM` parse
-		HandshakeTypeServerHello -> HandshakeServerHello `liftM` parse
-		HandshakeTypeCertificate -> HandshakeCertificate `liftM` parse
-		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange `liftM`
-			whole
-		HandshakeTypeCertificateRequest ->
-			HandshakeCertificateRequest `liftM` parse
-		HandshakeTypeServerHelloDone ->
-			const HandshakeServerHelloDone `liftM` whole
-		HandshakeTypeCertificateVerify ->
-			HandshakeCertificateVerify `liftM` parse
-		HandshakeTypeClientKeyExchange ->
-			HandshakeClientKeyExchange `liftM` parse
-		HandshakeTypeFinished -> HandshakeFinished `liftM` whole
-		_ -> HandshakeRaw mt `liftM` whole
+	mt <- (either error id . fromByteString) `liftM` rd 1
+	bs <- takeLen' rd 3
+	return $ case mt of
+		HandshakeTypeClientHello -> HandshakeClientHello .
+			either error id $ B.fromByteString bs
+		HandshakeTypeServerHello -> HandshakeServerHello .
+			either error id $ fromByteString bs
+		HandshakeTypeCertificate -> HandshakeCertificate .
+			either error id $ fromByteString bs
+		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange bs
+		HandshakeTypeCertificateRequest -> HandshakeCertificateRequest .
+			either error id $ fromByteString bs
+		HandshakeTypeServerHelloDone -> HandshakeServerHelloDone
+		HandshakeTypeCertificateVerify -> HandshakeCertificateVerify .
+			either error id $ fromByteString bs
+		HandshakeTypeClientKeyExchange -> HandshakeClientKeyExchange .
+			either error id $ fromByteString bs
+		HandshakeTypeFinished -> HandshakeFinished bs
+		_ -> HandshakeRaw mt bs
 
-handshakeToByteString :: Handshake -> ByteString
+handshakeToByteString :: Handshake -> BS.ByteString
 handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeClientHello $ toByteString ch
+	HandshakeRaw HandshakeTypeClientHello $ B.toByteString ch
 handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeServerHello $ toByteString sh
+	HandshakeRaw HandshakeTypeServerHello $ toByteString_ sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificate $ toByteString crts
+	HandshakeRaw HandshakeTypeCertificate $ toByteString_ crts
 handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerKeyExchange ske
 handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString cr
+	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString_ cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
 handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificateVerify $ toByteString ds
+	HandshakeRaw HandshakeTypeCertificateVerify $ toByteString_ ds
 handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeClientKeyExchange $ toByteString epms
+	HandshakeRaw HandshakeTypeClientKeyExchange $ toByteString_ epms
 handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =
-	handshakeTypeToByteString mt `BS.append` lenBodyToByteString 3 bs
+	toByteString_ mt `BS.append` lenBodyToByteString 3 bs
 
 data HandshakeType
 	= HandshakeTypeClientHello
@@ -174,40 +95,32 @@ data HandshakeType
 	| HandshakeTypeRaw Word8
 	deriving Show
 
-parseHandshakeType' :: Monad m => (Int -> m BS.ByteString) -> m HandshakeType
-parseHandshakeType' rd = do
-	[ht] <- BS.unpack `liftM` rd 1
-	return $ case ht of
-		1 -> HandshakeTypeClientHello
-		2 -> HandshakeTypeServerHello
-		11 -> HandshakeTypeCertificate
-		12 -> HandshakeTypeServerKeyExchange
-		13 -> HandshakeTypeCertificateRequest
-		14 -> HandshakeTypeServerHelloDone
-		15 -> HandshakeTypeCertificateVerify
-		16 -> HandshakeTypeClientKeyExchange
-		20 -> HandshakeTypeFinished
-		_ -> HandshakeTypeRaw ht
+instance Bytable HandshakeType where
+	fromByteString = byteStringToHandshakeType
+	toByteString_ = handshakeTypeToByteString
 
-handshakeTypeToByteString :: HandshakeType -> ByteString
-handshakeTypeToByteString HandshakeTypeClientHello = pack [1]
-handshakeTypeToByteString HandshakeTypeServerHello = pack [2]
-handshakeTypeToByteString HandshakeTypeCertificate = pack [11]
-handshakeTypeToByteString HandshakeTypeServerKeyExchange = pack [12]
-handshakeTypeToByteString HandshakeTypeCertificateRequest = pack [13]
-handshakeTypeToByteString HandshakeTypeServerHelloDone = pack [14]
-handshakeTypeToByteString HandshakeTypeCertificateVerify = pack [15]
-handshakeTypeToByteString HandshakeTypeClientKeyExchange = pack [16]
-handshakeTypeToByteString HandshakeTypeFinished = pack [20]
-handshakeTypeToByteString (HandshakeTypeRaw w) = pack [w]
+byteStringToHandshakeType :: BS.ByteString -> Either String HandshakeType
+byteStringToHandshakeType bs = case BS.unpack bs of
+	[1] -> Right HandshakeTypeClientHello
+	[2] -> Right HandshakeTypeServerHello
+	[11] -> Right HandshakeTypeCertificate
+	[12] -> Right HandshakeTypeServerKeyExchange
+	[13] -> Right HandshakeTypeCertificateRequest
+	[14] -> Right HandshakeTypeServerHelloDone
+	[15] -> Right HandshakeTypeCertificateVerify
+	[16] -> Right HandshakeTypeClientKeyExchange
+	[20] -> Right HandshakeTypeFinished
+	[ht] -> Right $ HandshakeTypeRaw ht
+	_ -> Left "Handshake.byteStringToHandshakeType"
 
-{-
-handshakeOnlyKnownCipherSuite :: Handshake -> Handshake
-handshakeOnlyKnownCipherSuite (HandshakeClientHello ch) =
-	HandshakeClientHello $ clientHelloOnlyKnownCipherSuite ch
-handshakeOnlyKnownCipherSuite hs = hs
--}
-
-handshakeCertificateRequest :: Handshake -> Maybe CertificateRequest
-handshakeCertificateRequest (HandshakeCertificateRequest cr) = Just cr
-handshakeCertificateRequest _ = Nothing
+handshakeTypeToByteString :: HandshakeType -> BS.ByteString
+handshakeTypeToByteString HandshakeTypeClientHello = BS.pack [1]
+handshakeTypeToByteString HandshakeTypeServerHello = BS.pack [2]
+handshakeTypeToByteString HandshakeTypeCertificate = BS.pack [11]
+handshakeTypeToByteString HandshakeTypeServerKeyExchange = BS.pack [12]
+handshakeTypeToByteString HandshakeTypeCertificateRequest = BS.pack [13]
+handshakeTypeToByteString HandshakeTypeServerHelloDone = BS.pack [14]
+handshakeTypeToByteString HandshakeTypeCertificateVerify = BS.pack [15]
+handshakeTypeToByteString HandshakeTypeClientKeyExchange = BS.pack [16]
+handshakeTypeToByteString HandshakeTypeFinished = BS.pack [20]
+handshakeTypeToByteString (HandshakeTypeRaw w) = BS.pack [w]

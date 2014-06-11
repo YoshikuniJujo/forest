@@ -13,6 +13,8 @@ import KeyExchange
 -- import Base
 import Data.Word
 
+import qualified Codec.Bytable as B
+
 secp256r1 :: Curve
 secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 	where
@@ -60,7 +62,7 @@ calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
 encodeCurve :: Curve -> BS.ByteString
 encodeCurve c
 	| c == secp256r1 =
-		toByteString NamedCurve `BS.append` toByteString Secp256r1
+		toByteString NamedCurve `BS.append` B.toByteString Secp256r1
 	| otherwise = error "TlsServer.encodeCurve: not implemented"
 
 data EcCurveType
