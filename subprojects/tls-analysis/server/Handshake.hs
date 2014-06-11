@@ -40,13 +40,13 @@ data Handshake
 
 takeHandshake :: Monad m => (Int -> m BS.ByteString) -> m Handshake
 takeHandshake rd = do
-	mt <- (either error id . fromByteString) `liftM` rd 1
+	mt <- (either error id . B.fromByteString) `liftM` rd 1
 	bs <- takeLen' rd 3
 	return $ case mt of
 		HandshakeTypeClientHello -> HandshakeClientHello .
 			either error id $ B.fromByteString bs
 		HandshakeTypeServerHello -> HandshakeServerHello .
-			either error id $ fromByteString bs
+			either error id $ B.fromByteString bs
 		HandshakeTypeCertificate -> HandshakeCertificate .
 			either error id $ fromByteString bs
 		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange bs
@@ -64,7 +64,7 @@ handshakeToByteString :: Handshake -> BS.ByteString
 handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeClientHello $ B.toByteString ch
 handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeServerHello $ toByteString_ sh
+	HandshakeRaw HandshakeTypeServerHello $ B.toByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeCertificate $ toByteString_ crts
 handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
@@ -80,7 +80,7 @@ handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString 
 handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =
-	toByteString_ mt `BS.append` lenBodyToByteString 3 bs
+	B.toByteString mt `BS.append` lenBodyToByteString 3 bs
 
 data HandshakeType
 	= HandshakeTypeClientHello
@@ -95,9 +95,9 @@ data HandshakeType
 	| HandshakeTypeRaw Word8
 	deriving Show
 
-instance Bytable HandshakeType where
+instance B.Bytable HandshakeType where
 	fromByteString = byteStringToHandshakeType
-	toByteString_ = handshakeTypeToByteString
+	toByteString = handshakeTypeToByteString
 
 byteStringToHandshakeType :: BS.ByteString -> Either String HandshakeType
 byteStringToHandshakeType bs = case BS.unpack bs of

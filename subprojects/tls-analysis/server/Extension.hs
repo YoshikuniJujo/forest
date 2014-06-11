@@ -1,24 +1,13 @@
 module Extension (
-	parseExtensionList',
-	Bytable(..),
-
-	takeLen',
-
-	ExtensionList, parseExtensionList, extensionListToByteString,
-
-	BS.concat, emptyBS, ByteStringM, takeBS, section',
-
-	Parsable'(..), Parsable(..),
-	lenBodyToByteString, headBS, Random(..), Version(..), CipherSuite(..),
-	CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	ExtensionList, lenBodyToByteString,
+	Version(..), Random(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 	SignatureAlgorithm(..), HashAlgorithm(..), ContentType(..),
-	evalByteStringM,
 ) where
 
 import Prelude hiding (head, concat)
 
 import Control.Applicative
-import Control.Monad
 
 import qualified Data.ByteString as BS
 
@@ -29,18 +18,6 @@ import NewTypes
 import qualified Codec.Bytable as B
 
 type ExtensionList = [Extension]
-
-parseExtensionList :: Monad m => (Int -> m BS.ByteString) -> m ExtensionList
-parseExtensionList rd = section' rd 2 . list $ parseExtension takeBS
-
-parseExtensionList' :: B.BytableM [Extension]
-parseExtensionList' = do
-	len <- B.take 2
-	B.list len B.parse
-
-extensionListToByteString :: ExtensionList -> BS.ByteString
-extensionListToByteString =
-	lenBodyToByteString 2 .  BS.concat . map extensionToByteString
 
 data Extension
 	= ExtensionServerName [ServerName]
@@ -57,10 +34,10 @@ instance B.Bytable Extension where
 	toByteString = extensionToByteString
 
 instance B.Parsable Extension where
-	parse = parseExtension'
+	parse = parseExtension
 
-parseExtension' :: B.BytableM Extension
-parseExtension' = do
+parseExtension :: B.BytableM Extension
+parseExtension = do
 	et <- B.take 2
 	len0 <- B.take 2
 	case et of
@@ -82,46 +59,13 @@ parseExtension' = do
 			ExtensionRenegotiationInfo <$> B.take len
 		_ -> ExtensionRaw et <$> B.take len0
 
-parseExtension :: Monad m => (Int -> m BS.ByteString) -> m Extension
-parseExtension rd = do
-	et <- (either error id . B.fromByteString) `liftM` rd 2
-	len0 <- byteStringToInt `liftM` rd 2
-	case et of
-		ExtensionTypeServerName -> do
-			len <- byteStringToInt `liftM` rd 2
-			bs <- rd len
-			return . ExtensionServerName . either error id $
-				B.evalBytableM (B.list len B.parse) bs
-		ExtensionTypeEllipticCurve -> do
-			len <- byteStringToInt `liftM` rd 2
-			bs <- rd len
-			return . ExtensionEllipticCurve . either error id $
-				B.evalBytableM (B.list len $ B.take 2) bs
-		ExtensionTypeEcPointFormat -> do
-			len <- byteStringToInt `liftM` rd 1
-			bs <- rd len
-			return . ExtensionEcPointFormat . either error id $
-				B.evalBytableM (B.list len $ B.take 1) bs
-		ExtensionTypeSessionTicketTls -> do
-			bs <- rd len0
-			return $ ExtensionSessionTicketTls bs
-		ExtensionTypeNextProtocolNegotiation -> do
-			bs <- rd len0
-			return $ ExtensionNextProtocolNegotiation bs
-		ExtensionTypeRenegotiationInfo -> do
-			len <- byteStringToInt `liftM` rd 1
-			bs <- rd len
-			return $ ExtensionRenegotiationInfo bs
-		_ -> do	bs <- rd len0
-			return $ ExtensionRaw et bs
-
 extensionToByteString :: Extension -> BS.ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
 	ExtensionRaw ExtensionTypeServerName . lenBodyToByteString 2 .
 		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEllipticCurve . lenBodyToByteString 2 .
-		BS.concat $ map namedCurveToByteString ecs
+		BS.concat $ map B.toByteString ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEcPointFormat . lenBodyToByteString 1 .
 		BS.concat $ map ecPointFormatToByteString epf
@@ -161,13 +105,13 @@ byteStringToExtensionType bs = case BS.unpack bs of
 	_ -> Left "Extension.byteStringToExtensionType"
 
 extensionTypeToByteString :: ExtensionType -> BS.ByteString
-extensionTypeToByteString ExtensionTypeServerName = word16ToByteString 0
-extensionTypeToByteString ExtensionTypeEllipticCurve = word16ToByteString 10
-extensionTypeToByteString ExtensionTypeEcPointFormat = word16ToByteString 11
-extensionTypeToByteString ExtensionTypeSessionTicketTls = word16ToByteString 35
-extensionTypeToByteString ExtensionTypeNextProtocolNegotiation = word16ToByteString 13172
-extensionTypeToByteString ExtensionTypeRenegotiationInfo = word16ToByteString 65281
-extensionTypeToByteString (ExtensionTypeRaw et) = word16ToByteString et
+extensionTypeToByteString ExtensionTypeServerName = B.toByteString (0 :: Word16)
+extensionTypeToByteString ExtensionTypeEllipticCurve = B.toByteString (10 :: Word16)
+extensionTypeToByteString ExtensionTypeEcPointFormat = B.toByteString (11 :: Word16)
+extensionTypeToByteString ExtensionTypeSessionTicketTls = B.toByteString (35 :: Word16)
+extensionTypeToByteString ExtensionTypeNextProtocolNegotiation = B.toByteString (13172 :: Word16)
+extensionTypeToByteString ExtensionTypeRenegotiationInfo = B.toByteString (65281 :: Word16)
+extensionTypeToByteString (ExtensionTypeRaw et) = B.toByteString et
 
 data ServerName
 	= ServerNameHostName BS.ByteString

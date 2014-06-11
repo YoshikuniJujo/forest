@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hello (
-	Bytable(..), ContentType(..),
+	ContentType(..),
 
 	ClientHello(..), ServerHello(..),
 		Version(..), Random(..), SessionId(..),
@@ -9,18 +9,16 @@ module Hello (
 		CompressionMethod(..),
 
 	SignatureAlgorithm(..), HashAlgorithm(..),
-	takeLen', lenBodyToByteString,
+	lenBodyToByteString,
  ) where
 
 import Control.Applicative
-import Control.Monad
 import Data.Word
 import Numeric
-import qualified Data.ByteString as BS
 import Extension
 
+import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
-import Codec.Bytable.BigEndian ()
 
 data ClientHello
 	= ClientHello Version Random SessionId [CipherSuite]
@@ -34,23 +32,25 @@ instance B.Bytable ClientHello where
 
 parseClientHello :: B.BytableM ClientHello
 parseClientHello = do
-	(pv, r, sid) <- pvrsid'
+	(pv, r, sid) <- pvrsid
 	cssl <- B.take 2
 	css <- B.list cssl $ B.take 2
 	cmsl <- B.take 1
 	cms <- B.list cmsl $ B.take 1
 	e <- B.null
-	mel <- if e then return Nothing else Just <$> parseExtensionList'
-	return $ ClientHello pv r sid css cms mel
+	me <- if e then return Nothing else do
+		mel <- B.take 2
+		Just <$> B.list mel B.parse
+	return $ ClientHello pv r sid css cms me
 
 clientHelloToByteString :: ClientHello -> BS.ByteString
 clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
-	toByteString' pv,
-	toByteString r,
-	toByteString' sid,
-	toByteString css,
-	toByteString cms,
-	maybe "" extensionListToByteString mel ]
+	B.toByteString pv,
+	B.toByteString r,
+	lenBodyToByteString 1 $ B.toByteString sid,
+	lenBodyToByteString 2 . BS.concat $ map B.toByteString css,
+	lenBodyToByteString 1 . BS.concat $ map B.toByteString cms,
+	maybe "" (lenBodyToByteString 2 . BS.concat . map B.toByteString) mel ]
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello
@@ -59,34 +59,32 @@ data ServerHello
 	| ServerHelloRaw BS.ByteString
 	deriving Show
 
-instance Bytable ServerHello where
-	fromByteString = evalByteStringM parseServerHello
-	toByteString_ = serverHelloToByteString
+instance B.Bytable ServerHello where
+	fromByteString = B.evalBytableM parseServerHello
+	toByteString = serverHelloToByteString
 
-parseServerHello :: ByteStringM ServerHello
+parseServerHello :: B.BytableM ServerHello
 parseServerHello = do
-	(pv, r, sid) <- pvrsid takeBS
-	cs <- parse' takeBS
-	cm <- parseCompressionMethod
-	e <- emptyBS
-	me <- if e then return Nothing else Just <$> parseExtensionList takeBS
+	(pv, r, sid) <- pvrsid
+	cs <- B.take 2
+	cm <- B.take 1
+	e <- B.null
+	me <- if e then return Nothing else do
+		mel <- B.take 2
+		Just <$> B.list mel B.parse
 	return $ ServerHello pv r sid cs cm me
 
-pvrsid :: Monad m => (Int -> m BS.ByteString) -> m (Version, Random, SessionId)
-pvrsid rd = (,,) `liftM` parse' rd `ap` parse' rd `ap` parse' rd
-
-pvrsid' :: B.BytableM (Version, Random, SessionId)
-pvrsid' = (,,) <$> B.take 2 <*> B.take 32 <*> (B.take =<< B.take 1)
+pvrsid :: B.BytableM (Version, Random, SessionId)
+pvrsid = (,,) <$> B.take 2 <*> B.take 32 <*> (B.take =<< B.take 1)
 
 serverHelloToByteString :: ServerHello -> BS.ByteString
 serverHelloToByteString (ServerHello pv r sid cs cm mes) = BS.concat [
-	toByteString' pv,
-	toByteString r,
-	sessionIdToByteString sid,
-	toByteString' cs,
+	B.toByteString pv,
+	B.toByteString r,
+	lenBodyToByteString 1 $ B.toByteString sid,
+	B.toByteString cs,
 	compressionMethodToByteString cm,
-	maybe "" extensionListToByteString mes
- ]
+	maybe "" (lenBodyToByteString 2 . BS.concat . map B.toByteString) mes ]
 serverHelloToByteString (ServerHelloRaw sh) = sh
 
 data CompressionMethod
@@ -94,18 +92,9 @@ data CompressionMethod
 	| CompressionMethodRaw Word8
 	deriving (Show, Eq)
 
-instance Parsable CompressionMethod where
-	parse = parseCompressionMethod
-	toByteString = compressionMethodToByteString
-	listLength _ = Just 1
-
 instance B.Bytable CompressionMethod where
 	fromByteString = byteStringToCompressionMethod
 	toByteString = compressionMethodToByteString
-
-parseCompressionMethod :: ByteStringM CompressionMethod
-parseCompressionMethod =
-	either error id . byteStringToCompressionMethod <$> takeBS 1
 
 byteStringToCompressionMethod :: BS.ByteString -> Either String CompressionMethod
 byteStringToCompressionMethod bs = case BS.unpack bs of
@@ -123,13 +112,6 @@ data SessionId = SessionId BS.ByteString
 instance Show SessionId where
 	show (SessionId sid) =
 		"(SessionID " ++ concatMap (`showHex` "") (BS.unpack sid) ++ ")"
-
-sessionIdToByteString :: SessionId -> BS.ByteString
-sessionIdToByteString (SessionId sid) = lenBodyToByteString 1 sid
-
-instance Parsable' SessionId where
-	parse' rd = SessionId `liftM` takeLen' rd 1
-	toByteString' = sessionIdToByteString
 
 instance B.Bytable SessionId where
 	fromByteString = Right . SessionId

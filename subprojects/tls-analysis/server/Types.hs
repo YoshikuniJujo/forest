@@ -189,16 +189,6 @@ signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
 signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
 signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = BS.pack [w]
 
-{-
-instance Parsable NamedCurve where
-	parse = parseNamedCurve
-	toByteString = namedCurveToByteString
-	listLength _ = Nothing
-
-parseNamedCurve :: ByteStringM NamedCurve
-parseNamedCurve = either error id . byteStringToNamedCurve <$> takeBS 2
-	-}
-
 instance B.Bytable NamedCurve where
 	fromByteString = byteStringToNamedCurve
 	toByteString = namedCurveToByteString

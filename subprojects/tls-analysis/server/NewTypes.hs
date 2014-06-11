@@ -1,21 +1,6 @@
 module NewTypes (
-	Bytable(..),
-
-	headBS,
-	ByteStringM,
 	lenBodyToByteString,
-	whole,
-	section,
-	word16ToByteString,
-	namedCurveToByteString,
-	takeLen,
-	list1,
-	list,
---	parseNamedCurve,
-	section',
-	takeBS,
 	NamedCurve,
-	evalByteStringM,
 	ContentType(..),
 	HashAlgorithm(..),
 	SignatureAlgorithm(..),
@@ -24,12 +9,8 @@ module NewTypes (
 	CipherSuiteMsgEnc(..),
 	Version(..),
 	Random(..),
-	takeLen',
 	Parsable(..),
 	Parsable'(..),
-	emptyBS,
-
-	byteStringToInt,
 ) where
 
 import Types

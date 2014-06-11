@@ -2,6 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
+	Bytable(..),
 	X509.CertificateChain,
 	CertificateRequest(..),
 	ClientCertificateType(..),
@@ -9,6 +10,7 @@ module Certificate (
 	DigitallySigned(..),
 
 	section, whole, headBS,
+	takeLen',
 ) where
 
 import Prelude hiding (concat)
