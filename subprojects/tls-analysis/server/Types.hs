@@ -2,8 +2,6 @@
 	FlexibleInstances, TypeFamilies, TupleSections #-}
 
 module Types (
-	Bytable(..),
-
 	Version(..), byteStringToVersion, versionToByteString,
 	ContentType(..), byteStringToContentType, contentTypeToByteString,
 	Random(..), CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
@@ -18,34 +16,21 @@ module Types (
 
 	lenBodyToByteString, Word8, headBS,
 
-	word16ToByteString,
-	word64ToByteString,
-
 	intToByteString,
 	byteStringToInt,
 	takeLen,
 	takeLen',
 	evalByteStringM,
 
-	takeWords, takeWords',
-	takeBS,
 	ByteStringM,
 	section,
-	emptyBS,
-	whole,
+	takeBS,
 
-	namedCurveToByteString,
 	list,
 	list1,
---	parseNamedCurve,
-	section',
 	throwError,
-
-	splitLen,
-	list',
 ) where
 
-import Control.Arrow
 import Data.Word
 import qualified Data.ByteString as BS
 -- import ByteStringMonad
@@ -221,20 +206,6 @@ class Parsable'' a where
 	parse'' :: BS.ByteString -> Either String (a, BS.ByteString)
 	toByteString'' :: a -> ByteString
 
-class Bytable a where
-	fromByteString :: BS.ByteString -> Either String a
-	toByteString_ :: a -> ByteString
-
-type Parse a = BS.ByteString -> Either String (a, BS.ByteString)
-
-list' :: Parse a -> BS.ByteString -> Either String [a]
-list' _ bs | BS.null bs = Right []
-list' prs bs = do
-	(x, r) <- prs bs
-	case r of
-		"" -> return [x]
-		_ -> (x :) <$> list' prs r
-
 class Endable m where
 	isEnd :: m Bool
 
@@ -249,13 +220,6 @@ instance Parsable a => Parsable [a] where
 		Just n -> lenBodyToByteString n . BS.concat . map toByteString
 		_ -> error "Parsable [a]: Not set list len"
 	listLength _ = Nothing
-
-splitLen :: Int -> BS.ByteString -> Either String (BS.ByteString, BS.ByteString)
-splitLen n bs = do
-	unless (BS.length bs >= n) $ Left "Types.splitLen"
-	let (l, bs') = first byteStringToInt $ BS.splitAt n bs
-	unless (BS.length bs' >= l) $ Left "Types.splitLen"
-	return $ BS.splitAt l bs'
 
 instance (Parsable a, Parsable b) => Parsable (a, b) where
 	parse = (,) <$> parse <*> parse
@@ -290,9 +254,6 @@ takeBS len = do
 		lift $ put d
 		return t
 
-takeWords :: Int -> ByteStringM [Word8]
-takeWords = (BS.unpack <$>) . takeBS
-
 takeWords' :: Monad m => (Int -> m BS.ByteString) -> Int -> m [Word8]
 takeWords' = ((BS.unpack `liftM`) .)
 
@@ -306,9 +267,6 @@ takeLen :: Int -> ByteStringM ByteString
 takeLen n = do
 	len <- takeInt n
 	takeBS len
-
-emptyBS :: ByteStringM Bool
-emptyBS = (== BS.empty) <$> get
 
 list1 :: (Monad m, Endable m) => m a -> m [a]
 list1 m = do
@@ -326,29 +284,6 @@ takeLen' rd n = do
 	l <- takeInt' rd n
 	rd l
 
-section' :: Monad m => (Int -> m BS.ByteString) -> Int -> ByteStringM a -> m a
-section' rd n m = do
-	l <- takeInt' rd n
-	bs <- rd l
-	let e = evalByteStringM m bs
-	case e of
-		Right x -> return x
-		Left err -> error err
-
--- type FromByteString m a = (Int -> m BS.ByteString) -> m a
-
-{-
--- section'' :: Monad m =>
---	(Int -> m BS.ByteString) -> Int -> FromByteString n a -> m a
-section'' rd n m = do
-	l <- takeInt' rd n
-	bs <- rd l
-	let e = evalByteStringM (m takeBS) bs
-	case e of
-		Right x -> return x
-		Left err -> error err
-		-}
-
 section :: Int -> ByteStringM a -> ByteStringM a
 section n m = do
 	e <- evalByteStringM m <$> takeLen n
@@ -356,18 +291,8 @@ section n m = do
 		Right x -> return x
 		Left err -> throwError err
 
-whole :: ByteStringM ByteString
-whole = do w <- get; put ""; return w
-
 word16ToByteString :: Word16 -> ByteString
 word16ToByteString w = BS.pack [fromIntegral (w `shiftR` 8), fromIntegral w]
-
-word64ToByteString :: Word64 -> ByteString
-word64ToByteString w64 = BS.replicate (8 - BS.length bs) 0 `BS.append` bs
-	where
-	bs = BS.reverse $ wtb w64
-	wtb 0 = ""
-	wtb w = fromIntegral (w .&. 0xff) `BS.cons` wtb (w `shiftR` 8)
 
 byteStringToInt :: ByteString -> Int
 byteStringToInt bs = wordsToInt (BS.length bs - 1) $ BS.unpack bs

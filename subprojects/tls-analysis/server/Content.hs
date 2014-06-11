@@ -25,6 +25,7 @@ import Control.Monad
 import Data.Word
 import qualified Data.ByteString as BS
 import Handshake
+import qualified Codec.Bytable as B
 
 getContent :: Monad m =>
 	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
@@ -35,7 +36,7 @@ getContent rct rd = do
 parseContent :: Monad m =>
 	(Int -> m BS.ByteString) -> ContentType -> m Content
 parseContent rd ContentTypeChangeCipherSpec =
-	(ContentChangeCipherSpec . either error id . fromByteString) `liftM` rd 1
+	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
 parseContent rd ContentTypeAlert =
 	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
 parseContent rd ContentTypeHandshake = ContentHandshake `liftM` takeHandshake rd
@@ -48,7 +49,7 @@ contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs i
 
 contentToByteString :: Content -> (ContentType, BS.ByteString)
 contentToByteString (ContentChangeCipherSpec ccs) =
-	(ContentTypeChangeCipherSpec, toByteString_ ccs)
+	(ContentTypeChangeCipherSpec, B.toByteString ccs)
 contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
 contentToByteString (ContentHandshake hss) =
 	(ContentTypeHandshake, handshakeToByteString hss)
@@ -69,10 +70,10 @@ data ChangeCipherSpec
 	| ChangeCipherSpecRaw Word8
 	deriving Show
 
-instance Bytable ChangeCipherSpec where
+instance B.Bytable ChangeCipherSpec where
 	fromByteString bs = case BS.unpack bs of
 			[1] -> Right ChangeCipherSpec
 			[ccs] -> Right $ ChangeCipherSpecRaw ccs
 			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
-	toByteString_ ChangeCipherSpec = BS.pack [1]
-	toByteString_ (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+	toByteString ChangeCipherSpec = BS.pack [1]
+	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]

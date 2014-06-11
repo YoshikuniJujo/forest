@@ -2,7 +2,7 @@
 
 module Handshake (
 	Handshake(..), takeHandshake, handshakeToByteString,
-	ContentType(..), Bytable(..),
+	ContentType(..), -- Bytable(..),
 
 	ClientHello(..), ServerHello(..),
 		Version(..), Random(..), SessionId(..),
@@ -48,15 +48,15 @@ takeHandshake rd = do
 		HandshakeTypeServerHello -> HandshakeServerHello .
 			either error id $ B.fromByteString bs
 		HandshakeTypeCertificate -> HandshakeCertificate .
-			either error id $ fromByteString bs
+			either error id $ B.fromByteString bs
 		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange bs
 		HandshakeTypeCertificateRequest -> HandshakeCertificateRequest .
-			either error id $ fromByteString bs
+			either error id $ B.fromByteString bs
 		HandshakeTypeServerHelloDone -> HandshakeServerHelloDone
 		HandshakeTypeCertificateVerify -> HandshakeCertificateVerify .
-			either error id $ fromByteString bs
+			either error id $ B.fromByteString bs
 		HandshakeTypeClientKeyExchange -> HandshakeClientKeyExchange .
-			either error id $ fromByteString bs
+			either error id $ B.fromByteString bs
 		HandshakeTypeFinished -> HandshakeFinished bs
 		_ -> HandshakeRaw mt bs
 
@@ -66,17 +66,17 @@ handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .
 handshakeToByteString (HandshakeServerHello sh) = handshakeToByteString .
 	HandshakeRaw HandshakeTypeServerHello $ B.toByteString sh
 handshakeToByteString (HandshakeCertificate crts) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificate $ toByteString_ crts
+	HandshakeRaw HandshakeTypeCertificate $ B.toByteString crts
 handshakeToByteString (HandshakeServerKeyExchange ske) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerKeyExchange ske
 handshakeToByteString (HandshakeCertificateRequest cr) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificateRequest $ toByteString_ cr
+	HandshakeRaw HandshakeTypeCertificateRequest $ B.toByteString cr
 handshakeToByteString HandshakeServerHelloDone = handshakeToByteString $
 	HandshakeRaw HandshakeTypeServerHelloDone ""
 handshakeToByteString (HandshakeCertificateVerify ds) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeCertificateVerify $ toByteString_ ds
+	HandshakeRaw HandshakeTypeCertificateVerify $ B.toByteString ds
 handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString .
-	HandshakeRaw HandshakeTypeClientKeyExchange $ toByteString_ epms
+	HandshakeRaw HandshakeTypeClientKeyExchange $ B.toByteString epms
 handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =

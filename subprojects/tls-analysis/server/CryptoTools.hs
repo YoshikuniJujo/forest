@@ -24,7 +24,9 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.Cipher.AES
 
 import qualified MasterSecret as MS
--- import Tools
+
+import qualified Codec.Bytable as B
+import Codec.Bytable.BigEndian ()
 
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
@@ -62,7 +64,8 @@ decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
 calcMac hs sn mk inp =
-	MS.hmac hs 64 mk $ MS.word64ToByteString sn `BS.append` inp
+--	MS.hmac hs 64 mk $ MS.word64ToByteString sn `BS.append` inp
+	MS.hmac hs 64 mk $ B.toByteString sn `BS.append` inp
 
 padd :: BS.ByteString -> BS.ByteString
 padd bs = bs `BS.append` pd
