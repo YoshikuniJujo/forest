@@ -27,7 +27,6 @@ import Data.Word
 import NewTypes
 
 import qualified Codec.Bytable as B
-import Codec.Bytable.BigEndian
 
 type ExtensionList = [Extension]
 
@@ -145,9 +144,6 @@ data ExtensionType
 	| ExtensionTypeRaw Word16
 	deriving Show
 
-parseExtensionType :: Monad m => (Int -> m BS.ByteString) -> m ExtensionType
-parseExtensionType rd = (either error id . byteStringToExtensionType) `liftM` rd 2
-
 instance B.Bytable ExtensionType where
 	fromByteString = byteStringToExtensionType
 	toByteString = extensionTypeToByteString
@@ -209,9 +205,6 @@ instance B.Bytable NameType where
 	fromByteString = byteStringToNameType
 	toByteString = nameTypeToByteString
 
-parseNameType :: ByteStringM NameType
-parseNameType = either error id . byteStringToNameType <$> takeBS 1
-
 byteStringToNameType :: BS.ByteString -> Either String NameType
 byteStringToNameType bs = case BS.unpack bs of
 	[nt] -> Right $ case nt of
@@ -227,9 +220,6 @@ data EcPointFormat
 	= EcPointFormatUncompressed
 	| EcPointFormatRaw Word8
 	deriving Show
-
-parseEcPointFormat :: ByteStringM EcPointFormat
-parseEcPointFormat = either error id . byteStringToEcPointFormat <$> takeBS 1
 
 instance B.Bytable EcPointFormat where
 	fromByteString = byteStringToEcPointFormat

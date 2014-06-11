@@ -29,11 +29,11 @@ data ClientHello
 	deriving Show
 
 instance B.Bytable ClientHello where
-	fromByteString = B.evalBytableM parseClientHello_
+	fromByteString = B.evalBytableM parseClientHello
 	toByteString = clientHelloToByteString
 
-parseClientHello_ :: B.BytableM ClientHello
-parseClientHello_ = do
+parseClientHello :: B.BytableM ClientHello
+parseClientHello = do
 	(pv, r, sid) <- pvrsid'
 	cssl <- B.take 2
 	css <- B.list cssl $ B.take 2
@@ -43,15 +43,6 @@ parseClientHello_ = do
 	mel <- if e then return Nothing else Just <$> parseExtensionList'
 	return $ ClientHello pv r sid css cms mel
 
-parseClientHello :: ByteStringM ClientHello
-parseClientHello = do
-	(pv, r, sid) <- pvrsid takeBS
-	css <- parse
-	cms <- parse
-	e <- emptyBS
-	mel <- if e then return Nothing else Just <$> parseExtensionList takeBS
-	return $ ClientHello pv r sid css cms mel
-
 clientHelloToByteString :: ClientHello -> BS.ByteString
 clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString' pv,
@@ -59,8 +50,7 @@ clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	toByteString' sid,
 	toByteString css,
 	toByteString cms,
-	maybe "" extensionListToByteString mel
- ]
+	maybe "" extensionListToByteString mel ]
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello

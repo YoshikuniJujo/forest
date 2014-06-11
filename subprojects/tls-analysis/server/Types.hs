@@ -312,11 +312,6 @@ takeInt' rd = (byteStringToInt `liftM`) . rd
 takeInt :: Int -> ByteStringM Int
 takeInt = (byteStringToInt <$>) . takeBS
 
-takeWord16 :: ByteStringM Word16
-takeWord16 = do
-	[w1, w2] <- takeWords 2
-	return $ fromIntegral w1 `shift` 8 .|. fromIntegral w2
-
 takeLen :: Int -> ByteStringM ByteString
 takeLen n = do
 	len <- takeInt n
