@@ -3,7 +3,7 @@
 module Codec.Bytable (
 	Bytable(..),
 	BytableM(..), evalBytableM, execBytableM,
-	head, take, null
+	head, take, null, list,
 ) where
 
 import Prelude hiding (take, head, null)
@@ -39,6 +39,10 @@ class Bytable b where
 	fromByteString :: BS.ByteString -> Either String b
 	toByteString :: b -> BS.ByteString
 
+instance Bytable BS.ByteString where
+	fromByteString = Right
+	toByteString = id
+
 head :: BytableM Word8
 head = BytableM $ \bs -> case BS.uncons bs of
 	Just (h, t) -> Right (h, t)
@@ -53,3 +57,14 @@ take n = BytableM $ \bs -> do
 
 null :: BytableM Bool
 null  = BytableM $ \bs -> Right (BS.null bs, bs)
+
+list :: Int -> BytableM b -> BytableM [b]
+list n m = do
+	bs <- take n
+	case evalBytableM lst bs of
+		Right xs -> return xs
+		Left msg -> fail msg
+	where
+	lst = do
+		e <- null
+		if e then return [] else (:) <$> m <*> lst
