@@ -32,6 +32,13 @@ instance Bytable Word32 where
 			"Codec.Bytable.BigEndian: Bytable Word32: too large"
 	toByteString = integralToByteStringN 4
 
+instance Bytable Word64 where
+	fromByteString bs
+		| BS.length bs <= 8 = Right $ byteStringToNum bs
+		| otherwise = Left
+			"Codec.Bytable.BigEndian: Bytable Word32: too large"
+	toByteString = integralToByteStringN 8
+
 byteStringToNum :: (Num n, Bits n) => BS.ByteString -> n
 byteStringToNum = wordsToNum . reverse . BS.unpack
 
