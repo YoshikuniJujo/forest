@@ -8,7 +8,7 @@ module Certificate (
 	EncryptedPreMasterSecret(..),
 	DigitallySigned(..),
 
-	takeLen',
+	takeLen,
 ) where
 
 import Prelude hiding (concat)
@@ -84,28 +84,28 @@ data CertificateRequest
 	deriving Show
 
 instance B.Bytable CertificateRequest where
-	fromByteString = evalByteStringM parseCertificateRequest
+	fromByteString = B.evalBytableM parseCertificateRequest'
 	toByteString = certificateRequestToByteString
 
-parseCertificateRequest :: ByteStringM CertificateRequest
-parseCertificateRequest = do
-	ccts <- section 1 $ list1 parseClientCertificateType
-	hasas <- parse -- section 2 $ list1 parseHashSignatureAlgorithm
-	dns <- section 2 . list $ do
-		bs <- takeLen 2
-		asn1 <- case decodeASN1' DER bs of
-			Right a -> return a
-			Left err -> throwError $ show err
-		case fromASN1 asn1 of
-			Right (dn, _) -> return dn
-			Left err -> throwError err
+parseCertificateRequest' :: B.BytableM CertificateRequest
+parseCertificateRequest' = do
+	cctsl <- B.take 1
+	ccts <- B.list cctsl $ B.take 1
+	hasasl <- B.take 2
+	hasas <- B.list hasasl $ (,) <$> B.take 1 <*> B.take 1
+	dnsl <- B.take 2
+	dns <- B.list dnsl $ do
+		bs <- B.take =<< B.take 2
+		asn1 <- either (fail . show) return $ decodeASN1' DER bs
+		either (fail . show) (return . fst) $ fromASN1 asn1
 	return $ CertificateRequest ccts hasas dns
 
 certificateRequestToByteString :: CertificateRequest -> BS.ByteString
-certificateRequestToByteString (CertificateRequest ccts hsas bss) = BS.concat [
+certificateRequestToByteString (CertificateRequest ccts hasas bss) = BS.concat [
 	lenBodyToByteString 1 . BS.concat $
 		map clientCertificateTypeToByteString ccts,
-		toByteString hsas,
+		B.toByteString (fromIntegral $ 2 * length hasas :: Word16),
+		BS.concat $ concatMap (\(ha, sa) -> [B.toByteString ha, B.toByteString sa]) hasas,
 	lenBodyToByteString 2 . BS.concat $
 		map (lenBodyToByteString 2 . encodeASN1' DER . flip toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
@@ -114,9 +114,6 @@ data ClientCertificateType
 	= ClientCertificateTypeRsaSign
 	| ClientCertificateTypeRaw Word8
 	deriving Show
-
-parseClientCertificateType :: ByteStringM ClientCertificateType
-parseClientCertificateType = either error id . byteStringToClientCertificateType <$> takeBS 1
 
 instance B.Bytable ClientCertificateType where
 	fromByteString = byteStringToClientCertificateType
@@ -161,17 +158,17 @@ data DigitallySigned
 	deriving Show
 
 instance B.Bytable DigitallySigned where
-	fromByteString = evalByteStringM parseDigitallySigned
+	fromByteString = B.evalBytableM parseDigitallySigned
 	toByteString = digitallySignedToByteString
 
-parseDigitallySigned :: ByteStringM DigitallySigned
+parseDigitallySigned :: B.BytableM DigitallySigned
 parseDigitallySigned = DigitallySigned
-	<$> ((,) <$> parse <*> parse)
-	<*> takeLen 2
+	<$> ((,) <$> B.take 1 <*> B.take 1)
+	<*> (B.take =<< B.take 2)
 
 digitallySignedToByteString :: DigitallySigned -> BS.ByteString
 digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
-	toByteString ha,
-	toByteString sa,
+	B.toByteString ha,
+	B.toByteString sa,
 	lenBodyToByteString 2 bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs

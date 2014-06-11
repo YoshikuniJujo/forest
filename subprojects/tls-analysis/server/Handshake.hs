@@ -41,7 +41,7 @@ data Handshake
 takeHandshake :: Monad m => (Int -> m BS.ByteString) -> m Handshake
 takeHandshake rd = do
 	mt <- (either error id . B.fromByteString) `liftM` rd 1
-	bs <- takeLen' rd 3
+	bs <- takeLen rd 3
 	return $ case mt of
 		HandshakeTypeClientHello -> HandshakeClientHello .
 			either error id $ B.fromByteString bs

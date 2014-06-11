@@ -8,42 +8,22 @@ module Types (
 
 	NamedCurve(..),
 
-	SignatureAlgorithm(..),
-	HashAlgorithm(..),
-	Parsable(..),
-	Parsable'(..),
-	Parsable''(..),
+	SignatureAlgorithm(..), HashAlgorithm(..),
 
-	lenBodyToByteString, Word8, headBS,
+	lenBodyToByteString,
 
-	intToByteString,
-	byteStringToInt,
 	takeLen,
-	takeLen',
-	evalByteStringM,
-
-	ByteStringM,
-	section,
-	takeBS,
-
-	list,
-	list1,
-	throwError,
 ) where
 
 import Data.Word
 import qualified Data.ByteString as BS
--- import ByteStringMonad
 
 import Prelude hiding (head, take)
 import qualified Prelude
 
-import Control.Applicative ((<$>), (<*>))
-
 import Data.Bits
 import Data.ByteString (ByteString)
 import "monads-tf" Control.Monad.State
-import "monads-tf" Control.Monad.Error
 
 import Numeric
 
@@ -130,21 +110,20 @@ data HashAlgorithm
 	| HashAlgorithmRaw Word8
 	deriving Show
 
-instance Parsable HashAlgorithm where
-	parse = parseHashAlgorithm
+instance B.Bytable HashAlgorithm where
+	fromByteString = byteStringToHashAlgorithm
 	toByteString = hashAlgorithmToByteString
-	listLength _ = Just 1
 
-parseHashAlgorithm :: ByteStringM HashAlgorithm
-parseHashAlgorithm = do
-	ha <- headBS
-	return $ case ha of
+byteStringToHashAlgorithm :: BS.ByteString -> Either String HashAlgorithm
+byteStringToHashAlgorithm bs = case BS.unpack bs of
+	[ha] -> Right $ case ha of
 		2 -> HashAlgorithmSha1
 		3 -> HashAlgorithmSha224
 		4 -> HashAlgorithmSha256
 		5 -> HashAlgorithmSha384
 		6 -> HashAlgorithmSha512
 		_ -> HashAlgorithmRaw ha
+	_ -> Left "Type.byteStringToHashAlgorithm"
 
 hashAlgorithmToByteString :: HashAlgorithm -> ByteString
 hashAlgorithmToByteString HashAlgorithmSha1 = "\x02"
@@ -154,19 +133,18 @@ hashAlgorithmToByteString HashAlgorithmSha384 = "\x05"
 hashAlgorithmToByteString HashAlgorithmSha512 = "\x06"
 hashAlgorithmToByteString (HashAlgorithmRaw w) = BS.pack [w]
 
-instance Parsable SignatureAlgorithm where
-	parse = parseSignatureAlgorithm
+instance B.Bytable SignatureAlgorithm where
+	fromByteString = byteStringToSignatureAlgorithm
 	toByteString = signatureAlgorithmToByteString
-	listLength _ = Just 1
 
-parseSignatureAlgorithm :: ByteStringM SignatureAlgorithm
-parseSignatureAlgorithm = do
-	sa <- headBS
-	return $ case sa of
+byteStringToSignatureAlgorithm :: BS.ByteString -> Either String SignatureAlgorithm
+byteStringToSignatureAlgorithm bs = case BS.unpack bs of
+	[sa] -> Right $ case sa of
 		1 -> SignatureAlgorithmRsa
 		2 -> SignatureAlgorithmDsa
 		3 -> SignatureAlgorithmEcdsa
 		_ -> SignatureAlgorithmRaw sa
+	_ -> Left "Type.byteStringToSignatureAlgorithm"
 
 signatureAlgorithmToByteString :: SignatureAlgorithm -> ByteString
 signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
@@ -193,103 +171,13 @@ namedCurveToByteString (Secp384r1) = word16ToByteString 24
 namedCurveToByteString (Secp521r1) = word16ToByteString 25
 namedCurveToByteString (NamedCurveRaw nc) = word16ToByteString nc
 
-class Parsable a where
-	parse :: ByteStringM a
-	toByteString :: a -> ByteString
-	listLength :: a -> Maybe Int
+takeInt :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
+takeInt rd = (byteStringToInt `liftM`) . rd
 
-class Parsable' a where
-	parse' :: Monad m => (Int -> m BS.ByteString) -> m a
-	toByteString' :: a -> ByteString
-
-class Parsable'' a where
-	parse'' :: BS.ByteString -> Either String (a, BS.ByteString)
-	toByteString'' :: a -> ByteString
-
-class Endable m where
-	isEnd :: m Bool
-
-instance Endable ByteStringM where
-	isEnd = BS.null `liftM` get
-
-instance Parsable a => Parsable [a] where
-	parse = case listLength (undefined :: a) of
-		Just n -> section n $ list parse
-		_ -> list parse
-	toByteString = case listLength (undefined :: a) of
-		Just n -> lenBodyToByteString n . BS.concat . map toByteString
-		_ -> error "Parsable [a]: Not set list len"
-	listLength _ = Nothing
-
-instance (Parsable a, Parsable b) => Parsable (a, b) where
-	parse = (,) <$> parse <*> parse
-	toByteString (x, y) = toByteString x `BS.append` toByteString y
-	listLength _ = (+)
-		<$> listLength (undefined :: a)
-		<*> listLength (undefined :: b)
-
-type ByteStringM = ErrorT String (State ByteString)
-
-evalByteStringM :: ByteStringM a -> ByteString -> Either String a
-evalByteStringM m bs = case runState (runErrorT m) bs of
-	(Right x, "") -> Right x
-	(Right _, rest) -> Left $ "rest: " ++ show rest
-	(err, _) -> err
-
-headBS :: ByteStringM Word8
-headBS = do
-	msep <- lift $ gets BS.uncons
-	case msep of
-		Just (h, t) -> lift (put t) >> return h
-		_ -> throwError "ByteStringMonad.head"
-
-takeBS :: Int -> ByteStringM ByteString
-takeBS len = do
-	(t, d) <- lift $ gets (BS.splitAt len)
-	if BS.length t /= len
-	then throwError $ "ByteStringMonad.takeBS:\n" ++
-		"expected: " ++ show len ++ "bytes\n" ++
-		"actual  : " ++ show (BS.length t) ++ "bytes\n"
-	else do
-		lift $ put d
-		return t
-
-takeWords' :: Monad m => (Int -> m BS.ByteString) -> Int -> m [Word8]
-takeWords' = ((BS.unpack `liftM`) .)
-
-takeInt' :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
-takeInt' rd = (byteStringToInt `liftM`) . rd
-
-takeInt :: Int -> ByteStringM Int
-takeInt = (byteStringToInt <$>) . takeBS
-
-takeLen :: Int -> ByteStringM ByteString
-takeLen n = do
-	len <- takeInt n
-	takeBS len
-
-list1 :: (Monad m, Endable m) => m a -> m [a]
-list1 m = do
-	x <- m
-	e <- isEnd
-	if e then return [x] else (x :) `liftM` list1 m
-
-list :: (Monad m, Endable m) => m a -> m [a]
-list m = do
-	e <- isEnd
-	if e then return [] else (:) `liftM` m `ap` list m
-
-takeLen' :: Monad m => (Int -> m BS.ByteString) -> Int -> m ByteString
-takeLen' rd n = do
-	l <- takeInt' rd n
+takeLen :: Monad m => (Int -> m BS.ByteString) -> Int -> m ByteString
+takeLen rd n = do
+	l <- takeInt rd n
 	rd l
-
-section :: Int -> ByteStringM a -> ByteStringM a
-section n m = do
-	e <- evalByteStringM m <$> takeLen n
-	case e of
-		Right x -> return x
-		Left err -> throwError err
 
 word16ToByteString :: Word16 -> ByteString
 word16ToByteString w = BS.pack [fromIntegral (w `shiftR` 8), fromIntegral w]
@@ -316,24 +204,9 @@ instance Show Random where
 	show (Random r) =
 		"(Random " ++ concatMap (`showHex` "") (BS.unpack r) ++ ")"
 
-instance Parsable Random where
-	parse = parseRandom
-	toByteString = randomToByteString
-	listLength _ = Nothing
-
 instance B.Bytable Random where
 	fromByteString = Right . Random
 	toByteString (Random bs) = bs
-
-parseRandom :: ByteStringM Random
-parseRandom = Random <$> takeBS 32
-
-instance Parsable' Random where
-	parse' rd = Random `liftM` rd 32
-	toByteString' = randomToByteString
-
-randomToByteString :: Random -> BS.ByteString
-randomToByteString (Random r) = r
 
 byteStringToCipherSuite :: BS.ByteString -> Either String CipherSuite
 byteStringToCipherSuite bs = case BS.unpack bs of
@@ -352,25 +225,9 @@ byteStringToCipherSuite bs = case BS.unpack bs of
 		_ -> CipherSuiteRaw w1 w2
 	_ -> Left "Types.byteStringToCipherSuite"
 
-parseCipherSuite :: ByteStringM CipherSuite
-parseCipherSuite = either error id . byteStringToCipherSuite <$> takeBS 2
-
-parseCipherSuite' :: Monad m => (Int -> m BS.ByteString) -> m CipherSuite
-parseCipherSuite' rd =
-	(either error id . byteStringToCipherSuite) `liftM` takeLen' rd 2
-
 instance B.Bytable CipherSuite where
 	fromByteString = byteStringToCipherSuite
 	toByteString = cipherSuiteToByteString
-
-instance Parsable' CipherSuite where
-	parse' = parseCipherSuite'
-	toByteString' = cipherSuiteToByteString
-
-instance Parsable CipherSuite where
-	parse = parseCipherSuite
-	toByteString = cipherSuiteToByteString
-	listLength _ = Just 2
 
 cipherSuiteToByteString :: CipherSuite -> BS.ByteString
 cipherSuiteToByteString (CipherSuite KeyExNULL MsgEncNULL) = "\x00\x00"
@@ -386,12 +243,6 @@ cipherSuiteToByteString (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256) = "\xc0\x23
 cipherSuiteToByteString (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 cipherSuiteToByteString (CipherSuiteRaw w1 w2) = BS.pack [w1, w2]
 cipherSuiteToByteString _ = error "cannot identified"
-
-instance Parsable' Version where
-	parse' rd = do
-		[vmjr, vmnr] <- takeWords' rd 2
-		return $ Version vmjr vmnr
-	toByteString' = versionToByteString
 
 instance B.Bytable Version where
 	fromByteString bs = case BS.unpack bs of

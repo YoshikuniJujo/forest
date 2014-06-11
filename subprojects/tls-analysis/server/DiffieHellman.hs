@@ -7,7 +7,7 @@ module DiffieHellman (
 	Base(..),
 	SecretKey(..),
 
-	byteStringToInteger,
+--	byteStringToInteger,
 
 	ServerKeyExchange(..),
 	addSign,
@@ -22,6 +22,7 @@ import System.IO.Unsafe
 import "crypto-random" Crypto.Random
 
 import KeyExchange
+import qualified Codec.Bytable as B
 
 -- import ByteStringMonad
 
@@ -39,15 +40,13 @@ dhprivate b = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	let	(pr, _g') = generateSecret g b
 	return pr
-	
+
 decodeParams :: BS.ByteString -> Either String DH.Params
-decodeParams = evalByteStringM $ do
-	dhP <- byteStringToInteger <$> takeLen 2
-	dhG <- byteStringToInteger <$> takeLen 2
-	return (DH.Params dhP dhG)
+decodeParams = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
 
 decodePublicNumber :: BS.ByteString -> Either String DH.PublicNumber
-decodePublicNumber = Right . fromInteger . byteStringToInteger . BS.drop 2
+decodePublicNumber =
+	Right . fromInteger . either error id . B.fromByteString . BS.drop 2
 
 encodeParams :: DH.Params -> BS.ByteString
 encodeParams (DH.Params dhP dhG) = BS.concat [

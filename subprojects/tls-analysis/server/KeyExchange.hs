@@ -5,21 +5,17 @@ module KeyExchange (
 	Base(..), SecretKey(..),
 
 	integerToByteString,
-	byteStringToInteger,
-
-	decodeSignature,
-
-	ServerKeyExchange(..),
-	addSign,
-	serverKeyExchangeToByteString,
-
-	Parsable(..),
-	headBS,
-	NamedCurve(..),
+--	byteStringToInteger,
 	lenBodyToByteString,
 
-	takeLen,
-	evalByteStringM,
+	decodeSignature,
+	addSign,
+
+	ServerKeyExchange(..),
+	serverKeyExchangeToByteString,
+
+	NamedCurve(..),
+
 ) where
 
 import Data.Bits
@@ -35,8 +31,10 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 
 -- import ByteStringMonad
 import Types
+import qualified Codec.Bytable as B
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import Data.Word
 
 class SecretKey sk where
 	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
@@ -90,12 +88,8 @@ serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString
 	(ServerKeyExchange params dhYs hashA sigA sn) =
 	BS.concat [
-		params, dhYs, toByteString hashA, toByteString sigA,
+		params, dhYs, B.toByteString hashA, B.toByteString sigA,
 		lenBodyToByteString 2 sn ]
-
-wordsToInteger :: [Word8] -> Integer
-wordsToInteger [] = 0
-wordsToInteger (w : ws) = fromIntegral w .|. (wordsToInteger ws `shiftL` 8)
 
 integerToWords :: Integer -> [Word8]
 integerToWords 0 = []
@@ -103,9 +97,6 @@ integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
 
 integerToByteString :: Integer -> BS.ByteString
 integerToByteString = BS.pack . reverse . integerToWords
-
-byteStringToInteger :: BS.ByteString -> Integer
-byteStringToInteger = wordsToInteger . reverse . BS.unpack
 
 class Base b where
 	type Param b

@@ -41,6 +41,8 @@ import qualified EcDhe as ECDHE
 
 import Control.Concurrent.STM
 
+import qualified Codec.Bytable as B
+
 version :: Version
 version = Version 3 3
 
@@ -370,8 +372,8 @@ certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	point s = let 
 		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
 		ECDSA.Point
-			(DH.byteStringToInteger x)
-			(DH.byteStringToInteger y)
+			(either error id $ B.fromByteString x)
+			(either error id $ B.fromByteString y)
 	pub = ECDSA.PublicKey ECDHE.secp256r1 . point
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()

@@ -53,7 +53,8 @@ encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
 decodePublicPoint :: Curve -> BS.ByteString -> Point
 decodePublicPoint _ bs = case BS.uncons $ BS.tail bs of
 	Just (4, rest) -> let (x, y) = BS.splitAt 32 rest in
-		Point (byteStringToInteger x) (byteStringToInteger y)
+		Point	(either error id $ B.fromByteString x)
+			(either error id $ B.fromByteString y)
 	_ -> error "TlsServer.decodePublicPoint"
 
 calculatePublicPoint :: Curve -> Integer -> Point
@@ -62,7 +63,7 @@ calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
 encodeCurve :: Curve -> BS.ByteString
 encodeCurve c
 	| c == secp256r1 =
-		toByteString NamedCurve `BS.append` B.toByteString Secp256r1
+		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
 	| otherwise = error "TlsServer.encodeCurve: not implemented"
 
 data EcCurveType
@@ -72,16 +73,9 @@ data EcCurveType
 	| EcCurveTypeRaw Word8
 	deriving Show
 
-instance Parsable EcCurveType where
-	parse = do
-		w <- headBS
-		return $ case w of
-			1 -> ExplicitPrime
-			2 -> ExplicitChar2
-			3 -> NamedCurve
-			_ -> EcCurveTypeRaw w
+instance B.Bytable EcCurveType where
+	fromByteString = undefined
 	toByteString ExplicitPrime = BS.pack [1]
 	toByteString ExplicitChar2 = BS.pack [2]
 	toByteString NamedCurve = BS.pack [3]
 	toByteString (EcCurveTypeRaw w) = BS.pack [w]
-	listLength _ = Nothing

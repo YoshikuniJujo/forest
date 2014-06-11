@@ -46,6 +46,9 @@ import "crypto-random" Crypto.Random
 
 import Data.HandleLike
 
+import qualified Codec.Bytable as B
+import Data.Word
+
 readBufContentType :: HandleLike h => (Version -> Bool) -> TlsIo h gen ContentType
 readBufContentType vc = getContentType vc readFragment
 
@@ -60,7 +63,7 @@ readFragment :: HandleLike h => TlsIo h gen (ContentType, Version, BS.ByteString
 readFragment = do
 	ct <- byteStringToContentType `liftM` read 1
 	v <- byteStringToVersion `liftM` read 2
-	ebody <- read . byteStringToInt =<< read 2
+	ebody <- read . either error id . B.fromByteString =<< read 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct v ebody
 	return (ct, v, body)
@@ -72,4 +75,5 @@ writeByteString ct bs = do
 	write $ BS.concat [
 		contentTypeToByteString ct,
 		versionToByteString (Version 3 3),
-		intToByteString 2 $ BS.length enc, enc ]
+		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
+--		intToByteString 2 $ BS.length enc, enc ]

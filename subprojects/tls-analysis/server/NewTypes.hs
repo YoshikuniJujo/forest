@@ -9,8 +9,6 @@ module NewTypes (
 	CipherSuiteMsgEnc(..),
 	Version(..),
 	Random(..),
-	Parsable(..),
-	Parsable'(..),
 ) where
 
 import Types

@@ -34,10 +34,10 @@ module TlsIo (
 	read,
 	CT.contentTypeToByteString,
 	CT.versionToByteString,
-	CT.intToByteString,
+--	CT.intToByteString,
 	CT.byteStringToContentType,
 	CT.byteStringToVersion,
-	CT.byteStringToInt,
+--	CT.byteStringToInt,
 
 	CT.ContentType(..),
 	CT.CipherSuite(..), CT.CipherSuiteKeyEx(..), CT.CipherSuiteMsgEnc(..),

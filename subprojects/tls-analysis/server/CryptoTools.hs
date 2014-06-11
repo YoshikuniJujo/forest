@@ -3,11 +3,14 @@
 module CryptoTools (
 	encryptMessage, decryptMessage, hashSha1, hashSha256,
 
-	MS.MSVersion(..), MS.versionToVersion,
+	MS.MSVersion(..),
+	MS.versionToVersion,
 	MS.ClientRandom(..), MS.ServerRandom(..),
 	MS.generateMasterSecret, MS.generateKeyBlock, MS.generateFinished,
 
-	MS.lenBodyToByteString, MS.intToByteString, MS.byteStringToInt,
+	MS.lenBodyToByteString,
+--	MS.intToByteString,
+--	MS.byteStringToInt,
 	MS.Version(..), MS.ContentType(..),
 	MS.byteStringToVersion, MS.byteStringToContentType,
 	MS.versionToByteString, MS.contentTypeToByteString,

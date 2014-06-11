@@ -1,14 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
--- |
--- Module      : Network.TLS.Packet
--- License     : BSD-style
--- Maintainer  : Vincent Hanquez <vincent@snarc.org>
--- Stability   : experimental
--- Portability : unknown
---
--- the Packet module contains everything necessary to serialize and deserialize things
--- with only explicit parameters, no TLS state is involved here.
---
 module MasterSecret (
 	versionToVersion,
 	ClientRandom(..), ServerRandom(..),
@@ -19,33 +9,14 @@ module MasterSecret (
 	P.Version(..), P.versionToByteString, P.byteStringToVersion,
 	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
 
---	P.Fragment(..),
 	P.Random(..),
 	P.CipherSuite(..), P.CipherSuiteKeyEx(..), P.CipherSuiteMsgEnc(..),
 
---	P.Random(..),
---	P.CipherSuite(..),
---	P.contentTypeToByteString,
---	P.ContentType(..),
---	P.byteStringToVersion,
-
---	P.Version(..),
---	P.versionToByteString,
---	P.byteStringToContentType,
---	P.Version(..),
-
 	hmac,
 
---	P.list1, P.whole, P.ByteStringM, P.evalByteStringM, P.headBS,
-
---	P.word64ToByteString,
 	P.lenBodyToByteString,
-
-	P.byteStringToInt, P.intToByteString,
---	P.showKeySingle, P.showKey,
 ) where
 
--- import MAC
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
@@ -53,14 +24,9 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
 
--- import qualified Basic as P (Version(..))
 import qualified Types as P
 
--- import qualified Crypto.Hash.MD5 as MD5
--- import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
--- import qualified Data.ByteString as B
--- import Data.ByteString (ByteString)
 import Data.Bits (xor)
 
 versionToVersion :: P.Version -> Maybe MSVersion
@@ -133,14 +99,6 @@ generateKeyBlock TLS11 = generateKeyBlockTls prfMd5Sha1
 generateKeyBlock TLS12 = generateKeyBlockTls prfSha256
 
 type HMAC = ByteString -> ByteString -> ByteString
-
-{-
-macSSL :: (ByteString -> ByteString) -> HMAC
-macSSL f secret msg = f $! B.concat [ secret, B.replicate padlen 0x5c,
-                        f $! B.concat [ secret, B.replicate padlen 0x36, msg ] ]
-  where -- get the type of algorithm out of the digest length by using the hash fct.
-        padlen = if B.length (f B.empty) == 16 then 48 else 40
-	-}
 
 hmac :: (ByteString -> ByteString) -> Int -> HMAC
 hmac f bl secret msg =

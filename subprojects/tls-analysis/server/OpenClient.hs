@@ -37,10 +37,10 @@ module OpenClient (
 	read,
 	contentTypeToByteString,
 	versionToByteString,
-	intToByteString,
+--	intToByteString,
 	byteStringToContentType,
 	byteStringToVersion,
-	byteStringToInt,
+--	byteStringToInt,
 ) where
 
 import Prelude hiding (read)
@@ -58,6 +58,7 @@ import Data.HandleLike
 import TlsIo
 -- import Types
 import ClientState
+import qualified Codec.Bytable as B
 
 import "monads-tf" Control.Monad.State
 
@@ -218,7 +219,8 @@ tGetWholeWithCtSt tc = do
 		_ -> lift $ hlError h "OpenClient.tGetWholeWithCT"
 	ct <- byteStringToContentType `liftM` lift (hlGet h 1)
 	v <- byteStringToVersion `liftM` lift (hlGet h 2)
-	enc <- lift . hlGet h . byteStringToInt =<< lift (hlGet h 2)
+	enc <- lift . hlGet h . either error id . B.fromByteString
+		=<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
 	if BS.null enc then return (ct, "") else do
