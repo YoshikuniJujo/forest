@@ -1,6 +1,10 @@
 {-# LANGUAGE TupleSections #-}
 
-module Codec.Bytable (BytableM(..), Bytable(..), head, take, null) where
+module Codec.Bytable (
+	Bytable(..),
+	BytableM(..), evalBytableM, execBytableM,
+	head, take, null
+) where
 
 import Prelude hiding (take, head, null)
 import Control.Applicative(Applicative(..), (<$>))
@@ -10,6 +14,12 @@ import qualified Data.ByteString as BS
 
 data BytableM a = BytableM {
 	runBytableM :: BS.ByteString -> Either String (a, BS.ByteString) }
+
+evalBytableM :: BytableM a -> BS.ByteString -> Either String a
+evalBytableM m bs = fst <$> runBytableM m bs
+
+execBytableM :: BytableM a -> BS.ByteString -> Either String BS.ByteString
+execBytableM m bs = snd <$> runBytableM m bs
 
 instance Monad BytableM where
 	return x = BytableM $ \bs -> Right (x, bs)
