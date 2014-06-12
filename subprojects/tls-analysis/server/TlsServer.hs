@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
 	ValidateHandle(..),
@@ -143,28 +144,21 @@ instance DH.Base NoDH where
 	generateSecret = undefined
 	calculatePublic = undefined
 	calculateCommon = undefined
-	encodeBase = undefined
-	decodeBase = undefined
 	encodePublic = undefined
 	decodePublic = undefined
 
-	{-
-handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, HandleLike h) =>
-	Bool -> b -> Version -> sk ->
-	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
-handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen) =>
-	Bool -> b -> Version -> sk ->
-	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo Handle gen [String]
-	-}
+instance B.Bytable NoDH where
+	fromByteString = undefined
+	toByteString = undefined
 
 lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
-handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
+handshake ::
+	(DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
 	Bool -> b -> (Word8, Word8) -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
---	h <- getHandle
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
 		let (pn, gen') = DH.generateSecret gen ps
@@ -232,7 +226,8 @@ serverHello csssv css cc ccec = do
 	writeByteString ct bs
 	updateHash bs
 
-serverKeyExchange :: HandleLike h => (DH.Base b, DH.SecretKey sk, CPRG gen) =>
+serverKeyExchange ::
+	(HandleLike h, DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen) =>
 	sk -> b -> DH.Secret b -> TlsIo h gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
@@ -450,14 +445,15 @@ readContent vc = do
 		_ -> return ()
 	return c
 	
-sndServerKeyExchange :: (HandleLike h, DH.Base b, DH.SecretKey sk, CPRG gen) =>
+sndServerKeyExchange ::
+	(HandleLike h, DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen) =>
 	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
 			addSign pk cr sr $
 			ServerKeyExchange
-				(DH.encodeBase ps)
+				(B.toByteString ps)
 				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
 				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
@@ -541,3 +537,27 @@ serverKeyExchangeToByteString
 	BS.concat [
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
 		B.addLength (undefined :: Word16) sn ]
+
+instance B.Bytable ECDHE.Curve where
+	fromByteString = undefined
+	toByteString = encodeCurve
+
+encodeCurve :: ECDHE.Curve -> BS.ByteString
+encodeCurve c
+	| c == ECDHE.secp256r1 =
+		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
+	| otherwise = error "TlsServer.encodeCurve: not implemented"
+
+data EcCurveType
+	= ExplicitPrime
+	| ExplicitChar2
+	| NamedCurve
+	| EcCurveTypeRaw Word8
+	deriving Show
+
+instance B.Bytable EcCurveType where
+	fromByteString = undefined
+	toByteString ExplicitPrime = BS.pack [1]
+	toByteString ExplicitChar2 = BS.pack [2]
+	toByteString NamedCurve = BS.pack [3]
+	toByteString (EcCurveTypeRaw w) = BS.pack [w]

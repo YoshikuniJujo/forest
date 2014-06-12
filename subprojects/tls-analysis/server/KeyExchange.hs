@@ -71,8 +71,6 @@ class Base b where
 	calculatePublic :: b -> Secret b -> Public b
 	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
-	encodeBase :: b -> BS.ByteString
-	decodeBase :: BS.ByteString -> b
 	encodePublic :: b -> Public b -> BS.ByteString
 	decodePublic :: b -> BS.ByteString -> Public b
 

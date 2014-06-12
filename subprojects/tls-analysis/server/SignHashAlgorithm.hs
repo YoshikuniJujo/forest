@@ -11,9 +11,6 @@ import qualified Data.ByteString as BS
 import Prelude hiding (head, take)
 import qualified Prelude
 
-import Data.Bits
-import Data.ByteString (ByteString)
-
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 

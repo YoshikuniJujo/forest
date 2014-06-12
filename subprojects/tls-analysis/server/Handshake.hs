@@ -13,6 +13,7 @@ module Handshake (
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	EncryptedPreMasterSecret(..),
 	DigitallySigned(..),
+	NamedCurve(..),
 ) where
 
 import qualified Codec.Bytable as B
