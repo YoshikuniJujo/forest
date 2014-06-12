@@ -27,11 +27,14 @@ import Crypto.Hash.SHA256 as SHA256
 
 import Random
 
+import System.Directory
+
 main :: IO ()
 main = do
 	(port, css, tstd, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn port
 	let g0 :: StdGen = cprgCreate undefined
+	createDirectoryIfMissing False tstd
 	void . forever $ do
 		(h, _, _) <- liftIO $ accept soc
 		hSetBuffering h NoBuffering
@@ -47,14 +50,10 @@ data DebugHandle = DebugHandle Handle Handle Handle deriving Show
 instance HandleLike DebugHandle where
 	type HandleMonad DebugHandle = IO
 	hlPut (DebugHandle h _ sv) bs = do
---		BSC.putStrLn $ hexdump bs
---		BS.appendFile (fp <.> "srv") bs
 		BS.hPut sv bs
 		hlPut h bs
 	hlGet (DebugHandle h cl _) n = do
 		bs <- hlGet h n
---		BSC.putStrLn $ hexdump bs
---		BS.appendFile (fp <.> "clt") bs
 		BS.hPut cl bs
 		return bs
 	hlClose (DebugHandle h cl sv) = hlClose h >> hlClose cl >> hlClose sv
