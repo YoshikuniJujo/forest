@@ -4,6 +4,7 @@ module Codec.Bytable.BigEndian () where
 
 import Data.Bits
 import Data.Word
+import Data.Word.Word24
 import Codec.Bytable
 import qualified Data.ByteString as BS
 
@@ -24,6 +25,13 @@ instance Bytable Word16 where
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word16: too large"
 	toByteString = integralToByteStringN 2
+
+instance Bytable Word24 where
+	fromByteString bs
+		| BS.length bs <= 3 = Right $ byteStringToNum bs
+		| otherwise = Left
+			"Codec.Bytable.BigEndian: Bytable Word24: too large"
+	toByteString = integralToByteStringN 3
 
 instance Bytable Word32 where
 	fromByteString bs
