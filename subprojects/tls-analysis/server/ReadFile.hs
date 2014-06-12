@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies #-}
 
 module ReadFile (
-	readRsaKey, readEcPrivKey, readCertificateChain, readCertificateStore,
+	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore,
 ) where
 
 import Control.Applicative
@@ -31,8 +31,8 @@ readCertificateStore :: [FilePath] -> IO CertificateStore
 readCertificateStore fps =
 	makeCertificateStore . concat <$> mapM readSignedObject fps
 
-readEcPrivKey :: FilePath -> IO PrivateKey
-readEcPrivKey fp = do
+readEcdsaKey :: FilePath -> IO PrivateKey
+readEcdsaKey fp = do
 	Right [pem] <- pemParseBS <$> BS.readFile fp
 	let	c = pemContent pem
 		_ws = BS.unpack c
