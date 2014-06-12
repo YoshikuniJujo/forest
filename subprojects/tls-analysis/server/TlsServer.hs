@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
@@ -11,6 +11,7 @@ module TlsServer (
 	DH.SecretKey,
 ) where
 
+import Control.Applicative
 import Control.Monad
 import Control.Exception
 import Data.Maybe
@@ -144,10 +145,12 @@ instance DH.Base NoDH where
 	generateSecret = undefined
 	calculatePublic = undefined
 	calculateCommon = undefined
-	encodePublic = undefined
-	decodePublic = undefined
 
 instance B.Bytable NoDH where
+	fromByteString = undefined
+	toByteString = undefined
+
+instance B.Bytable () where
 	fromByteString = undefined
 	toByteString = undefined
 
@@ -155,7 +158,8 @@ lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshake ::
-	(DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
+	(DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen, ValidateHandle h,
+		B.Bytable (DH.Public b)) =>
 	Bool -> b -> (Word8, Word8) -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
@@ -227,7 +231,8 @@ serverHello csssv css cc ccec = do
 	updateHash bs
 
 serverKeyExchange ::
-	(HandleLike h, DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen) =>
+	(HandleLike h, DH.Base b, B.Bytable b, B.Bytable (DH.Public b),
+		DH.SecretKey sk, CPRG gen) =>
 	sk -> b -> DH.Secret b -> TlsIo h gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
@@ -446,7 +451,8 @@ readContent vc = do
 	return c
 	
 sndServerKeyExchange ::
-	(HandleLike h, DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen) =>
+	(HandleLike h, DH.SecretKey sk, CPRG gen,
+	DH.Base b, B.Bytable b, B.Bytable (DH.Public b)) =>
 	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
@@ -454,21 +460,21 @@ sndServerKeyExchange ps dhsk pk sr = do
 			addSign pk cr sr $
 			ServerKeyExchange
 				(B.toByteString ps)
-				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
+				(B.toByteString $ DH.calculatePublic ps dhsk)
 				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
 	updateHash bs
 
-rcvClientKeyExchange :: (HandleLike h, DH.Base b) =>
+rcvClientKeyExchange :: (HandleLike h, DH.Base b, B.Bytable (DH.Public b)) =>
 	b -> DH.Secret b -> Version -> TlsIo h gen ()
 rcvClientKeyExchange dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
-			let pms = DH.calculateCommon dhps dhpn $ DH.decodePublic dhps epms
+			let Right pms = DH.calculateCommon dhps dhpn <$> B.fromByteString epms
 --			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal

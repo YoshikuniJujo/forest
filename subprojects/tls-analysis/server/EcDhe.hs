@@ -36,8 +36,9 @@ instance Base Curve where
 	calculatePublic = calculatePublicPoint
 	calculateCommon = calculateShared
 
-	encodePublic = encodePublicPoint
-	decodePublic = decodePublicPoint
+instance B.Bytable Point where
+	fromByteString = Right . decodePublicPoint undefined
+	toByteString = encodePublicPoint undefined
 
 calculateShared :: Curve -> Integer -> Point -> BS.ByteString
 calculateShared c sn pp =

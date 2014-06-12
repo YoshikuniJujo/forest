@@ -69,9 +69,11 @@ instance Base DH.Params where
 	calculatePublic = DH.calculatePublic
 	calculateCommon ps sn pn = B.toByteString .
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
-	encodePublic _ = encodePublicNumber
-	decodePublic _ bs = let Right pn = decodePublicNumber bs in pn
 
 instance B.Bytable DH.Params where
 	fromByteString = decodeParams
 	toByteString = encodeParams
+
+instance B.Bytable DH.PublicNumber where
+	fromByteString = decodePublicNumber
+	toByteString = encodePublicNumber

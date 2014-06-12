@@ -71,9 +71,6 @@ class Base b where
 	calculatePublic :: b -> Secret b -> Public b
 	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
-	encodePublic :: b -> Public b -> BS.ByteString
-	decodePublic :: b -> BS.ByteString -> Public b
-
 decodeSignature :: BS.ByteString -> ECDSA.Signature
 decodeSignature bs = let
 	Right [Start Sequence, IntVal r, IntVal s, End Sequence] = decodeASN1' DER bs
