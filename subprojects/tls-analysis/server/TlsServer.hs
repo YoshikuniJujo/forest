@@ -140,25 +140,6 @@ hello csssv cc ccec = do
 	serverHello csssv css cc ccec
 	return cv
 
-data NoDH = NoDH deriving Show
-
-instance Base NoDH where
-	type Param NoDH = ()
-	type Secret NoDH = ()
-	type Public NoDH = ()
-	generateBase = undefined
-	generateSecret = undefined
-	calculatePublic = undefined
-	calculateCommon = undefined
-
-instance B.Bytable NoDH where
-	fromByteString = undefined
-	toByteString = undefined
-
-instance B.Bytable () where
-	fromByteString = undefined
-	toByteString = undefined
-
 lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 

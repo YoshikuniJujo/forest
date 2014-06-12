@@ -1,6 +1,6 @@
 mkTestFile.hs                           65
 MyServer.hs                             34
-TlsServer.hs                            530
+TlsServer.hs                            514
 Handshake.hs                            106
 Hello.hs                                93
 Extension.hs                            169
@@ -14,17 +14,15 @@ CryptoTools.hs                          66
 MasterSecret.hs                         97
 ContentType.hs                          26
 ClientState.hs                          62
-DiffieHellman.hs                        44
-KeyExchange.hs                          10
-EcDhe.hs                                43
+KeyExchange.hs                          100
 CommandLine.hs                          80
 ReadFile.hs                             47
 Random.hs                               15
-total                                   2339
+total                                   2326
 
 runServer.hs                            18
 MyServer.hs                             34
-TlsServer.hs                            530
+TlsServer.hs                            514
 Handshake.hs                            106
 Hello.hs                                93
 Extension.hs                            169
@@ -38,16 +36,14 @@ CryptoTools.hs                          66
 MasterSecret.hs                         97
 ContentType.hs                          26
 ClientState.hs                          62
-DiffieHellman.hs                        44
-KeyExchange.hs                          10
-EcDhe.hs                                43
+KeyExchange.hs                          100
 CommandLine.hs                          80
 ReadFile.hs                             47
-total                                   2277
+total                                   2264
 
 serverTest.hs                           40
 MyServer.hs                             34
-TlsServer.hs                            530
+TlsServer.hs                            514
 Handshake.hs                            106
 Hello.hs                                93
 Extension.hs                            169
@@ -61,11 +57,9 @@ CryptoTools.hs                          66
 MasterSecret.hs                         97
 ContentType.hs                          26
 ClientState.hs                          62
-DiffieHellman.hs                        44
-KeyExchange.hs                          10
-EcDhe.hs                                43
+KeyExchange.hs                          100
 CommandLine.hs                          80
 ReadFile.hs                             47
 Random.hs                               15
-total                                   2314
+total                                   2301
 

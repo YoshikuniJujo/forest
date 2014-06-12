@@ -1,7 +1,9 @@
 {-# LANGUAGE TypeFamilies, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module KeyExchange (Base(..), secp256r1, Curve(..), dhparams) where
+module KeyExchange (
+	Base(..), NoDH(..), Curve(..), secp256r1, DH.Params(..), dhparams
+) where
 
 import "crypto-random" Crypto.Random (CPRG(..))
 import qualified Data.ByteString as BS
@@ -123,3 +125,22 @@ instance B.Bytable DH.Params where
 instance B.Bytable DH.PublicNumber where
 	fromByteString = decodePublicNumber
 	toByteString = encodePublicNumber
+
+data NoDH = NoDH deriving Show
+
+instance Base NoDH where
+	type Param NoDH = ()
+	type Secret NoDH = ()
+	type Public NoDH = ()
+	generateBase = undefined
+	generateSecret = undefined
+	calculatePublic = undefined
+	calculateCommon = undefined
+
+instance B.Bytable NoDH where
+	fromByteString = undefined
+	toByteString = undefined
+
+instance B.Bytable () where
+	fromByteString = undefined
+	toByteString = undefined
