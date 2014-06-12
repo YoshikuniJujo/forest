@@ -19,6 +19,13 @@ instance Bytable Integer where
 	fromByteString bs = Right $ byteStringToNum bs
 	toByteString = integralToByteString
 
+instance Bytable Word8 where
+	fromByteString bs
+		| BS.length bs <= 1 = Right $ byteStringToNum bs
+		| otherwise = Left
+			"Codec.Bytable.BigEndian: Bytable Word8: too large"
+	toByteString = integralToByteStringN 1
+
 instance Bytable Word16 where
 	fromByteString bs
 		| BS.length bs <= 2 = Right $ byteStringToNum bs

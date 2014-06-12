@@ -4,7 +4,7 @@ module Codec.Bytable (
 	Bytable(..),
 	Parsable(..),
 	BytableM(..), evalBytableM, execBytableM,
-	head, take, null, list,
+	head, take, null, list, addLength,
 ) where
 
 import Prelude hiding (take, head, null)
@@ -72,3 +72,7 @@ list n m = do
 	lst = do
 		e <- null
 		if e then return [] else (:) <$> m <*> lst
+
+addLength :: (Bytable n, Num n) => n -> BS.ByteString -> BS.ByteString
+addLength t bs =
+	toByteString (fromIntegral (BS.length bs) `asTypeOf` t) `BS.append` bs
