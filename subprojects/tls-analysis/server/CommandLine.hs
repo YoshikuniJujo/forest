@@ -29,10 +29,12 @@ readCommandLine :: [String] -> IO (
 	(ECDSA.PrivateKey, X509.CertificateChain),
 	Maybe X509.CertificateStore )
 readCommandLine args = do
-	let	(opts, kfp : cfp : _, errs) = getOpt Permute options args
+	let	(opts, _, errs) = getOpt Permute options args
 		css = optsToCipherSuites opts
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
 	let	port = optsToPort opts
+		kfp = optsToKeyFile opts
+		cfp = optsToCertFile opts
 		tstd = optsToTestDirectory opts
 	rsa <- (,) <$> readRsaKey kfp <*> readCertificateChain cfp
 	ec <- (,) <$> readEcPrivKey ecdsaKeyFile
@@ -44,6 +46,8 @@ readCommandLine args = do
 
 data Option
 	= OptPort PortID
+	| OptKeyFile FilePath
+	| OptCertFile FilePath
 	| OptDisableClientCert
 	| OptLevel CipherSuiteLevel
 	| OptTestDirectory FilePath
@@ -61,6 +65,8 @@ options = [
 		(ReqArg (OptPort . PortNumber . fromIntegral .
 			(read :: String -> Int)) "port number")
 		"set port number",
+	Option "k" ["key-file"] (ReqArg OptKeyFile "key file") "set key file",
+	Option "c" ["cert-file"] (ReqArg OptCertFile "cert file") "set cert file",
 	Option "d" ["disable-client-cert"]
 		(NoArg OptDisableClientCert) "disable client certification",
 	Option "l" ["level"]
@@ -87,6 +93,22 @@ optsToPort opts = case find isPort opts of
 	where
 	isPort (OptPort _) = True
 	isPort _ = False
+
+optsToKeyFile :: [Option] -> FilePath
+optsToKeyFile opts = case find isKeyFile opts of
+	Just (OptKeyFile fp) -> fp
+	_ -> "localhost.key"
+	where
+	isKeyFile (OptKeyFile _) = True
+	isKeyFile _ = False
+
+optsToCertFile :: [Option] -> FilePath
+optsToCertFile opts = case find isCertFile opts of
+	Just (OptCertFile fp) -> fp
+	_ -> "localhost.crt"
+	where
+	isCertFile (OptCertFile _) = True
+	isCertFile _ = False
 
 optsToCipherSuites :: [Option] -> [CipherSuite]
 optsToCipherSuites opts = case find isLevel opts of
