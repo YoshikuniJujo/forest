@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables,
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables,
 	FlexibleInstances, TypeFamilies, TupleSections #-}
 
 module SignHashAlgorithm (

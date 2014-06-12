@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Main (main) where
 
@@ -8,15 +8,15 @@ import "monads-tf" Control.Monad.State (StateT(..), runStateT, liftIO)
 import Control.Concurrent (forkIO)
 import System.Environment (getArgs)
 import Network (listenOn, accept)
-import "crypto-random" Crypto.Random (SystemRNG, CPRG(..), createEntropyPool)
+import "crypto-random" Crypto.Random (CPRG(..), SystemRNG, createEntropyPool)
 import MyServer (server)
 import CommandLine (readCommandLine)
 
 main :: IO ()
 main = do
-	(port, css, _tstd, rsa, ec, mcs) <- readCommandLine =<< getArgs
-	soc <- listenOn port
-	g0 :: SystemRNG <- cprgCreate <$> createEntropyPool
+	(prt, css, _td, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	soc <- listenOn prt
+	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	void . (`runStateT` g0) . forever $ do
 		(h, _, _) <- liftIO $ accept soc
 		g <- StateT $ return . cprgFork
