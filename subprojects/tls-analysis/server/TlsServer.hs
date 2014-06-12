@@ -3,8 +3,7 @@
 
 module TlsServer (
 	ValidateHandle(..),
-	TlsClient, openClient, withClient,
-	evalClient,
+	TlsClient, openClient, withClient, evalClient,
 	checkName, getName,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 
@@ -39,10 +38,6 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified Crypto.Hash.SHA1 as SHA1
-
--- import qualified DiffieHellman as DH
-
--- import qualified EcDhe as ECDHE
 
 import KeyExchange
 
@@ -85,6 +80,13 @@ validationCache = X509.ValidationCache
 validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
+withClient :: SecretKey sk => Handle -> [CipherSuite] ->
+	RSA.PrivateKey -> CertificateChain ->
+	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
+	IO a
+withClient h css pk cc ecks mcs =
+	bracket (openClientIo h css (pk, cc) ecks mcs) hlClose
+
 openClientIo :: SecretKey sk =>
 	Handle -> [CipherSuite] ->
 	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
@@ -96,13 +98,6 @@ openClientIo h css (pk, cc) ecks mcs = do
 	tstv <- atomically $ newTVar ts
 	return $ TlsClient tc tstv
 
-withClient :: SecretKey sk => Handle -> [CipherSuite] ->
-	RSA.PrivateKey -> CertificateChain ->
-	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
-	IO a
-withClient h css pk cc ecks mcs =
-	bracket (openClientIo h css (pk, cc) ecks mcs) hlClose
-
 evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
 evalClient s g = fst `liftM` runClient s g
 
@@ -110,8 +105,7 @@ runClient :: (Monad m, CPRG g) =>
 	StateT (TlsClientState g) m a -> g -> m (a, TlsClientState g)
 runClient s g = s `runStateT` initialTlsState g
 
-openClient :: (SecretKey sk, ValidateHandle h, CPRG g) =>
-	h -> [CipherSuite] ->
+openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
 	Maybe CertificateStore ->
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
@@ -127,21 +121,22 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
 	case cs of
-		Just (CipherSuite RSA _) -> handshake False NoDH cv sk sk mcs
-		Just (CipherSuite DHE_RSA _) -> handshake True dhparams cv sk sk mcs
-		Just (CipherSuite ECDHE_RSA _) -> handshake True curve cv sk sk mcs
-		Just (CipherSuite ECDHE_ECDSA _) -> handshake True curve cv pkec undefined mcs
+		Just (CipherSuite RSA _) ->
+			handshake False NoDH cv sk sk mcs
+		Just (CipherSuite DHE_RSA _) ->
+			handshake True dhparams cv sk sk mcs
+		Just (CipherSuite ECDHE_RSA _) ->
+			handshake True curve cv sk sk mcs
+		Just (CipherSuite ECDHE_ECDSA _) ->
+			handshake True curve cv pkec undefined mcs
 		_ -> error "bad"
 
-hello :: (HandleLike h, CPRG gen) =>
-	[CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo h gen (Word8, Word8)
+hello :: (HandleLike h, CPRG gen) => [CipherSuite] ->
+	CertificateChain -> CertificateChain -> TlsIo h gen (Word8, Word8)
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
 	return cv
-
-lenSpace :: Int -> String -> String
-lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshake ::
 	(Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
@@ -316,8 +311,7 @@ certificateVerify :: HandleLike h => PubKey -> TlsIo h gen ()
 certificateVerify (PubKeyRSA pub) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
-		. lenSpace 50 . {- (++ "\n") . -} show
-	lift . lift . hlDebug h 5 $ " - VERIFY WITH RSA\n"
+		. (++ " - VERIFY WITH RSA\n") . lenSpace 50 . show
 	hash0 <- clientVerifyHash pub
 	hs <- readHandshake (== (3, 3))
 	case hs of
@@ -343,8 +337,7 @@ certificateVerify (PubKeyRSA pub) = do
 certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
-		. lenSpace 50 . {- (++ "\n") . -} show
-	lift . lift . hlDebug h 5 $ " - VERIFY WITH ECDSA\n"
+		. (++ " - VERIFY WITH ECDSA\n") . lenSpace 50 . show
 	hash0 <- clientVerifyHashEc
 --	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
 	hs <- readHandshake (== (3, 3))
@@ -377,6 +370,9 @@ certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.clientCertificate: " ++ "not implemented: " ++ show p)
+
+lenSpace :: Int -> String -> String
+lenSpace n str = str ++ replicate (n - length str) ' '
 
 clientChangeCipherSuite :: HandleLike h => TlsIo h gen ()
 clientChangeCipherSuite = do
