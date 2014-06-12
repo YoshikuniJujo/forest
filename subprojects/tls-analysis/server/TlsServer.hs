@@ -40,9 +40,11 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import qualified DiffieHellman as DH
+-- import qualified DiffieHellman as DH
 
-import qualified EcDhe as ECDHE
+-- import qualified EcDhe as ECDHE
+
+import KeyExchange
 
 import Control.Concurrent.STM
 
@@ -115,8 +117,8 @@ openClient :: (SecretKey sk, ValidateHandle h, CPRG g) =>
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
 openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
 
-curve :: ECDHE.Curve
-curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
+curve :: Curve
+curve = fst (generateBase undefined () :: (Curve, SystemRNG))
 
 helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
  	[CipherSuite] ->  RSA.PrivateKey -> CertificateChain ->
@@ -126,7 +128,7 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 	cs <- getCipherSuite
 	case cs of
 		Just (CipherSuite RSA _) -> handshake False NoDH cv sk sk mcs
-		Just (CipherSuite DHE_RSA _) -> handshake True DH.dhparams cv sk sk mcs
+		Just (CipherSuite DHE_RSA _) -> handshake True dhparams cv sk sk mcs
 		Just (CipherSuite ECDHE_RSA _) -> handshake True curve cv sk sk mcs
 		Just (CipherSuite ECDHE_ECDSA _) -> handshake True curve cv pkec undefined mcs
 		_ -> error "bad"
@@ -140,7 +142,7 @@ hello csssv cc ccec = do
 
 data NoDH = NoDH deriving Show
 
-instance DH.Base NoDH where
+instance Base NoDH where
 	type Param NoDH = ()
 	type Secret NoDH = ()
 	type Public NoDH = ()
@@ -161,14 +163,14 @@ lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshake ::
-	(DH.Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
-		B.Bytable (DH.Public b)) =>
+	(Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
+		B.Bytable (Public b)) =>
 	Bool -> b -> (Word8, Word8) -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
-		let (pn, gen') = DH.generateSecret gen ps
+		let (pn, gen') = generateSecret gen ps
 		putRandomGen gen'
 		return pn
 	when isdh $ serverKeyExchange sks ps pn
@@ -234,9 +236,9 @@ serverHello csssv css cc ccec = do
 	updateHash bs
 
 serverKeyExchange ::
-	(HandleLike h, DH.Base b, B.Bytable b, B.Bytable (DH.Public b),
+	(HandleLike h, Base b, B.Bytable b, B.Bytable (Public b),
 		SecretKey sk, CPRG gen) =>
-	sk -> b -> DH.Secret b -> TlsIo h gen ()
+	sk -> b -> Secret b -> TlsIo h gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
 	Just rsr <- getServerRandom
@@ -384,7 +386,7 @@ certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 		ECDSA.Point
 			(either error id $ B.fromByteString x)
 			(either error id $ B.fromByteString y)
-	pub = ECDSA.PublicKey ECDHE.secp256r1 . point
+	pub = ECDSA.PublicKey secp256r1 . point
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
 		_ -> throwError $ Alert
@@ -457,29 +459,29 @@ readContent vc = do
 	
 sndServerKeyExchange ::
 	(HandleLike h, SecretKey sk, CPRG gen,
-	DH.Base b, B.Bytable b, B.Bytable (DH.Public b)) =>
-	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
+	Base b, B.Bytable b, B.Bytable (Public b)) =>
+	b -> Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
 	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
 			addSign pk cr sr $
 			ServerKeyExchange
 				(B.toByteString ps)
-				(B.toByteString $ DH.calculatePublic ps dhsk)
+				(B.toByteString $ calculatePublic ps dhsk)
 				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
 	updateHash bs
 
-rcvClientKeyExchange :: (HandleLike h, DH.Base b, B.Bytable (DH.Public b)) =>
-	b -> DH.Secret b -> Version -> TlsIo h gen ()
+rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>
+	b -> Secret b -> Version -> TlsIo h gen ()
 rcvClientKeyExchange dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
-			let Right pms = DH.calculateCommon dhps dhpn <$> B.fromByteString epms
+			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
 --			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
@@ -549,13 +551,13 @@ serverKeyExchangeToByteString
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
 		B.addLength (undefined :: Word16) sn ]
 
-instance B.Bytable ECDHE.Curve where
+instance B.Bytable Curve where
 	fromByteString = undefined
 	toByteString = encodeCurve
 
-encodeCurve :: ECDHE.Curve -> BS.ByteString
+encodeCurve :: Curve -> BS.ByteString
 encodeCurve c
-	| c == ECDHE.secp256r1 =
+	| c == secp256r1 =
 		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
 	| otherwise = error "TlsServer.encodeCurve: not implemented"
 
