@@ -206,7 +206,7 @@ serverHello :: (HandleLike h, CPRG gen) =>
 	CertificateChain -> CertificateChain -> TlsIo h gen ()
 serverHello csssv css cc ccec = do
 	sr <- Random `liftM` randomByteString 32
-	setVersion version
+	let Version vmjr vmnr = version in setVersion' (vmjr, vmnr)
 	setServerRandom sr
 	case cipherSuite' csssv css of
 		Just cs -> cacheCipherSuite cs

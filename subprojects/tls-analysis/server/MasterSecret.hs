@@ -1,20 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module MasterSecret (
-	versionToVersion,
+	tupleToVersion,
 	ClientRandom(..), ServerRandom(..),
 	generateMasterSecret, masterSecret, keyBlock,
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
-	P.Version(..), P.versionToByteString, P.byteStringToVersion,
-	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
+--	P.Version(..), P.versionToByteString, P.byteStringToVersion,
+--	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
 
-	P.Random(..),
-	P.CipherSuite(..), P.CipherSuiteKeyEx(..), P.CipherSuiteMsgEnc(..),
+--	P.Random(..),
+--	P.CipherSuite(..), P.CipherSuiteKeyEx(..), P.CipherSuiteMsgEnc(..),
 
 	hmac,
 
-	P.lenBodyToByteString,
+--	P.lenBodyToByteString,
 ) where
 
 import Data.ByteString (ByteString)
@@ -24,15 +24,14 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.MD5 as MD5
 
-import qualified Types as P
-
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Bits (xor)
+import Data.Word
 
-versionToVersion :: P.Version -> Maybe MSVersion
-versionToVersion (P.Version 3 1) = Just TLS10
-versionToVersion (P.Version 3 3) = Just TLS12
-versionToVersion _ = Nothing
+tupleToVersion :: (Word8, Word8) -> Maybe MSVersion
+tupleToVersion (3, 1) = Just TLS10
+tupleToVersion (3, 3) = Just TLS12
+tupleToVersion _ = Nothing
 
 type Bytes = ByteString
 

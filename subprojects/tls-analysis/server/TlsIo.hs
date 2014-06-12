@@ -7,7 +7,9 @@ module TlsIo (
 	randomByteString,
 	Partner(..), runTlsIo, initTlsState,
 
-	setVersion, setClientRandom, setServerRandom,
+--	setVersion,
+	setClientRandom, setServerRandom,
+	setVersion',
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
@@ -258,6 +260,18 @@ read n = do
 write :: HandleLike h => BS.ByteString -> HandleLike h => TlsIo h gen ()
 write dat = (lift . lift . flip hlPut dat) =<< gets tlssClientHandle
 
+setVersion' :: HandleLike h => (Word8, Word8) -> TlsIo h gen ()
+setVersion' v = do
+	tlss <- get
+	case CT.tupleToVersion v of
+		Just v' -> put tlss { tlssVersion = Just v' }
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionProtocolVersion
+			"setVersion: Not implemented"
+
+			{-
+
 setVersion :: HandleLike h => CT.Version -> TlsIo h gen ()
 setVersion v = do
 	tlss <- get
@@ -267,6 +281,7 @@ setVersion v = do
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion
 			"setVersion: Not implemented"
+			-}
 
 setClientRandom, setServerRandom :: HandleLike h => CT.Random -> TlsIo h gen ()
 setClientRandom (CT.Random cr) = do

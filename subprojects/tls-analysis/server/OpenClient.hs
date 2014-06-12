@@ -7,7 +7,9 @@ module OpenClient (
 	randomByteString,
 	Partner(..),
 
-	setVersion, setClientRandom, setServerRandom,
+--	setVersion,
+	setClientRandom, setServerRandom,
+	setVersion',
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 

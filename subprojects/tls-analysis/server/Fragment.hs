@@ -6,7 +6,9 @@ module Fragment (
 	writeByteString,
 	updateHash,
 
-	setClientRandom, setServerRandom, setVersion,
+	setClientRandom, setServerRandom,
+--	setVersion,
+	setVersion',
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 	generateKeys,
