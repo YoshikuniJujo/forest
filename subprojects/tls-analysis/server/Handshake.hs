@@ -4,7 +4,8 @@ module Handshake (
 	Handshake(..), takeHandshake, handshakeToByteString,
 
 	ClientHello(..), ServerHello(..),
-		Version(..), Random(..), SessionId(..),
+		-- Version(..), -- Random(..),
+		SessionId(..),
 		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 		CompressionMethod(..),
 	CertificateRequest(..),
@@ -24,6 +25,14 @@ import qualified Data.ByteString as BS
 import Hello
 --	(Bytable(..), ClientHello(..), ServerHello(..), takeLen', lenBodyToByteString)
 import Certificate
+
+takeInt :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
+takeInt rd = ((either error id . B.fromByteString) `liftM`) . rd
+
+takeLen :: Monad m => (Int -> m BS.ByteString) -> Int -> m BS.ByteString
+takeLen rd n = do
+	l <- takeInt rd n
+	rd l
 
 data Handshake
 	= HandshakeClientHello ClientHello

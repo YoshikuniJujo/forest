@@ -7,8 +7,6 @@ module Certificate (
 	ClientCertificateType(..),
 	EncryptedPreMasterSecret(..),
 	DigitallySigned(..),
-
-	takeLen,
 ) where
 
 import Prelude hiding (concat)
@@ -23,7 +21,7 @@ import Data.Word
 import Data.Word.Word24
 
 import qualified Data.ByteString as BS
-import Types
+import SignHashAlgorithm
 
 import qualified Codec.Bytable as B
 

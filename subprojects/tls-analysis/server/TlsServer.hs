@@ -46,8 +46,10 @@ import Control.Concurrent.STM
 
 import qualified Codec.Bytable as B
 
-version :: Version
-version = Version 3 3
+type Version = (Word8, Word8)
+
+version :: (Word8, Word8)
+version = (3, 3)
 
 sessionId :: SessionId
 sessionId = SessionId ""
@@ -125,7 +127,7 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 		_ -> error "bad"
 
 hello :: (HandleLike h, CPRG gen) =>
-	[CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo h gen Version
+	[CipherSuite] -> CertificateChain -> CertificateChain -> TlsIo h gen (Word8, Word8)
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
@@ -159,7 +161,7 @@ lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshake :: (DH.Base b, DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
-	Bool -> b -> Version -> sk ->
+	Bool -> b -> (Word8, Word8) -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 --	h <- getHandle
@@ -186,7 +188,7 @@ clientHello = do
 	h <- getHandle
 	lift . lift . hlDebug h 0 . BSC.pack $ "CLIENT HELLO: " ++ show hs ++ "\n"
 	case hs of
-		HandshakeClientHello (ClientHello vsn (Random rnd) _ css cms _) ->
+		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -209,7 +211,7 @@ serverHello :: (HandleLike h, CPRG gen) =>
 	CertificateChain -> CertificateChain -> TlsIo h gen ()
 serverHello csssv css cc ccec = do
 	sr <- randomByteString 32
-	let Version vmjr vmnr = version in setVersion' (vmjr, vmnr)
+	let (vmjr, vmnr) = version in setVersion' (vmjr, vmnr)
 	setServerRandom sr
 	case cipherSuite' csssv css of
 		Just cs -> cacheCipherSuite cs
@@ -223,7 +225,7 @@ serverHello csssv css cc ccec = do
 			_ -> error "bad"
 		cont = map ContentHandshake $ catMaybes [
 			Just . HandshakeServerHello $ ServerHello
-				version (Random sr) sessionId
+				version sr sessionId
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
 		(ct, bs) = contentListToByteString cont
@@ -298,7 +300,7 @@ clientCertificate cs = do
 
 clientKeyExchange :: (HandleLike h, CPRG gen) =>
 	RSA.PrivateKey -> Version -> TlsIo h gen ()
-clientKeyExchange sk (Version cvmjr cvmnr) = do
+clientKeyExchange sk (cvmjr, cvmnr) = do
 --	h <- getHandle
 	hs <- readHandshake (== (3, 3))
 	case hs of
@@ -465,7 +467,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 
 rcvClientKeyExchange :: (HandleLike h, DH.Base b) =>
 	b -> DH.Secret b -> Version -> TlsIo h gen ()
-rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
+rcvClientKeyExchange dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do

@@ -19,7 +19,7 @@ import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
-import Types
+import SignHashAlgorithm
 import qualified Codec.Bytable as B
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA

@@ -2,7 +2,8 @@
 
 module Hello (
 	ClientHello(..), ServerHello(..),
-		Version(..), Random(..), SessionId(..),
+		-- Version(..), -- Random(..),
+		SessionId(..),
 		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 		CompressionMethod(..),
 
@@ -20,7 +21,7 @@ import qualified Codec.Bytable as B
 import CipherSuite
 
 data ClientHello
-	= ClientHello Version Random SessionId [CipherSuite]
+	= ClientHello (Word8, Word8) BS.ByteString SessionId [CipherSuite]
 		[CompressionMethod] (Maybe ExtensionList)
 	| ClientHelloRaw BS.ByteString
 	deriving Show
@@ -43,8 +44,9 @@ parseClientHello = do
 	return $ ClientHello pv r sid css cms me
 
 clientHelloToByteString :: ClientHello -> BS.ByteString
-clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
-	B.toByteString pv,
+clientHelloToByteString (ClientHello (vmjr, vmnr) r sid css cms mel) = BS.concat [
+	B.toByteString vmjr,
+	B.toByteString vmnr,
 	B.toByteString r,
 	B.addLength (undefined :: Word8) $ B.toByteString sid,
 	B.addLength (undefined :: Word16) . BS.concat $ map B.toByteString css,
@@ -53,7 +55,7 @@ clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello
-	= ServerHello Version Random SessionId CipherSuite
+	= ServerHello (Word8, Word8) BS.ByteString SessionId CipherSuite
 		CompressionMethod (Maybe ExtensionList)
 	| ServerHelloRaw BS.ByteString
 	deriving Show
@@ -73,12 +75,16 @@ parseServerHello = do
 		Just <$> B.list mel B.parse
 	return $ ServerHello pv r sid cs cm me
 
-pvrsid :: B.BytableM (Version, Random, SessionId)
-pvrsid = (,,) <$> B.take 2 <*> B.take 32 <*> (B.take =<< B.take 1)
+pvrsid :: B.BytableM ((Word8, Word8), BS.ByteString, SessionId)
+pvrsid = (,,)
+	<$> ((,) <$> B.head <*> B.head)
+	<*> B.take 32
+	<*> (B.take =<< B.take 1)
 
 serverHelloToByteString :: ServerHello -> BS.ByteString
-serverHelloToByteString (ServerHello pv r sid cs cm mes) = BS.concat [
-	B.toByteString pv,
+serverHelloToByteString (ServerHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
+	B.toByteString vmjr,
+	B.toByteString vmnr,
 	B.toByteString r,
 	B.addLength (undefined :: Word8) $ B.toByteString sid,
 	B.toByteString cs,
