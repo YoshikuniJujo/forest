@@ -36,6 +36,8 @@ import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
+import qualified Crypto.Hash.SHA1 as SHA1
+
 import qualified DiffieHellman as DH
 
 import qualified EcDhe as ECDHE
@@ -450,9 +452,9 @@ sndServerKeyExchange :: (HandleLike h, DH.Base b, DH.SecretKey sk, CPRG gen) =>
 	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
 	Just cr <- getClientRandom
-	let	ske = HandshakeServerKeyExchange . DH.serverKeyExchangeToByteString .
-			DH.addSign pk cr sr $
-			DH.ServerKeyExchange
+	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
+			addSign pk cr sr $
+			ServerKeyExchange
 				(DH.encodeBase ps)
 				(DH.encodePublic ps $ DH.calculatePublic ps dhsk)
 				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
@@ -520,3 +522,20 @@ instance B.Bytable ChangeCipherSpec where
 			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+
+addSign :: DH.SecretKey sk =>
+	sk -> BS.ByteString -> BS.ByteString -> ServerKeyExchange -> ServerKeyExchange
+addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
+	sn = DH.sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
+	ServerKeyExchange ps ys ha sa sn
+
+data ServerKeyExchange
+	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
+	deriving Show
+
+serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
+serverKeyExchangeToByteString
+	(ServerKeyExchange params dhYs hashA sigA sn) =
+	BS.concat [
+		params, dhYs, B.toByteString hashA, B.toByteString sigA,
+		B.addLength (undefined :: Word16) sn ]

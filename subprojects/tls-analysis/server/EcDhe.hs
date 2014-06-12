@@ -15,6 +15,8 @@ import Data.Word
 
 import qualified Codec.Bytable as B
 
+import Types
+
 secp256r1 :: Curve
 secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
 	where

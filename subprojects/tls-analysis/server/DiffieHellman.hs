@@ -9,9 +9,9 @@ module DiffieHellman (
 
 --	byteStringToInteger,
 
-	ServerKeyExchange(..),
-	addSign,
-	serverKeyExchangeToByteString,
+--	ServerKeyExchange(..),
+--	addSign,
+--	serverKeyExchangeToByteString,
 ) where
 
 import Control.Applicative

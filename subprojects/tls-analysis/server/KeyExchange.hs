@@ -5,23 +5,17 @@ module KeyExchange (
 	Base(..), SecretKey(..),
 
 	decodeSignature,
-	addSign,
 
-	ServerKeyExchange(..),
-	serverKeyExchangeToByteString,
-
-	NamedCurve(..),
+--	NamedCurve(..),
 
 ) where
 
-import Data.Bits
 import Data.ASN1.Types
 import Data.ASN1.Encoding
 import Data.ASN1.BinaryEncoding
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
-import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
@@ -53,8 +47,8 @@ encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
 	BS.pack [st, len sbbs], sbbs ]
 	where
 	len = fromIntegral . BS.length
-	rbbs = integerToByteString rb
-	sbbs = integerToByteString sb
+	rbbs = B.toByteString rb
+	sbbs = B.toByteString sb
 
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
@@ -67,30 +61,6 @@ instance SecretKey RSA.PrivateKey where
 			"\NUL", b ] in
 		RSA.dp Nothing sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
-
-addSign :: SecretKey sk =>
-	sk -> BS.ByteString -> BS.ByteString -> ServerKeyExchange -> ServerKeyExchange
-addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
-	sn = sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
-	ServerKeyExchange ps ys ha sa sn
-
-data ServerKeyExchange
-	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
-	deriving Show
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyExchange params dhYs hashA sigA sn) =
-	BS.concat [
-		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		B.addLength (undefined :: Word16) sn ]
-
-integerToWords :: Integer -> [Word8]
-integerToWords 0 = []
-integerToWords i = fromIntegral i : integerToWords (i `shiftR` 8)
-
-integerToByteString :: Integer -> BS.ByteString
-integerToByteString = BS.pack . reverse . integerToWords
 
 class Base b where
 	type Param b
