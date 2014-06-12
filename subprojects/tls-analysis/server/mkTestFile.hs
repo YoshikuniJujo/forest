@@ -29,13 +29,13 @@ import Random
 
 main :: IO ()
 main = do
-	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(port, css, tstd, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn port
 	let g0 :: StdGen = cprgCreate undefined
 	void . forever $ do
 		(h, _, _) <- liftIO $ accept soc
 		hSetBuffering h NoBuffering
-		fp <- liftIO getName
+		fp <- liftIO $ getName tstd
 		print fp
 		writeFile (fp <.> "css") $ show css ++ "\n"
 		cl <- openFile (fp <.> "clt") WriteMode
@@ -63,8 +63,8 @@ instance HandleLike DebugHandle where
 instance ValidateHandle DebugHandle where
 	validate (DebugHandle h _ _) = validate h
 
-getName :: IO FilePath
-getName = do
+getName :: FilePath -> IO FilePath
+getName tstd = do
 	now <- getCurrentTime
 	pid <- getProcessID
 	let	day = utctDay now
@@ -73,7 +73,7 @@ getName = do
 			show $ toModifiedJulianDay day,
 			show . numerator $ toRational time,
 			show pid ]
-	return . ("test" </>) . BSC.unpack . sub '/' '-' . BS.take 12 .
+	return . (tstd </>) . BSC.unpack . sub '/' '-' . BS.take 12 .
 		BASE64.encode .  SHA256.hash . BS.concat $ map BSC.pack strs
 
 sub :: Char -> Char -> BS.ByteString -> BS.ByteString

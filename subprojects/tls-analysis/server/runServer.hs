@@ -14,7 +14,7 @@ import CommandLine (readCommandLine)
 
 main :: IO ()
 main = do
-	(port, css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(port, css, _tstd, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn port
 	g0 :: SystemRNG <- cprgCreate <$> createEntropyPool
 	void . (`runStateT` g0) . forever $ do

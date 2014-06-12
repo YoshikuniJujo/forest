@@ -18,15 +18,12 @@ import MyServer (server, ValidateHandle(..))
 import CommandLine (readCommandLine)
 import Random (StdGen)
 
-testDirectory :: FilePath
-testDirectory = "test"
-
 main :: IO ()
 main = do
-	(_port, _css, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(_port, _css, tstd, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	let g = cprgCreate undefined :: StdGen
-	fps <- map (testDirectory </>) . tail . nub . sort .
-		map dropExtensions <$> getDirectoryContents testDirectory
+	fps <- map (tstd </>) . tail . nub . sort .
+		map dropExtensions <$> getDirectoryContents tstd
 	forM_ fps $ \n -> do
 		css <- readIO =<< readFile (n <.> "css")
 		cl <- openFile (n <.> "clt") ReadMode

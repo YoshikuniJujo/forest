@@ -24,30 +24,30 @@ ecdsaCertFile = "localhost_ecdsa.cert"
 readCommandLine :: [String] -> IO (
 	PortID,
 	[CipherSuite],
+	FilePath,
 	(RSA.PrivateKey, X509.CertificateChain),
 	(ECDSA.PrivateKey, X509.CertificateChain),
 	Maybe X509.CertificateStore )
 readCommandLine args = do
-	let	(opts, pn : kfp : cfp : _, errs) = getOpt Permute options args
+	let	(opts, kfp : cfp : _, errs) = getOpt Permute options args
 		css = optsToCipherSuites opts
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
-	port <- (PortNumber . fromIntegral <$>) (readIO pn :: IO Int)
+	let	port = optsToPort opts
+		tstd = optsToTestDirectory opts
 	rsa <- (,) <$> readRsaKey kfp <*> readCertificateChain cfp
 	ec <- (,) <$> readEcPrivKey ecdsaKeyFile
 		<*> readCertificateChain ecdsaCertFile
 	mcs <- if OptDisableClientCert `elem` opts
 		then return Nothing
 		else Just <$> readCertificateStore ["cacert.pem"]
-	return (port, css, rsa, ec, mcs)
+	return (port, css, tstd, rsa, ec, mcs)
 
 data Option
-	= OptDisableClientCert
+	= OptPort PortID
+	| OptDisableClientCert
 	| OptLevel CipherSuiteLevel
+	| OptTestDirectory FilePath
 	deriving (Show, Eq)
-
-isLevel :: Option -> Bool
-isLevel (OptLevel _) = True
-isLevel _ = False
 
 data CipherSuiteLevel
 	= ToEcdsa256 | ToEcdsa | ToEcdhe256 | ToEcdhe
@@ -55,24 +55,19 @@ data CipherSuiteLevel
 	| NoLevel
 	deriving (Show, Eq, Enum)
 
-optsToCipherSuites :: [Option] -> [CipherSuite]
-optsToCipherSuites opts = case find isLevel opts of
-	Just (OptLevel l) -> leveledCipherSuites l
-	_ -> cipherSuites
-
-leveledCipherSuites :: CipherSuiteLevel -> [CipherSuite]
-leveledCipherSuites l = drop (fromEnum l) cipherSuites
-
-cipherSuites :: [CipherSuite]
-cipherSuites = [
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
-	CipherSuite DHE_RSA AES_128_CBC_SHA256,
-	CipherSuite DHE_RSA AES_128_CBC_SHA,
-	CipherSuite RSA AES_128_CBC_SHA256,
-	CipherSuite RSA AES_128_CBC_SHA ]
+options :: [OptDescr Option]
+options = [
+	Option "p" ["port"]
+		(ReqArg (OptPort . PortNumber . fromIntegral .
+			(read :: String -> Int)) "port number")
+		"set port number",
+	Option "d" ["disable-client-cert"]
+		(NoArg OptDisableClientCert) "disable client certification",
+	Option "l" ["level"]
+		(ReqArg (OptLevel . readCipherSuiteLevel) "cipher suite level")
+		"set cipher suite level",
+	Option "t" ["test-directory"]
+		(ReqArg OptTestDirectory "test directory") "set test directory" ]
 
 readCipherSuiteLevel :: String -> CipherSuiteLevel
 readCipherSuiteLevel "ecdsa256" = ToEcdsa256
@@ -85,11 +80,38 @@ readCipherSuiteLevel "rsa256" = ToRsa256
 readCipherSuiteLevel "rsa" = ToRsa
 readCipherSuiteLevel _ = NoLevel
 
-options :: [OptDescr Option]
-options = [
-	Option "d" ["disable-client-cert"]
-		(NoArg OptDisableClientCert)
-		"disable client certification",
-	Option "l" ["level"]
-		(ReqArg (OptLevel . readCipherSuiteLevel) "cipher suite level")
-		"set cipher suite level" ]
+optsToPort :: [Option] -> PortID
+optsToPort opts = case find isPort opts of
+	Just (OptPort p) -> p
+	_ -> PortNumber 443
+	where
+	isPort (OptPort _) = True
+	isPort _ = False
+
+optsToCipherSuites :: [Option] -> [CipherSuite]
+optsToCipherSuites opts = case find isLevel opts of
+	Just (OptLevel l) -> drop (fromEnum l) cipherSuites
+	_ -> cipherSuites
+	where
+	isLevel (OptLevel _) = True
+	isLevel _ = False
+
+cipherSuites :: [CipherSuite]
+cipherSuites = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+	CipherSuite DHE_RSA AES_128_CBC_SHA256,
+	CipherSuite DHE_RSA AES_128_CBC_SHA,
+	CipherSuite RSA AES_128_CBC_SHA256,
+	CipherSuite RSA AES_128_CBC_SHA ]
+
+optsToTestDirectory :: [Option] -> FilePath
+optsToTestDirectory opts = case find isTestDirectory opts of
+	Just (OptTestDirectory fp) -> fp
+	_ -> "test"
+
+isTestDirectory :: Option -> Bool
+isTestDirectory (OptTestDirectory _) = True
+isTestDirectory _ = False
