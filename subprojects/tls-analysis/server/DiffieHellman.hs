@@ -5,7 +5,7 @@ module DiffieHellman (
 	dhparams, dhprivate,
 	DH.PrivateNumber,
 	Base(..),
-	SecretKey(..),
+--	SecretKey(..),
 
 --	byteStringToInteger,
 

@@ -8,7 +8,7 @@ module TlsServer (
 	checkName, getName,
 	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 
-	DH.SecretKey,
+	SecretKey,
 ) where
 
 import Control.Applicative
@@ -48,6 +48,9 @@ import Control.Concurrent.STM
 
 import qualified Codec.Bytable as B
 
+import Data.ASN1.Encoding
+import Data.ASN1.BinaryEncoding
+
 type Version = (Word8, Word8)
 
 version :: (Word8, Word8)
@@ -80,7 +83,7 @@ validationCache = X509.ValidationCache
 validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
-openClientIo :: DH.SecretKey sk =>
+openClientIo :: SecretKey sk =>
 	Handle -> [CipherSuite] ->
 	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
 	Maybe CertificateStore -> IO TlsClient
@@ -91,7 +94,7 @@ openClientIo h css (pk, cc) ecks mcs = do
 	tstv <- atomically $ newTVar ts
 	return $ TlsClient tc tstv
 
-withClient :: DH.SecretKey sk => Handle -> [CipherSuite] ->
+withClient :: SecretKey sk => Handle -> [CipherSuite] ->
 	RSA.PrivateKey -> CertificateChain ->
 	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
 	IO a
@@ -105,7 +108,7 @@ runClient :: (Monad m, CPRG g) =>
 	StateT (TlsClientState g) m a -> g -> m (a, TlsClientState g)
 runClient s g = s `runStateT` initialTlsState g
 
-openClient :: (DH.SecretKey sk, ValidateHandle h, CPRG g) =>
+openClient :: (SecretKey sk, ValidateHandle h, CPRG g) =>
 	h -> [CipherSuite] ->
 	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
 	Maybe CertificateStore ->
@@ -115,7 +118,7 @@ openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks 
 curve :: ECDHE.Curve
 curve = fst (DH.generateBase undefined () :: (ECDHE.Curve, SystemRNG))
 
-helloHandshake :: (DH.SecretKey sk, CPRG gen, ValidateHandle h) =>
+helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
  	[CipherSuite] ->  RSA.PrivateKey -> CertificateChain ->
  	(sk, CertificateChain) -> Maybe CertificateStore -> TlsIo h gen [String]
 helloHandshake css sk cc (pkec, ccec) mcs = do
@@ -158,7 +161,7 @@ lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshake ::
-	(DH.Base b, B.Bytable b, DH.SecretKey sk, CPRG gen, ValidateHandle h,
+	(DH.Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
 		B.Bytable (DH.Public b)) =>
 	Bool -> b -> (Word8, Word8) -> sk ->
 	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
@@ -232,7 +235,7 @@ serverHello csssv css cc ccec = do
 
 serverKeyExchange ::
 	(HandleLike h, DH.Base b, B.Bytable b, B.Bytable (DH.Public b),
-		DH.SecretKey sk, CPRG gen) =>
+		SecretKey sk, CPRG gen) =>
 	sk -> b -> DH.Secret b -> TlsIo h gen ()
 serverKeyExchange sk ps pn = do
 	dh <- isEphemeralDH
@@ -365,10 +368,12 @@ certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
-			unless (ECDSA.verify id (pub pnt) (ECDHE.decodeSignature s) hash0) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"ECDSA: client authentification failed"
+			unless (ECDSA.verify id (pub pnt)
+				(either error id $ B.fromByteString s) hash0) .
+					throwError $ Alert
+						AlertLevelFatal
+						AlertDescriptionDecryptError
+						"ECDSA: client authentification failed"
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -451,7 +456,7 @@ readContent vc = do
 	return c
 	
 sndServerKeyExchange ::
-	(HandleLike h, DH.SecretKey sk, CPRG gen,
+	(HandleLike h, SecretKey sk, CPRG gen,
 	DH.Base b, B.Bytable b, B.Bytable (DH.Public b)) =>
 	b -> DH.Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
 sndServerKeyExchange ps dhsk pk sr = do
@@ -461,7 +466,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 			ServerKeyExchange
 				(B.toByteString ps)
 				(B.toByteString $ DH.calculatePublic ps dhsk)
-				HashAlgorithmSha1 (DH.signatureAlgorithm pk) "hogeru"
+				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
@@ -527,10 +532,10 @@ instance B.Bytable ChangeCipherSpec where
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
-addSign :: DH.SecretKey sk =>
+addSign :: SecretKey sk =>
 	sk -> BS.ByteString -> BS.ByteString -> ServerKeyExchange -> ServerKeyExchange
 addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
-	sn = DH.sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
+	sn = sign sk SHA1.hash $ BS.concat [cr, sr, ps, ys] in
 	ServerKeyExchange ps ys ha sa sn
 
 data ServerKeyExchange
@@ -567,3 +572,51 @@ instance B.Bytable EcCurveType where
 	toByteString ExplicitChar2 = BS.pack [2]
 	toByteString NamedCurve = BS.pack [3]
 	toByteString (EcCurveTypeRaw w) = BS.pack [w]
+
+instance B.Bytable ECDSA.Signature where
+	fromByteString = decodeSignature
+	toByteString = undefined
+
+decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
+decodeSignature bs = case decodeASN1' DER bs of
+	Right [Start Sequence, IntVal r, IntVal s, End Sequence] ->
+		Right $ ECDSA.Signature r s
+	Right _ -> Left "KeyExchange.decodeSignature"
+	Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
+
+class SecretKey sk where
+	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
+		BS.ByteString -> BS.ByteString
+	signatureAlgorithm :: sk -> SignatureAlgorithm
+
+instance SecretKey ECDSA.PrivateKey where
+	sign sk hs bs = let
+		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
+		encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s)
+	signatureAlgorithm _ = SignatureAlgorithmEcdsa
+
+data EcdsaSign
+	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
+	deriving Show
+
+encodeEcdsaSign :: EcdsaSign -> BS.ByteString
+encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
+	BS.pack [t, len rbbs + len sbbs + 4],
+	BS.pack [rt, len rbbs], rbbs,
+	BS.pack [st, len sbbs], sbbs ]
+	where
+	len = fromIntegral . BS.length
+	rbbs = B.toByteString rb
+	sbbs = B.toByteString sb
+
+instance SecretKey RSA.PrivateKey where
+	sign sk hs bs = let
+		h = hs bs
+		a = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26],
+			Null, End Sequence, OctetString h, End Sequence]
+		b = encodeASN1' DER a
+		pd = BS.concat [
+			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
+			"\NUL", b ] in
+		RSA.dp Nothing sk pd
+	signatureAlgorithm _ = SignatureAlgorithmRsa
