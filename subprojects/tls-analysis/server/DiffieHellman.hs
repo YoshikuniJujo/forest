@@ -24,6 +24,8 @@ import "crypto-random" Crypto.Random
 import KeyExchange
 import qualified Codec.Bytable as B
 
+import Data.Word
+
 -- import ByteStringMonad
 
 dhparams :: DH.Params
@@ -50,13 +52,13 @@ decodePublicNumber =
 
 encodeParams :: DH.Params -> BS.ByteString
 encodeParams (DH.Params dhP dhG) = BS.concat [
-	lenBodyToByteString 2 $ integerToByteString dhP,
-	lenBodyToByteString 2 $ integerToByteString dhG
+	B.addLength (undefined :: Word16) $ B.toByteString dhP,
+	B.addLength (undefined :: Word16) $ B.toByteString dhG
  ]
 
 encodePublicNumber :: DH.PublicNumber -> BS.ByteString
 encodePublicNumber =
-	lenBodyToByteString 2 . integerToByteString . \(DH.PublicNumber pn) -> pn
+	B.addLength (undefined :: Word16) . B.toByteString . \(DH.PublicNumber pn) -> pn
 
 instance Base DH.Params where
 	type Param DH.Params = (Int, Integer)
@@ -65,7 +67,7 @@ instance Base DH.Params where
 	generateBase rng (bits, gen) = DH.generateParams rng bits gen
 	generateSecret = DH.generatePrivate
 	calculatePublic = DH.calculatePublic
-	calculateCommon ps sn pn = integerToByteString .
+	calculateCommon ps sn pn = B.toByteString .
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
 	encodeBase = encodeParams
 	decodeBase bs = let Right ps = decodeParams bs in ps

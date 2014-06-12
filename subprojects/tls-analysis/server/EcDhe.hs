@@ -43,11 +43,11 @@ instance Base Curve where
 
 calculateShared :: Curve -> Integer -> Point -> BS.ByteString
 calculateShared c sn pp =
-	let Point x _ = pointMul c sn pp in integerToByteString x
+	let Point x _ = pointMul c sn pp in B.toByteString x
 
 encodePublicPoint :: Curve -> Point -> BS.ByteString
-encodePublicPoint _ (Point x y) = lenBodyToByteString 1 .
-	BS.cons 4 $ BS.append (integerToByteString x) (integerToByteString y)
+encodePublicPoint _ (Point x y) = B.addLength (undefined :: Word8) .
+	BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
 encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
 
 decodePublicPoint :: Curve -> BS.ByteString -> Point

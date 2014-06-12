@@ -20,6 +20,7 @@ import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
 import Numeric
 import Data.Word
+import Data.Word.Word24
 
 import qualified Data.ByteString as BS
 import Types
@@ -72,10 +73,10 @@ encodeCert = (\(X509.CertificateChainRaw ccr) -> map CertificateRaw ccr) .
 
 certificateListToByteString :: [Certificate] -> BS.ByteString
 certificateListToByteString =
-	lenBodyToByteString 3 . BS.concat . map certificateToByteString
+	B.addLength (undefined :: Word24) . BS.concat . map certificateToByteString
 
 certificateToByteString :: Certificate -> BS.ByteString
-certificateToByteString (CertificateRaw crt) = lenBodyToByteString 3 crt
+certificateToByteString (CertificateRaw crt) = B.addLength (undefined :: Word24) crt
 
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
@@ -102,12 +103,12 @@ parseCertificateRequest' = do
 
 certificateRequestToByteString :: CertificateRequest -> BS.ByteString
 certificateRequestToByteString (CertificateRequest ccts hasas bss) = BS.concat [
-	lenBodyToByteString 1 . BS.concat $
+	B.addLength (undefined :: Word8) . BS.concat $
 		map clientCertificateTypeToByteString ccts,
 		B.toByteString (fromIntegral $ 2 * length hasas :: Word16),
 		BS.concat $ concatMap (\(ha, sa) -> [B.toByteString ha, B.toByteString sa]) hasas,
-	lenBodyToByteString 2 . BS.concat $
-		map (lenBodyToByteString 2 . encodeASN1' DER . flip toASN1 []) bss ]
+	B.addLength (undefined :: Word16) . BS.concat $
+		map (B.addLength (undefined :: Word16) . encodeASN1' DER . flip toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
 
 data ClientCertificateType
@@ -170,5 +171,5 @@ digitallySignedToByteString :: DigitallySigned -> BS.ByteString
 digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
 	B.toByteString ha,
 	B.toByteString sa,
-	lenBodyToByteString 2 bs ]
+	B.addLength (undefined :: Word16) bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs

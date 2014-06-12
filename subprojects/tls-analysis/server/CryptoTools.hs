@@ -8,15 +8,9 @@ module CryptoTools (
 	MS.ClientRandom(..), MS.ServerRandom(..),
 	MS.generateMasterSecret, MS.generateKeyBlock, MS.generateFinished,
 
-	lenBodyToByteString,
---	MS.intToByteString,
---	MS.byteStringToInt,
-	Version(..), ContentType(..),
-	byteStringToVersion, byteStringToContentType,
-	versionToByteString, contentTypeToByteString,
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	Random(..),
---	MS.Fragment(..),
+	ContentType(..),
+--	CipherSuite(..),
+--	CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 ) where
 
 import Data.Word
@@ -31,7 +25,7 @@ import qualified MasterSecret as MS
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 
-import Types
+import ContentType
 
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
@@ -41,19 +35,20 @@ hashSha256 = (SHA256.hash, 32)
 
 encryptMessage :: CPRG gen =>
 	Hash -> gen -> BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> Version -> BS.ByteString -> (BS.ByteString, gen)
-encryptMessage (hs, _) gen key sn mk ct v msg = 
+	ContentType -> (Word8, Word8) -> BS.ByteString -> (BS.ByteString, gen)
+encryptMessage (hs, _) gen key sn mk ct (vmjr, vmnr) msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac hs sn mk $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
-		lenBodyToByteString 2 msg]
+		B.toByteString ct,
+		B.toByteString vmjr,
+		B.toByteString vmnr,
+		B.addLength (undefined :: Word16) msg]
 
 decryptMessage :: Hash ->
 	BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> Version -> BS.ByteString -> Either String BS.ByteString
-decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
+	ContentType -> (Word8, Word8) -> BS.ByteString -> Either String BS.ByteString
+decryptMessage (hs, ml) key sn mk ct (vmjr, vmnr) enc = if mac == cmac then Right body else
 	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
 		"Expected: " ++ show cmac ++ "\n\t" ++
 		"Recieved: " ++ show mac ++ "\n\t" ++
@@ -62,14 +57,14 @@ decryptMessage (hs, ml) key sn mk ct v enc = if mac == cmac then Right body else
 	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
 	cmac = calcMac hs sn mk $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
-		lenBodyToByteString 2 body]
+		B.toByteString ct,
+		B.toByteString vmjr,
+		B.toByteString vmnr,
+		B.addLength (undefined :: Word16) body]
 
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
 calcMac hs sn mk inp =
---	MS.hmac hs 64 mk $ MS.word64ToByteString sn `BS.append` inp
 	MS.hmac hs 64 mk $ B.toByteString sn `BS.append` inp
 
 padd :: BS.ByteString -> BS.ByteString

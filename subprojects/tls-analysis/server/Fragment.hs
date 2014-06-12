@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
 module Fragment (
+	ContentType(..),
 	readBufContentType,
 	readByteString,
 	writeByteString,
@@ -51,20 +52,22 @@ import Data.HandleLike
 import qualified Codec.Bytable as B
 import Data.Word
 
-readBufContentType :: HandleLike h => (Version -> Bool) -> TlsIo h gen ContentType
+readBufContentType :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen ContentType
 readBufContentType vc = getContentType vc readFragment
 
 readByteString :: HandleLike h =>
-	(Version -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
+	((Word8, Word8) -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
 readByteString vc n = buffered n $ do
 	(ct, v, bs) <- readFragment
 	unless (vc v) $ throwError alertVersion
 	return (ct, bs)
 
-readFragment :: HandleLike h => TlsIo h gen (ContentType, Version, BS.ByteString)
+readFragment :: HandleLike h => TlsIo h gen (ContentType, (Word8, Word8), BS.ByteString)
 readFragment = do
-	ct <- byteStringToContentType `liftM` read 1
-	v <- byteStringToVersion `liftM` read 2
+	ct <- (either error id . B.fromByteString) `liftM` read 1
+	[vmjr, vmnr] <- BS.unpack `liftM` read 2
+--	Version vmjr vmnr <- (either error id . B.fromByteString) `liftM` read 2
+	let v = (vmjr, vmnr)
 	ebody <- read . either error id . B.fromByteString =<< read 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct v ebody
@@ -73,9 +76,9 @@ readFragment = do
 writeByteString :: (HandleLike h, CPRG gen) =>
 	ContentType -> BS.ByteString -> TlsIo h gen ()
 writeByteString ct bs = do
-	enc <- tlsEncryptMessage ct (Version 3 3) bs
+	enc <- tlsEncryptMessage ct (3, 3) bs
 	write $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString (Version 3 3),
+		B.toByteString ct,
+		B.toByteString (3 :: Word8),
+		B.toByteString (3 :: Word8),
 		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
---		intToByteString 2 $ BS.length enc, enc ]

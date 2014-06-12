@@ -14,13 +14,14 @@ import Control.Monad
 import Control.Exception
 import Data.Maybe
 import Data.List
+import Data.Word
 import Data.HandleLike
 import Data.ASN1.Types
 import Data.X509
 import qualified Data.X509.Validation as X509
 import Data.X509.CertificateStore
 import System.IO
-import Content
+import Handshake
 import Fragment
 
 import "monads-tf" Control.Monad.State
@@ -179,11 +180,11 @@ handshake isdh ps cv sks skd mcs = do
 
 clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])
 clientHello = do
-	hs <- readHandshake $ \(Version mj _) -> mj == 3
+	hs <- readHandshake $ \(mj, _) -> mj == 3
 	h <- getHandle
 	lift . lift . hlDebug h 0 . BSC.pack $ "CLIENT HELLO: " ++ show hs ++ "\n"
 	case hs of
-		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
+		HandshakeClientHello (ClientHello vsn (Random rnd) _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -205,7 +206,7 @@ serverHello :: (HandleLike h, CPRG gen) =>
 	[CipherSuite] -> [CipherSuite] ->
 	CertificateChain -> CertificateChain -> TlsIo h gen ()
 serverHello csssv css cc ccec = do
-	sr <- Random `liftM` randomByteString 32
+	sr <- randomByteString 32
 	let Version vmjr vmnr = version in setVersion' (vmjr, vmnr)
 	setServerRandom sr
 	case cipherSuite' csssv css of
@@ -220,7 +221,7 @@ serverHello csssv css cc ccec = do
 			_ -> error "bad"
 		cont = map ContentHandshake $ catMaybes [
 			Just . HandshakeServerHello $ ServerHello
-				version sr sessionId
+				version (Random sr) sessionId
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
 		(ct, bs) = contentListToByteString cont
@@ -261,7 +262,7 @@ instance ValidateHandle Handle where
 
 clientCertificate :: ValidateHandle h => CertificateStore -> TlsIo h gen (PubKey, [String])
 clientCertificate cs = do
-	hs <- readHandshake (== version)
+	hs <- readHandshake (== (3, 3))
 	h <- getHandle
 	case hs of
 		HandshakeCertificate cc@(CertificateChain (c : _)) ->
@@ -297,7 +298,7 @@ clientKeyExchange :: (HandleLike h, CPRG gen) =>
 	RSA.PrivateKey -> Version -> TlsIo h gen ()
 clientKeyExchange sk (Version cvmjr cvmnr) = do
 --	h <- getHandle
-	hs <- readHandshake (== version)
+	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms_) -> do
 			let epms = BS.drop 2 epms_
@@ -328,7 +329,7 @@ certificateVerify (PubKeyRSA pub) = do
 		. lenSpace 50 . {- (++ "\n") . -} show
 	lift . lift . hlDebug h 5 $ " - VERIFY WITH RSA\n"
 	hash0 <- clientVerifyHash pub
-	hs <- readHandshake (== version)
+	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
@@ -356,7 +357,7 @@ certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	lift . lift . hlDebug h 5 $ " - VERIFY WITH ECDSA\n"
 	hash0 <- clientVerifyHashEc
 --	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
-	hs <- readHandshake (== version)
+	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
@@ -387,7 +388,7 @@ certificateVerify p = throwError $ Alert AlertLevelFatal
 
 clientChangeCipherSuite :: HandleLike h => TlsIo h gen ()
 clientChangeCipherSuite = do
-	cnt <- readContent (== version)
+	cnt <- readContent (== (3, 3))
 	case cnt of
 		ContentChangeCipherSpec ChangeCipherSpec ->
 			flushCipherSuite Client
@@ -400,7 +401,7 @@ clientFinished :: HandleLike h => TlsIo h gen ()
 clientFinished = do
 	fhc <- finishedHash Client
 --	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
-	cnt <- readContent (== version)
+	cnt <- readContent (== (3, 3))
 	case cnt of
 		ContentHandshake (HandshakeFinished f) ->
 			unless (f == fhc) . throwError $ Alert
@@ -422,7 +423,7 @@ serverFinished :: (HandleLike h, CPRG gen) => TlsIo h gen ()
 serverFinished = uncurry writeByteString . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash Server
 
-readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
+readHandshake :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -436,9 +437,9 @@ readHandshake ck = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
+readContent :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen Content
 readContent vc = do
-	c <- const `liftM` getContent (readBufContentType vc) (readByteString (== version))
+	c <- const `liftM` getContent (readBufContentType vc) (readByteString (== (3, 3)))
 		`ap` updateSequenceNumber Client
 	case contentToByteString c of
 		(ContentTypeHandshake, bs) -> updateHash bs
@@ -463,7 +464,7 @@ sndServerKeyExchange ps dhsk pk sr = do
 rcvClientKeyExchange :: (HandleLike h, DH.Base b) =>
 	b -> DH.Secret b -> Version -> TlsIo h gen ()
 rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
-	hs <- readHandshake (== version)
+	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
@@ -473,3 +474,49 @@ rcvClientKeyExchange dhps dhpn (Version _cvmjr _cvmnr) = do
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
+
+getContent :: Monad m =>
+	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
+getContent rct rd = do
+	ct <- rct
+	parseContent ((snd `liftM`) . rd) ct
+
+parseContent :: Monad m =>
+	(Int -> m BS.ByteString) -> ContentType -> m Content
+parseContent rd ContentTypeChangeCipherSpec =
+	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
+parseContent rd ContentTypeAlert =
+	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
+parseContent rd ContentTypeHandshake = ContentHandshake `liftM` takeHandshake rd
+parseContent _ ContentTypeApplicationData = undefined
+parseContent _ _ = undefined
+
+contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
+contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
+	(ct, BS.concat $ map snd fs)
+
+contentToByteString :: Content -> (ContentType, BS.ByteString)
+contentToByteString (ContentChangeCipherSpec ccs) =
+	(ContentTypeChangeCipherSpec, B.toByteString ccs)
+contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
+contentToByteString (ContentHandshake hss) =
+	(ContentTypeHandshake, handshakeToByteString hss)
+
+data Content
+	= ContentChangeCipherSpec ChangeCipherSpec
+	| ContentAlert Word8 Word8
+	| ContentHandshake Handshake
+	deriving Show
+
+data ChangeCipherSpec
+	= ChangeCipherSpec
+	| ChangeCipherSpecRaw Word8
+	deriving Show
+
+instance B.Bytable ChangeCipherSpec where
+	fromByteString bs = case BS.unpack bs of
+			[1] -> Right ChangeCipherSpec
+			[ccs] -> Right $ ChangeCipherSpecRaw ccs
+			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
+	toByteString ChangeCipherSpec = BS.pack [1]
+	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]

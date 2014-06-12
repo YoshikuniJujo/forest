@@ -1,8 +1,7 @@
 module Extension (
-	ExtensionList, lenBodyToByteString,
+	ExtensionList,
 	Version(..), Random(..),
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
-	SignatureAlgorithm(..), HashAlgorithm(..), ContentType(..),
+	SignatureAlgorithm(..), HashAlgorithm(..),
 ) where
 
 import Prelude hiding (head, concat)
@@ -13,7 +12,7 @@ import qualified Data.ByteString as BS
 
 import Data.Bits
 import Data.Word
-import NewTypes
+import Types
 
 import qualified Codec.Bytable as B
 
@@ -61,22 +60,22 @@ parseExtension = do
 
 extensionToByteString :: Extension -> BS.ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
-	ExtensionRaw ExtensionTypeServerName . lenBodyToByteString 2 .
+	ExtensionRaw ExtensionTypeServerName . B.addLength (undefined :: Word16) .
 		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEllipticCurve . lenBodyToByteString 2 .
+	ExtensionRaw ExtensionTypeEllipticCurve . B.addLength (undefined :: Word16) .
 		BS.concat $ map B.toByteString ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEcPointFormat . lenBodyToByteString 1 .
+	ExtensionRaw ExtensionTypeEcPointFormat . B.addLength (undefined :: Word8) .
 		BS.concat $ map ecPointFormatToByteString epf
 extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
 	ExtensionRaw ExtensionTypeSessionTicketTls stt
 extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
 	ExtensionRaw ExtensionTypeNextProtocolNegotiation npn
 extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString .
-	ExtensionRaw ExtensionTypeRenegotiationInfo $ lenBodyToByteString 1 ri
+	ExtensionRaw ExtensionTypeRenegotiationInfo $ B.addLength (undefined :: Word8) ri
 extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `BS.append`
-	lenBodyToByteString 2 body
+	B.addLength (undefined :: Word16) body
 
 data ExtensionType
 	= ExtensionTypeServerName
@@ -138,7 +137,7 @@ serverNameToByteString :: ServerName -> BS.ByteString
 serverNameToByteString (ServerNameHostName nm) = serverNameToByteString $
 	ServerNameRaw NameTypeHostName nm
 serverNameToByteString (ServerNameRaw nt nm) =
-	nameTypeToByteString nt `BS.append` lenBodyToByteString 2 nm
+	nameTypeToByteString nt `BS.append` B.addLength (undefined :: Word16) nm
 
 data NameType
 	= NameTypeHostName

@@ -2,7 +2,6 @@
 
 module Handshake (
 	Handshake(..), takeHandshake, handshakeToByteString,
-	ContentType(..), -- Bytable(..),
 
 	ClientHello(..), ServerHello(..),
 		Version(..), Random(..), SessionId(..),
@@ -19,6 +18,7 @@ import qualified Codec.Bytable as B
 
 import Control.Monad (liftM)
 import Data.Word (Word8)
+import Data.Word.Word24
 import qualified Data.ByteString as BS
 
 import Hello
@@ -80,7 +80,7 @@ handshakeToByteString (HandshakeClientKeyExchange epms) = handshakeToByteString 
 handshakeToByteString (HandshakeFinished bs) = handshakeToByteString $
 	HandshakeRaw HandshakeTypeFinished bs
 handshakeToByteString (HandshakeRaw mt bs) =
-	B.toByteString mt `BS.append` lenBodyToByteString 3 bs
+	B.toByteString mt `BS.append` B.addLength (undefined :: Word24) bs
 
 data HandshakeType
 	= HandshakeTypeClientHello

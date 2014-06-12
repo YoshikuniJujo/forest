@@ -4,10 +4,6 @@
 module KeyExchange (
 	Base(..), SecretKey(..),
 
-	integerToByteString,
---	byteStringToInteger,
-	lenBodyToByteString,
-
 	decodeSignature,
 	addSign,
 
@@ -29,7 +25,6 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
--- import ByteStringMonad
 import Types
 import qualified Codec.Bytable as B
 
@@ -80,7 +75,6 @@ addSign sk cr sr (ServerKeyExchange ps ys ha sa _) = let
 	ServerKeyExchange ps ys ha sa sn
 
 data ServerKeyExchange
---	= ServerKeyExchange ByteString ByteString Word8 Word8 BS.ByteString
 	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
 	deriving Show
 
@@ -89,7 +83,7 @@ serverKeyExchangeToByteString
 	(ServerKeyExchange params dhYs hashA sigA sn) =
 	BS.concat [
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		lenBodyToByteString 2 sn ]
+		B.addLength (undefined :: Word16) sn ]
 
 integerToWords :: Integer -> [Word8]
 integerToWords 0 = []

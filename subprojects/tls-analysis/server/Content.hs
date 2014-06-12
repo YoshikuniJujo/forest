@@ -53,16 +53,11 @@ contentToByteString (ContentChangeCipherSpec ccs) =
 contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
 contentToByteString (ContentHandshake hss) =
 	(ContentTypeHandshake, handshakeToByteString hss)
--- contentToByteString (ContentApplicationData body) =
---	(ContentTypeApplicationData, body)
--- contentToByteString (ContentRaw ct body) = (ct, body)
 
 data Content
 	= ContentChangeCipherSpec ChangeCipherSpec
 	| ContentAlert Word8 Word8
 	| ContentHandshake Handshake
---	| ContentApplicationData BS.ByteString
---	| ContentRaw ContentType BS.ByteString
 	deriving Show
 
 data ChangeCipherSpec

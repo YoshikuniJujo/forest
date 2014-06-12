@@ -2,7 +2,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module OpenClient (
-	Version(..), ContentType(..),
+--	Version(..),
+	ContentType(..),
 	TlsIo, liftIO, throwError, catchError,
 	randomByteString,
 	Partner(..),
@@ -37,11 +38,11 @@ module OpenClient (
 
 	write,
 	read,
-	contentTypeToByteString,
-	versionToByteString,
+--	contentTypeToByteString,
+--	versionToByteString,
 --	intToByteString,
-	byteStringToContentType,
-	byteStringToVersion,
+--	byteStringToContentType,
+--	byteStringToVersion,
 --	byteStringToInt,
 ) where
 
@@ -50,6 +51,7 @@ import Prelude hiding (read)
 import Control.Concurrent.STM
 import "monads-tf" Control.Monad.Error
 import Data.Maybe
+import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import System.IO
@@ -183,14 +185,15 @@ tPutWithCtSt tc ct msg = do
 	modify $ setRandomGen gen'
 	modify . setServerSequenceNumber (clientId tc) $ succ sn
 	lift . hlPut h $ BS.concat [
-		contentTypeToByteString ct,
-		versionToByteString v,
-		lenBodyToByteString 2 ebody ]
+		B.toByteString ct,
+		B.toByteString $ fst v,
+		B.toByteString $ snd v,
+		B.addLength (undefined :: Word16) ebody ]
 	where
 	(_vr, cs, h) = vrcshSt tc
 	key = tlsServerWriteKey tc
 	mk = tlsServerWriteMacKey tc
-	v = Version 3 3
+	v = (3, 3)
 	enc hs gen sn = encryptMessage hs gen key sn mk ct v msg
 
 vrcshSt :: TlsClientConst h gen -> (MSVersion, CipherSuite, h)
@@ -219,14 +222,15 @@ tGetWholeWithCtSt tc = do
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
 		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
 		_ -> lift $ hlError h "OpenClient.tGetWholeWithCT"
-	ct <- byteStringToContentType `liftM` lift (hlGet h 1)
-	v <- byteStringToVersion `liftM` lift (hlGet h 2)
+	ct <- (either error id . B.fromByteString) `liftM` lift (hlGet h 1)
+	[vmjr, vmnr] <- BS.unpack `liftM` lift (hlGet h 2)
+--	Version vmjr vmnr <- (either error id . B.fromByteString) `liftM` lift (hlGet h 2)
 	enc <- lift . hlGet h . either error id . B.fromByteString
 		=<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
 	if BS.null enc then return (ct, "") else do
-		ret <- case dec hs sn ct v enc of
+		ret <- case dec hs sn ct (vmjr, vmnr) enc of
 			Right r -> return r
 			Left err -> error err
 		return (ct, ret)

@@ -6,15 +6,7 @@ module MasterSecret (
 	generateKeyBlock,
 	generateFinished, MSVersion(..),
 
---	P.Version(..), P.versionToByteString, P.byteStringToVersion,
---	P.ContentType(..), P.contentTypeToByteString, P.byteStringToContentType,
-
---	P.Random(..),
---	P.CipherSuite(..), P.CipherSuiteKeyEx(..), P.CipherSuiteMsgEnc(..),
-
 	hmac,
-
---	P.lenBodyToByteString,
 ) where
 
 import Data.ByteString (ByteString)

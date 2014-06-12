@@ -23,7 +23,7 @@ module TlsIo (
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
 	alertToByteString,
 	CT.MSVersion(..),
-	CT.lenBodyToByteString,
+--	CT.lenBodyToByteString,
 	CT.decryptMessage, CT.hashSha1, CT.hashSha256,
 	CT.encryptMessage,
 
@@ -34,16 +34,16 @@ module TlsIo (
 
 	write,
 	read,
-	CT.contentTypeToByteString,
-	CT.versionToByteString,
+--	CT.contentTypeToByteString,
+--	CT.versionToByteString,
 --	CT.intToByteString,
-	CT.byteStringToContentType,
-	CT.byteStringToVersion,
+--	CT.byteStringToContentType,
+--	CT.byteStringToVersion,
 --	CT.byteStringToInt,
 
 	CT.ContentType(..),
-	CT.CipherSuite(..), CT.CipherSuiteKeyEx(..), CT.CipherSuiteMsgEnc(..),
-	CT.Version(..),
+	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+--	CT.Version(..),
 ) where
 
 import Prelude hiding (read)
@@ -63,6 +63,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified CryptoTools as CT
+import CipherSuite
 
 import Data.HandleLike
 
@@ -147,9 +148,9 @@ data TlsState h gen = TlsState {
 	tlssByteStringBuffer :: (Maybe CT.ContentType, BS.ByteString),
 
 	tlssVersion :: Maybe CT.MSVersion,
-	tlssClientWriteCipherSuite :: CT.CipherSuite,
-	tlssServerWriteCipherSuite :: CT.CipherSuite,
-	tlssCachedCipherSuite :: Maybe CT.CipherSuite,
+	tlssClientWriteCipherSuite :: CipherSuite,
+	tlssServerWriteCipherSuite :: CipherSuite,
+	tlssCachedCipherSuite :: Maybe CipherSuite,
 
 	tlssClientRandom :: Maybe BS.ByteString,
 	tlssServerRandom :: Maybe BS.ByteString,
@@ -171,19 +172,19 @@ getClientRandom = gets tlssClientRandom
 getServerRandom :: HandleLike h => TlsIo h gen (Maybe BS.ByteString)
 getServerRandom = gets tlssServerRandom
 
-getCipherSuite :: HandleLike h => TlsIo h gen (Maybe CT.CipherSuite)
+getCipherSuite :: HandleLike h => TlsIo h gen (Maybe CipherSuite)
 getCipherSuite = gets tlssCachedCipherSuite
 
 isEphemeralDH :: HandleLike h => TlsIo h gen Bool
 isEphemeralDH = do
-	me <- ((\cs -> let CT.CipherSuite e _ = cs in e) <$>) `liftM`
+	me <- ((\cs -> let CipherSuite e _ = cs in e) <$>) `liftM`
 		gets tlssCachedCipherSuite
 --	liftIO . putStrLn $ "TlsIo.isEphemeralDH: " ++ show me
 	case me of
-		Just CT.DHE_RSA -> return True
-		Just CT.ECDHE_RSA -> return True
-		Just CT.ECDHE_ECDSA -> return True
-		Just CT.RSA -> return False
+		Just DHE_RSA -> return True
+		Just ECDHE_RSA -> return True
+		Just ECDHE_ECDSA -> return True
+		Just RSA -> return False
 		_ -> throwError "TlsIo.isEphemeralDH: Unknown algorithm"
 
 initTlsState :: (HandleLike h, CPRG gen) => gen -> h -> TlsState h gen
@@ -192,8 +193,8 @@ initTlsState gen cl = TlsState {
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssVersion = Nothing,
-	tlssClientWriteCipherSuite = CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL,
-	tlssServerWriteCipherSuite = CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL,
+	tlssClientWriteCipherSuite = CipherSuite KeyExNULL MsgEncNULL,
+	tlssServerWriteCipherSuite = CipherSuite KeyExNULL MsgEncNULL,
 	tlssCachedCipherSuite = Nothing,
 
 	tlssClientRandom = Nothing,
@@ -210,8 +211,8 @@ initTlsState gen cl = TlsState {
 	tlssServerSequenceNumber = 0
  }
 
-getContentType :: HandleLike h => (CT.Version -> Bool)
-	-> TlsIo h gen (CT.ContentType, CT.Version, BS.ByteString)
+getContentType :: HandleLike h => ((Word8, Word8) -> Bool)
+	-> TlsIo h gen (CT.ContentType, (Word8, Word8), BS.ByteString)
 	-> TlsIo h gen CT.ContentType
 getContentType vc rd = do
 	mct <- fst `liftM` gets tlssByteStringBuffer
@@ -283,15 +284,15 @@ setVersion v = do
 			"setVersion: Not implemented"
 			-}
 
-setClientRandom, setServerRandom :: HandleLike h => CT.Random -> TlsIo h gen ()
-setClientRandom (CT.Random cr) = do
+setClientRandom, setServerRandom :: HandleLike h => BS.ByteString -> TlsIo h gen ()
+setClientRandom cr = do
 	tlss <- get
 	put $ tlss { tlssClientRandom = Just cr }
-setServerRandom (CT.Random sr) = do
+setServerRandom sr = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
 
-cacheCipherSuite :: HandleLike h => CT.CipherSuite -> TlsIo h gen ()
+cacheCipherSuite :: HandleLike h => CipherSuite -> TlsIo h gen ()
 cacheCipherSuite cs = do
 	tlss <- get
 	put $ tlss { tlssCachedCipherSuite = Just cs }
@@ -324,8 +325,8 @@ generateKeys pms = do
 		tlssClientRandom = mcr,
 		tlssServerRandom = msr } <- get
 	mkl <- case cs of
-		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA) -> return 20
-		Just (CT.CipherSuite _ CT.AES_128_CBC_SHA256) -> return 32
+		Just (CipherSuite _ AES_128_CBC_SHA) -> return 20
+		Just (CipherSuite _ AES_128_CBC_SHA256) -> return 32
 		_ -> throwError "generateKeys: not implemented"
 --	lift . lift . hlDebug h . BSC.pack $ "CLIENT RANDOM: " ++ show mcr ++ "\n"
 --	lift . lift . hlDebug h . BSC.pack $ "SERVER RANDOM: " ++ show msr ++ "\n"
@@ -378,7 +379,7 @@ clientVerifyHash pub = do
 	return hashed
 
 tlsEncryptMessage :: (HandleLike h, CPRG gen) =>
-	CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo h gen BS.ByteString
+	CT.ContentType -> (Word8, Word8) -> BS.ByteString -> TlsIo h gen BS.ByteString
 tlsEncryptMessage ct v msg = do
 	version <- gets tlssVersion
 	cs <- cipherSuite Server
@@ -388,9 +389,9 @@ tlsEncryptMessage ct v msg = do
 	mmk <- macKey Server
 	gen <- gets tlssRandomGen
 	mhs <- case cs of
-		CT.CipherSuite _ CT.AES_128_CBC_SHA -> return $ Just CT.hashSha1
-		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
-		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return Nothing
+		CipherSuite _ AES_128_CBC_SHA -> return $ Just CT.hashSha1
+		CipherSuite _ AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
+		CipherSuite KeyExNULL MsgEncNULL -> return Nothing
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionIllegalParameter
@@ -412,7 +413,7 @@ tlsEncryptMessage ct v msg = do
 		(_, _, _, _) -> throwError "no version"
 
 tlsDecryptMessage :: HandleLike h =>
-	CT.ContentType -> CT.Version -> BS.ByteString -> TlsIo h gen BS.ByteString
+	CT.ContentType -> (Word8, Word8) -> BS.ByteString -> TlsIo h gen BS.ByteString
 tlsDecryptMessage ct v enc = do
 	version <- gets tlssVersion
 	cs <- cipherSuite Client
@@ -420,7 +421,7 @@ tlsDecryptMessage ct v enc = do
 	sn <- sequenceNumber Client
 	mmk <- macKey Client
 	case (version, cs, mwk, mmk) of
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA, Just key, Just mk)
+		(Just CT.TLS12, CipherSuite _ AES_128_CBC_SHA, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -428,7 +429,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(Just CT.TLS12, CT.CipherSuite _ CT.AES_128_CBC_SHA256, Just key, Just mk)
+		(Just CT.TLS12, CipherSuite _ AES_128_CBC_SHA256, Just key, Just mk)
 			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
 				case emsg of
 					Right msg -> return msg
@@ -436,7 +437,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(_, CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL, _, _) -> return enc
+		(_, CipherSuite KeyExNULL MsgEncNULL, _, _) -> return enc
 		_ -> throwError "TlsIo.tlsDecryptMessage: No keys or bad cipher suite"
 
 sequenceNumber :: HandleLike h => Partner -> TlsIo h gen Word64
@@ -454,16 +455,16 @@ updateSequenceNumber partner = do
 		Server -> tlssServerSequenceNumber
 	tlss <- get
 	case cs of
-		CT.CipherSuite _ CT.AES_128_CBC_SHA -> put $ case partner of
+		CipherSuite _ AES_128_CBC_SHA -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite _ CT.AES_128_CBC_SHA256 -> put $ case partner of
+		CipherSuite _ AES_128_CBC_SHA256 -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CT.CipherSuite CT.KeyExNULL CT.MsgEncNULL -> return ()
+		CipherSuite KeyExNULL MsgEncNULL -> return ()
 		_ -> throwError . strMsg $ "TlsIo.updateSequenceNumber: not implemented: " ++ show cs
 
-cipherSuite :: HandleLike h => Partner -> TlsIo h gen CT.CipherSuite
+cipherSuite :: HandleLike h => Partner -> TlsIo h gen CipherSuite
 cipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite

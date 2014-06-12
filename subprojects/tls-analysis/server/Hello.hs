@@ -1,15 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hello (
-	ContentType(..),
-
 	ClientHello(..), ServerHello(..),
 		Version(..), Random(..), SessionId(..),
 		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
 		CompressionMethod(..),
 
 	SignatureAlgorithm(..), HashAlgorithm(..),
-	lenBodyToByteString,
  ) where
 
 import Control.Applicative
@@ -19,6 +16,8 @@ import Extension
 
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
+
+import CipherSuite
 
 data ClientHello
 	= ClientHello Version Random SessionId [CipherSuite]
@@ -47,10 +46,10 @@ clientHelloToByteString :: ClientHello -> BS.ByteString
 clientHelloToByteString (ClientHello pv r sid css cms mel) = BS.concat [
 	B.toByteString pv,
 	B.toByteString r,
-	lenBodyToByteString 1 $ B.toByteString sid,
-	lenBodyToByteString 2 . BS.concat $ map B.toByteString css,
-	lenBodyToByteString 1 . BS.concat $ map B.toByteString cms,
-	maybe "" (lenBodyToByteString 2 . BS.concat . map B.toByteString) mel ]
+	B.addLength (undefined :: Word8) $ B.toByteString sid,
+	B.addLength (undefined :: Word16) . BS.concat $ map B.toByteString css,
+	B.addLength (undefined :: Word8) . BS.concat $ map B.toByteString cms,
+	maybe "" (B.addLength (undefined :: Word16) . BS.concat . map B.toByteString) mel ]
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello
@@ -81,10 +80,10 @@ serverHelloToByteString :: ServerHello -> BS.ByteString
 serverHelloToByteString (ServerHello pv r sid cs cm mes) = BS.concat [
 	B.toByteString pv,
 	B.toByteString r,
-	lenBodyToByteString 1 $ B.toByteString sid,
+	B.addLength (undefined :: Word8) $ B.toByteString sid,
 	B.toByteString cs,
 	compressionMethodToByteString cm,
-	maybe "" (lenBodyToByteString 2 . BS.concat . map B.toByteString) mes ]
+	maybe "" (B.addLength (undefined :: Word16) . BS.concat . map B.toByteString) mes ]
 serverHelloToByteString (ServerHelloRaw sh) = sh
 
 data CompressionMethod
