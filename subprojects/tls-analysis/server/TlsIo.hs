@@ -7,9 +7,8 @@ module TlsIo (
 	randomByteString,
 	Partner(..), runTlsIo, initTlsState,
 
---	setVersion,
 	setClientRandom, setServerRandom,
-	setVersion',
+	setVersion,
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
@@ -261,8 +260,8 @@ read n = do
 write :: HandleLike h => BS.ByteString -> HandleLike h => TlsIo h gen ()
 write dat = (lift . lift . flip hlPut dat) =<< gets tlssClientHandle
 
-setVersion' :: HandleLike h => (Word8, Word8) -> TlsIo h gen ()
-setVersion' v = do
+setVersion :: HandleLike h => (Word8, Word8) -> TlsIo h gen ()
+setVersion v = do
 	tlss <- get
 	case CT.tupleToVersion v of
 		Just v' -> put tlss { tlssVersion = Just v' }

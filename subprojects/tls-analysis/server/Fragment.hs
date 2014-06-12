@@ -8,8 +8,7 @@ module Fragment (
 	updateHash,
 
 	setClientRandom, setServerRandom,
---	setVersion,
-	setVersion',
+	setVersion,
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 	generateKeys,
