@@ -4,7 +4,7 @@
 module OpenClient (
 --	Version(..),
 	ContentType(..),
-	TlsIo, liftIO, throwError, catchError,
+	HandshakeM, liftIO, throwError, catchError,
 	randomByteString,
 	Partner(..),
 
@@ -23,16 +23,13 @@ module OpenClient (
 	TlsClientConst,
 	TlsClientState,
 	runOpen,
-	runOpenSt,
 	initialTlsState,
 
 	buffered, getContentType,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
 	checkName, clientName,
 
-	isEphemeralDH,
-	getRandomGen,
-	putRandomGen,
+	withRandom,
 	getHandle,
 
 	write,
@@ -58,7 +55,7 @@ import "crypto-random" Crypto.Random
 
 import Data.HandleLike
 
-import TlsIo
+import HandshakeMonad
 -- import Types
 import ClientState
 import qualified Codec.Bytable as B
@@ -116,23 +113,16 @@ instance (HandleLike h, CPRG g) =>
 	hlGetContent = tGetContentSt
 	hlClose = tCloseSt
 
-runOpen :: Handle -> TlsIo Handle SystemRNG [String] -> IO TlsClient
-runOpen cl opn = do
-	ep <- createEntropyPool
-	(tc, st) <- runOpenSt cl opn `runStateT` initialTlsState (cprgCreate ep)
-	stt <- atomically $ newTVar st
-	return TlsClient { tlsConst = tc, tlsState = stt }
-
-runOpenSt :: (HandleLike h, CPRG gen) => h -> TlsIo h gen [String] ->
+runOpen :: (HandleLike h, CPRG gen) => h -> HandshakeM h gen [String] ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
-runOpenSt cl opn = StateT $ \s -> runOpenSt_ s cl opn
+runOpen cl opn = StateT $ \s -> runOpenSt_ s cl opn
 
 runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
-	h -> TlsIo h gen [String] ->
+	h -> HandshakeM h gen [String] ->
 	HandleMonad h (TlsClientConst h gen, TlsClientState gen)
 runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
-	(ns, tlss) <- opn `runTlsIo` initTlsState (getRandomGenSt s') cl
+	(ns, tlss) <- opn `runHandshakeM` initTlsState (getRandomGenSt s') cl
 	let	s'' = setRandomGen (tlssRandomGen tlss) s'
 		tc = TlsClientConst {
 			clientId = cid,

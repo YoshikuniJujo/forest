@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
-	TlsClient, evalClient, openClient, checkName, clientName,
+	evalClient, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 ) where
@@ -10,7 +10,7 @@ module TlsServer (
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.State (StateT, runStateT, lift)
-import "monads-tf" Control.Monad.Error (throwError)
+import "monads-tf" Control.Monad.Error (throwError, catchError)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
@@ -34,7 +34,7 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import Handshake (
+import HandshakeType (
 	Handshake(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
@@ -46,21 +46,22 @@ import Handshake (
 	ClientKeyExchange(..),
 	DigitallySigned(..) )
 import Fragment (
-	TlsIo,
-	Partner(..),
-	ContentType(..),
-	Alert(..), AlertDescription(..), AlertLevel(..),
-	readByteString, writeByteString, updateSequenceNumber,
-	generateKeys, updateHash,
-	getClientRandom,
-	readBufContentType, finishedHash,
-	flushCipherSuite, clientVerifyHashEc,
-	getCipherSuite, getHandle, clientVerifyHash,
-	decryptRSA, catchError, randomByteString, getServerRandom,
-	isEphemeralDH, cacheCipherSuite, setServerRandom, setVersion,
-	putRandomGen, setClientRandom,
-	TlsClientState, TlsClientConst, initialTlsState, runOpenSt, getRandomGen,
-	TlsClient, checkName, clientName,
+	HandshakeM, Partner(..), ContentType(..),
+	Alert(..), AlertLevel(..), AlertDescription(..),
+	readContentType, readByteString, writeByteString,
+
+	setVersion, setClientRandom, setServerRandom,
+	cacheCipherSuite, flushCipherSuite,
+	generateKeys, updateHash, updateSequenceNumber,
+
+	getClientRandom, getServerRandom, getCipherSuite, withRandom,
+
+	finishedHash, clientVerifyHash, clientVerifyHashEc,
+	decryptRSA, randomByteString, getHandle,
+
+	runOpen,
+	TlsClientConst, checkName, clientName,
+	TlsClientState, initialTlsState,
  )
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
@@ -103,14 +104,14 @@ openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore ->
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
-openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
+openClient h css (pk, cc) ecks mcs = runOpen h (helloHandshake css pk cc ecks mcs)
 
 curve :: ECDSA.Curve
 curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
 
 helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
  	[CipherSuite] ->  RSA.PrivateKey -> X509.CertificateChain ->
- 	(sk, X509.CertificateChain) -> Maybe X509.CertificateStore -> TlsIo h gen [String]
+ 	(sk, X509.CertificateChain) -> Maybe X509.CertificateStore -> HandshakeM h gen [String]
 helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
@@ -126,7 +127,7 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 		_ -> error "bad"
 
 hello :: (HandleLike h, CPRG gen) => [CipherSuite] ->
-	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen Version
+	X509.CertificateChain -> X509.CertificateChain -> HandshakeM h gen Version
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
@@ -136,18 +137,14 @@ handshake ::
 	(Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
 		B.Bytable (Public b)) =>
 	Bool -> b -> Version -> sk ->
-	RSA.PrivateKey -> Maybe X509.CertificateStore -> TlsIo h gen [String]
+	RSA.PrivateKey -> Maybe X509.CertificateStore -> HandshakeM h gen [String]
 handshake isdh ps cv sks skd mcs = do
-	pn <- if not isdh then return $ error "bad" else do
-		gen <- getRandomGen
-		let (pn, gen') = generateSecret gen ps
-		putRandomGen gen'
-		return pn
+	pn <- if not isdh then return $ error "bad" else
+		withRandom $ flip generateSecret ps
 	when isdh $ serverKeyExchange sks ps pn
 	serverToHelloDone mcs
 	mpn <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
-	dhe <- isEphemeralDH
-	if dhe then rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
+	if isdh then rcvClientKeyExchange ps pn cv else clientKeyExchange skd cv
 	maybe (return ()) (certificateVerify . fst) mpn
 	clientChangeCipherSuite
 	clientFinished
@@ -155,7 +152,7 @@ handshake isdh ps cv sks skd mcs = do
 	serverFinished
 	return $ maybe [] snd mpn
 
-clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])
+clientHello :: HandleLike h => HandshakeM h gen (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(mj, _) -> mj == 3
 	case hs of
@@ -179,7 +176,7 @@ clientHello = do
 
 serverHello :: (HandleLike h, CPRG gen) =>
 	[CipherSuite] -> [CipherSuite] ->
-	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen ()
+	X509.CertificateChain -> X509.CertificateChain -> HandshakeM h gen ()
 serverHello csssv css cc ccec = do
 	sr <- randomByteString 32
 	let (vmjr, vmnr) = version in setVersion (vmjr, vmnr)
@@ -203,17 +200,25 @@ serverHello csssv css cc ccec = do
 	writeByteString ct bs
 	updateHash bs
 
-serverKeyExchange ::
-	(HandleLike h, Base b, B.Bytable b, B.Bytable (Public b),
-		SecretKey sk, CPRG gen) =>
-	sk -> b -> Secret b -> TlsIo h gen ()
-serverKeyExchange sk ps pn = do
-	dh <- isEphemeralDH
-	Just rsr <- getServerRandom
-	when dh $ sndServerKeyExchange ps pn sk rsr
+serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG gen,
+	Base b, B.Bytable b, B.Bytable (Public b)) =>
+	sk -> b -> Secret b -> HandshakeM h gen ()
+serverKeyExchange pk ps dhsk = do
+	Just sr <- getServerRandom
+	Just cr <- getClientRandom
+	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
+			addSign pk cr sr $
+			ServerKeyExchange
+				(B.toByteString ps)
+				(B.toByteString $ calculatePublic ps dhsk)
+				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
+		cont = [ContentHandshake ske]
+		(ct, bs) = contentListToByteString cont
+	writeByteString ct bs
+	updateHash bs
 
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
-	Maybe X509.CertificateStore -> TlsIo h gen ()
+	Maybe X509.CertificateStore -> HandshakeM h gen ()
 serverToHelloDone mcs = do
 	let	cont = map ContentHandshake $ catMaybes [
 			case mcs of
@@ -246,7 +251,7 @@ validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
 clientCertificate :: ValidateHandle h =>
-	X509.CertificateStore -> TlsIo h gen (X509.PubKey, [String])
+	X509.CertificateStore -> HandshakeM h gen (X509.PubKey, [String])
 clientCertificate cs = do
 	hs <- readHandshake (== (3, 3))
 	h <- getHandle
@@ -282,17 +287,14 @@ clientCertificate cs = do
 	uan _ = Nothing
 
 clientKeyExchange :: (HandleLike h, CPRG gen) =>
-	RSA.PrivateKey -> Version -> TlsIo h gen ()
+	RSA.PrivateKey -> Version -> HandshakeM h gen ()
 clientKeyExchange sk (cvmjr, cvmnr) = do
---	h <- getHandle
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
---			lift . lift . hlDebug h $ "PRE MASTER SECRET: " `BS.append`
---				BSC.pack (show pms) `BS.append` "\n"
 			generateKeys pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -309,7 +311,7 @@ clientKeyExchange sk (cvmjr, cvmnr) = do
 			_ -> throwError "bad: never occur"
 		return pms
 
-certificateVerify :: HandleLike h => X509.PubKey -> TlsIo h gen ()
+certificateVerify :: HandleLike h => X509.PubKey -> HandshakeM h gen ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
@@ -376,7 +378,7 @@ certificateVerify p = throwError $ Alert AlertLevelFatal
 lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
-clientChangeCipherSuite :: HandleLike h => TlsIo h gen ()
+clientChangeCipherSuite :: HandleLike h => HandshakeM h gen ()
 clientChangeCipherSuite = do
 	cnt <- readContent (== (3, 3))
 	case cnt of
@@ -387,7 +389,7 @@ clientChangeCipherSuite = do
 			AlertDescriptionUnexpectedMessage
 			"Not Change Cipher Spec"
 
-clientFinished :: HandleLike h => TlsIo h gen ()
+clientFinished :: HandleLike h => HandshakeM h gen ()
 clientFinished = do
 	fhc <- finishedHash Client
 --	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
@@ -403,17 +405,17 @@ clientFinished = do
 			AlertDescriptionUnexpectedMessage
 			"Not Finished"
 
-serverChangeCipherSuite :: (HandleLike h, CPRG gen) => TlsIo h gen ()
+serverChangeCipherSuite :: (HandleLike h, CPRG gen) => HandshakeM h gen ()
 serverChangeCipherSuite = do
 	uncurry writeByteString . contentToByteString $
 		ContentChangeCipherSpec ChangeCipherSpec
 	flushCipherSuite Server
 
-serverFinished :: (HandleLike h, CPRG gen) => TlsIo h gen ()
+serverFinished :: (HandleLike h, CPRG gen) => HandshakeM h gen ()
 serverFinished = uncurry writeByteString . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash Server
 
-readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
+readHandshake :: HandleLike h => (Version -> Bool) -> HandshakeM h gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -427,34 +429,17 @@ readHandshake ck = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
+readContent :: HandleLike h => (Version -> Bool) -> HandshakeM h gen Content
 readContent vc = do
-	c <- const `liftM` getContent (readBufContentType vc) (readByteString (== (3, 3)))
+	c <- const `liftM` getContent (readContentType vc) (readByteString (== (3, 3)))
 		`ap` updateSequenceNumber Client
 	case contentToByteString c of
 		(ContentTypeHandshake, bs) -> updateHash bs
 		_ -> return ()
 	return c
-	
-sndServerKeyExchange ::
-	(HandleLike h, SecretKey sk, CPRG gen,
-	Base b, B.Bytable b, B.Bytable (Public b)) =>
-	b -> Secret b -> sk -> BS.ByteString -> TlsIo h gen ()
-sndServerKeyExchange ps dhsk pk sr = do
-	Just cr <- getClientRandom
-	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
-			addSign pk cr sr $
-			ServerKeyExchange
-				(B.toByteString ps)
-				(B.toByteString $ calculatePublic ps dhsk)
-				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
-		cont = [ContentHandshake ske]
-		(ct, bs) = contentListToByteString cont
-	writeByteString ct bs
-	updateHash bs
 
 rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>
-	b -> Secret b -> Version -> TlsIo h gen ()
+	b -> Secret b -> Version -> HandshakeM h gen ()
 rcvClientKeyExchange dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake (== (3, 3))
 	case hs of

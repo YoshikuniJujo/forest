@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Handshake (
+module HandshakeType (
 	Handshake(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),

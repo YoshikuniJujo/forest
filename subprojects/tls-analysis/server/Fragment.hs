@@ -2,7 +2,7 @@
 
 module Fragment (
 	ContentType(..),
-	readBufContentType,
+	readContentType,
 	readByteString,
 	writeByteString,
 	updateHash,
@@ -16,24 +16,21 @@ module Fragment (
 	decryptRSA, finishedHash,
 
 	Partner(..),
-	TlsIo, liftIO,
+	HandshakeM, liftIO,
 
-	throwError, catchError,
 	updateSequenceNumber,
 	randomByteString,
 	clientVerifyHash,
 	clientVerifyHashEc,
 
-	TlsClient(..), runOpen, Alert(..), AlertLevel(..), AlertDescription(..),
+	Alert(..), AlertLevel(..), AlertDescription(..),
 	checkName, clientName,
-	runOpenSt,
+	runOpen,
 	TlsClientConst,
 	TlsClientState,
 	initialTlsState,
 
-	isEphemeralDH,
-	getRandomGen,
-	putRandomGen,
+	withRandom,
 	getHandle,
 ) where
 
@@ -51,17 +48,25 @@ import Data.HandleLike
 import qualified Codec.Bytable as B
 import Data.Word
 
-readBufContentType :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen ContentType
-readBufContentType vc = getContentType vc readFragment
+readContentType :: HandleLike h => ((Word8, Word8) -> Bool) -> HandshakeM h gen ContentType
+readContentType vc = getContentType vc readFragment
 
 readByteString :: HandleLike h =>
-	((Word8, Word8) -> Bool) -> Int -> TlsIo h gen (ContentType, BS.ByteString)
+	((Word8, Word8) -> Bool) -> Int -> HandshakeM h gen (ContentType, BS.ByteString)
 readByteString vc n = buffered n $ do
-	(ct, v, bs) <- readFragment
+	(ct, v@(vmjr, vmnr), bs) <- readFragment
 	unless (vc v) $ throwError alertVersion
+	let bs' = BS.concat [
+		B.toByteString ct,
+		B.toByteString vmjr,
+		B.toByteString vmnr,
+		bs ]
+	case ct of
+		ContentTypeHandshake -> updateHash bs' >> updateHash bs'
+		_ -> updateHash bs' -- return ()
 	return (ct, bs)
 
-readFragment :: HandleLike h => TlsIo h gen (ContentType, (Word8, Word8), BS.ByteString)
+readFragment :: HandleLike h => HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
 readFragment = do
 	ct <- (either error id . B.fromByteString) `liftM` read 1
 	[vmjr, vmnr] <- BS.unpack `liftM` read 2
@@ -70,14 +75,26 @@ readFragment = do
 	ebody <- read . either error id . B.fromByteString =<< read 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct v ebody
+--	let bs' = BS.concat [
+--		B.toByteString ct,
+--		B.toByteString vmjr,
+--		B.toByteString vmnr,
+--		body ]
+--	case ct of
+--		ContentTypeHandshake -> updateHash bs'
+--		_ -> return ()
 	return (ct, v, body)
 
 writeByteString :: (HandleLike h, CPRG gen) =>
-	ContentType -> BS.ByteString -> TlsIo h gen ()
+	ContentType -> BS.ByteString -> HandshakeM h gen ()
 writeByteString ct bs = do
 	enc <- tlsEncryptMessage ct (3, 3) bs
-	write $ BS.concat [
+	let bs' = BS.concat [
 		B.toByteString ct,
 		B.toByteString (3 :: Word8),
 		B.toByteString (3 :: Word8),
 		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
+	write bs'
+--	case ct of
+--		ContentTypeHandshake -> updateHash bs'
+--		_ -> return ()
