@@ -10,6 +10,7 @@ module TlsServer (
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM, ap)
 import "monads-tf" Control.Monad.State (StateT, runStateT, lift)
+import "monads-tf" Control.Monad.Error (throwError)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
@@ -33,20 +34,43 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import Handshake
-import Fragment
-import KeyExchange
+import Handshake (
+	SignatureAlgorithm(..), HashAlgorithm(..), NamedCurve(..),
+	Handshake(..), takeHandshake, handshakeToByteString,
+	EncryptedPreMasterSecret(..), DigitallySigned(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	SessionId(..), CompressionMethod(..), ClientCertificateType(..),
+	ClientHello(..), ServerHello(..), CertificateRequest(..),
+ )
+import Fragment (
+	TlsIo,
+	Partner(..),
+	ContentType(..),
+	Alert(..), AlertDescription(..), AlertLevel(..),
+	readByteString, writeByteString, updateSequenceNumber,
+	generateKeys, updateHash,
+	getClientRandom,
+	readBufContentType, finishedHash,
+	flushCipherSuite, clientVerifyHashEc,
+	getCipherSuite, getHandle, clientVerifyHash,
+	decryptRSA, catchError, randomByteString, getServerRandom,
+	isEphemeralDH, cacheCipherSuite, setServerRandom, setVersion,
+	putRandomGen, setClientRandom,
+	TlsClientState, TlsClientConst, initialTlsState, runOpenSt, getRandomGen,
+	TlsClient, checkName, clientName,
+ )
+import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
 type Version = (Word8, Word8)
 
-version :: (Word8, Word8)
+version :: Version
 version = (3, 3)
 
 sessionId :: SessionId
 sessionId = SessionId ""
 
-cipherSuite' :: [CipherSuite] -> [CipherSuite] -> Maybe CipherSuite
-cipherSuite' csssv csscl = case find (`elem` csscl) csssv of
+cipherSuite :: [CipherSuite] -> [CipherSuite] -> Maybe CipherSuite
+cipherSuite csssv csscl = case find (`elem` csscl) csssv of
 	Just cs -> Just cs
 	_ -> if CipherSuite RSA AES_128_CBC_SHA `elem` csscl
 		then Just $ CipherSuite RSA AES_128_CBC_SHA
@@ -55,8 +79,10 @@ cipherSuite' csssv csscl = case find (`elem` csscl) csssv of
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
 
-clientCertificateType :: ClientCertificateType
-clientCertificateType = ClientCertificateTypeRsaSign
+clientCertificateTypes :: [ClientCertificateType]
+clientCertificateTypes = [
+	ClientCertificateTypeRsaSign,
+	ClientCertificateTypeEcdsaSign ]
 
 clientCertificateAlgorithm :: (HashAlgorithm, SignatureAlgorithm)
 clientCertificateAlgorithm = (HashAlgorithmSha256, SignatureAlgorithmRsa)
@@ -82,8 +108,8 @@ openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
 openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
 
-curve :: Curve
-curve = fst (generateBase undefined () :: (Curve, SystemRNG))
+curve :: ECDSA.Curve
+curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
 
 helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
  	[CipherSuite] ->  RSA.PrivateKey -> X509.CertificateChain ->
@@ -103,7 +129,7 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 		_ -> error "bad"
 
 hello :: (HandleLike h, CPRG gen) => [CipherSuite] ->
-	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen (Word8, Word8)
+	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen Version
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
@@ -112,7 +138,7 @@ hello csssv cc ccec = do
 handshake ::
 	(Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
 		B.Bytable (Public b)) =>
-	Bool -> b -> (Word8, Word8) -> sk ->
+	Bool -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe X509.CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	pn <- if not isdh then return $ error "bad" else do
@@ -163,7 +189,7 @@ serverHello csssv css cc ccec = do
 	sr <- randomByteString 32
 	let (vmjr, vmnr) = version in setVersion (vmjr, vmnr)
 	setServerRandom sr
-	case cipherSuite' csssv css of
+	case cipherSuite csssv css of
 		Just cs -> cacheCipherSuite cs
 		_ -> throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
@@ -198,7 +224,7 @@ serverToHelloDone mcs = do
 			case mcs of
 				Just cs -> Just . HandshakeCertificateRequest
 					. CertificateRequest
-						[clientCertificateType]
+						clientCertificateTypes
 						[clientCertificateAlgorithm]
 					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
 					$ X509.listCertificates cs
@@ -384,7 +410,7 @@ serverFinished :: (HandleLike h, CPRG gen) => TlsIo h gen ()
 serverFinished = uncurry writeByteString . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash Server
 
-readHandshake :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen Handshake
+readHandshake :: HandleLike h => (Version -> Bool) -> TlsIo h gen Handshake
 readHandshake ck = do
 	cnt <- readContent ck
 	case cnt of
@@ -398,7 +424,7 @@ readHandshake ck = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: HandleLike h => ((Word8, Word8) -> Bool) -> TlsIo h gen Content
+readContent :: HandleLike h => (Version -> Bool) -> TlsIo h gen Content
 readContent vc = do
 	c <- const `liftM` getContent (readBufContentType vc) (readByteString (== (3, 3)))
 		`ap` updateSequenceNumber Client
@@ -501,11 +527,11 @@ serverKeyExchangeToByteString
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
 		B.addLength (undefined :: Word16) sn ]
 
-instance B.Bytable Curve where
+instance B.Bytable ECDSA.Curve where
 	fromByteString = undefined
 	toByteString = encodeCurve
 
-encodeCurve :: Curve -> BS.ByteString
+encodeCurve :: ECDSA.Curve -> BS.ByteString
 encodeCurve c
 	| c == secp256r1 =
 		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1

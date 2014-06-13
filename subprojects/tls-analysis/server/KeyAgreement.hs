@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module KeyExchange (
+module KeyAgreement (
 	Base(..), NoDH(..), Curve(..), secp256r1, DH.Params(..), dhparams
 ) where
 

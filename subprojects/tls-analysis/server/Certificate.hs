@@ -111,6 +111,7 @@ certificateRequestToByteString (CertificateRequestRaw bs) = bs
 
 data ClientCertificateType
 	= ClientCertificateTypeRsaSign
+	| ClientCertificateTypeEcdsaSign
 	| ClientCertificateTypeRaw Word8
 	deriving Show
 
@@ -122,11 +123,13 @@ byteStringToClientCertificateType :: BS.ByteString -> Either String ClientCertif
 byteStringToClientCertificateType bs = case BS.unpack bs of
 	[w] -> Right $ case w of
 		1 -> ClientCertificateTypeRsaSign
+		64 -> ClientCertificateTypeEcdsaSign
 		_ -> ClientCertificateTypeRaw w
 	_ -> Left "Certificate.byteStringToClientCertificateType"
 
 clientCertificateTypeToByteString :: ClientCertificateType -> BS.ByteString
 clientCertificateTypeToByteString ClientCertificateTypeRsaSign = "\x01"
+clientCertificateTypeToByteString ClientCertificateTypeEcdsaSign = "\x40"
 clientCertificateTypeToByteString (ClientCertificateTypeRaw w) = BS.pack [w]
 
 data EncryptedPreMasterSecret
