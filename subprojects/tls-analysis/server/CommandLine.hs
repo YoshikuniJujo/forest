@@ -12,7 +12,7 @@ import System.Exit (exitFailure)
 import Network (PortID(..), PortNumber)
 import ReadFile (
 	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore)
-import CipherSuite (CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..))
+import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509

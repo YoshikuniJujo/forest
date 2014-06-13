@@ -2,7 +2,7 @@
 
 module MyServer (
 	server,
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..),
 ) where
 
@@ -17,7 +17,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import TlsServer (
-	SecretKey, CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	SecretKey, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..), evalClient, openClient, getName)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>

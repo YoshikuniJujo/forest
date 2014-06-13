@@ -6,7 +6,7 @@ module Handshake (
 	ClientHello(..), ServerHello(..),
 		-- Version(..), -- Random(..),
 		SessionId(..),
-		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	CertificateRequest(..),
 		ClientCertificateType(..),

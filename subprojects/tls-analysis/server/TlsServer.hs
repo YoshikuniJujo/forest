@@ -5,7 +5,7 @@ module TlsServer (
 	ValidateHandle(..),
 	TlsClient, openClient, withClient, evalClient,
 	checkName, getName,
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 
 	SecretKey,
 ) where

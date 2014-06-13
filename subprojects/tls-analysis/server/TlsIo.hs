@@ -41,7 +41,7 @@ module TlsIo (
 --	CT.byteStringToInt,
 
 	CT.ContentType(..),
-	CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 --	CT.Version(..),
 ) where
 
@@ -192,8 +192,8 @@ initTlsState gen cl = TlsState {
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssVersion = Nothing,
-	tlssClientWriteCipherSuite = CipherSuite KeyExNULL MsgEncNULL,
-	tlssServerWriteCipherSuite = CipherSuite KeyExNULL MsgEncNULL,
+	tlssClientWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
+	tlssServerWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
 	tlssCachedCipherSuite = Nothing,
 
 	tlssClientRandom = Nothing,
@@ -390,7 +390,7 @@ tlsEncryptMessage ct v msg = do
 	mhs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return $ Just CT.hashSha1
 		CipherSuite _ AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
-		CipherSuite KeyExNULL MsgEncNULL -> return Nothing
+		CipherSuite KE_NULL BE_NULL -> return Nothing
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionIllegalParameter
@@ -436,7 +436,7 @@ tlsDecryptMessage ct v enc = do
 						AlertLevelFatal
 						AlertDescriptionBadRecordMac
 						err
-		(_, CipherSuite KeyExNULL MsgEncNULL, _, _) -> return enc
+		(_, CipherSuite KE_NULL BE_NULL, _, _) -> return enc
 		_ -> throwError "TlsIo.tlsDecryptMessage: No keys or bad cipher suite"
 
 sequenceNumber :: HandleLike h => Partner -> TlsIo h gen Word64
@@ -460,7 +460,7 @@ updateSequenceNumber partner = do
 		CipherSuite _ AES_128_CBC_SHA256 -> put $ case partner of
 			Client -> tlss { tlssClientSequenceNumber = succ sn }
 			Server -> tlss { tlssServerSequenceNumber = succ sn }
-		CipherSuite KeyExNULL MsgEncNULL -> return ()
+		CipherSuite KE_NULL BE_NULL -> return ()
 		_ -> throwError . strMsg $ "TlsIo.updateSequenceNumber: not implemented: " ++ show cs
 
 cipherSuite :: HandleLike h => Partner -> TlsIo h gen CipherSuite

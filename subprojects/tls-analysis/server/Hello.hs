@@ -4,7 +4,7 @@ module Hello (
 	ClientHello(..), ServerHello(..),
 		-- Version(..), -- Random(..),
 		SessionId(..),
-		CipherSuite(..), CipherSuiteKeyEx(..), CipherSuiteMsgEnc(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 
 	SignatureAlgorithm(..), HashAlgorithm(..), NamedCurve(..),
