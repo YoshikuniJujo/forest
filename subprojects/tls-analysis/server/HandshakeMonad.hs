@@ -12,8 +12,8 @@ module HandshakeMonad (
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
-	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
-	clientVerifyHashEc,
+	decryptRSA, generateKeys, updateHash, finishedHash,
+	handshakeHash,
 
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,
@@ -22,7 +22,6 @@ module HandshakeMonad (
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
 	alertToByteString,
 	CT.MSVersion(..),
---	CT.lenBodyToByteString,
 	CT.decryptMessage, CT.hashSha1, CT.hashSha256,
 	CT.encryptMessage,
 
@@ -31,16 +30,9 @@ module HandshakeMonad (
 
 	write,
 	read,
---	CT.contentTypeToByteString,
---	CT.versionToByteString,
---	CT.intToByteString,
---	CT.byteStringToContentType,
---	CT.byteStringToVersion,
---	CT.byteStringToInt,
 
 	CT.ContentType(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
---	CT.Version(..),
 ) where
 
 import Prelude hiding (read)
@@ -55,7 +47,6 @@ import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA256 as SHA256
-import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
@@ -346,22 +337,15 @@ updateHash bs = do
 finishedHash :: HandleLike h => Partner -> HandshakeM h gen BS.ByteString
 finishedHash partner = do
 	mms <- gets tlssMasterSecret
-	sha256 <- SHA256.finalize `liftM` gets tlssSha256Ctx
+	sha256 <- handshakeHash
 	mv <- gets tlssVersion
 	case (mv, mms) of
 		(Just CT.TLS12, Just ms) -> return $
 			CT.generateFinished CT.TLS12 (partner == Client) ms sha256
 		_ -> throwError "No master secrets"
 
-clientVerifyHashEc :: HandleLike h => HandshakeM h gen BS.ByteString
-clientVerifyHashEc = gets $ SHA256.finalize . tlssSha256Ctx
-
-clientVerifyHash :: HandleLike h => RSA.PublicKey -> HandshakeM h gen BS.ByteString
-clientVerifyHash pub = do
-	sha256 <- gets $ SHA256.finalize . tlssSha256Ctx
-	let Right hashed = RSA.padSignature (RSA.public_size pub) $
-		RSA.digestToASN1 RSA.hashDescrSHA256 sha256
-	return hashed
+handshakeHash :: HandleLike h => HandshakeM h gen BS.ByteString
+handshakeHash = gets $ SHA256.finalize . tlssSha256Ctx
 
 tlsEncryptMessage :: (HandleLike h, CPRG gen) =>
 	CT.ContentType -> (Word8, Word8) -> BS.ByteString -> HandshakeM h gen BS.ByteString

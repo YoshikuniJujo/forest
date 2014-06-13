@@ -13,8 +13,8 @@ module OpenClient (
 	getClientRandom, getServerRandom, getCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
-	decryptRSA, generateKeys, updateHash, finishedHash, clientVerifyHash,
-	clientVerifyHashEc,
+	decryptRSA, generateKeys, updateHash, finishedHash,
+	handshakeHash,
 
 	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,

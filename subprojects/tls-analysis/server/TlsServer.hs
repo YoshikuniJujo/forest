@@ -29,6 +29,8 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
+import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -52,11 +54,11 @@ import Fragment (
 
 	setVersion, setClientRandom, setServerRandom,
 	cacheCipherSuite, flushCipherSuite,
-	generateKeys, updateHash, updateSequenceNumber,
+	generateKeys, updateSequenceNumber,
 
 	getClientRandom, getServerRandom, getCipherSuite, withRandom,
 
-	finishedHash, clientVerifyHash, clientVerifyHashEc,
+	finishedHash, handshakeHash,
 	decryptRSA, randomByteString, getHandle,
 
 	runOpen,
@@ -198,7 +200,6 @@ serverHello csssv css cc ccec = do
 			Just $ HandshakeCertificate cccc ]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
-	updateHash bs
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG gen,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>
@@ -215,7 +216,6 @@ serverKeyExchange pk ps dhsk = do
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
-	updateHash bs
 
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
 	Maybe X509.CertificateStore -> HandshakeM h gen ()
@@ -232,7 +232,6 @@ serverToHelloDone mcs = do
 			Just HandshakeServerHelloDone]
 		(ct, bs) = contentListToByteString cont
 	writeByteString ct bs
-	updateHash bs
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -311,12 +310,19 @@ clientKeyExchange sk (cvmjr, cvmnr) = do
 			_ -> throwError "bad: never occur"
 		return pms
 
+rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
+rsaPadding pub bs =
+	case RSA.padSignature (RSA.public_size pub) $
+			RSA.digestToASN1 RSA.hashDescrSHA256 bs of
+		Right pd -> pd
+		Left msg -> error $ show msg
+
 certificateVerify :: HandleLike h => X509.PubKey -> HandshakeM h gen ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ " - VERIFY WITH RSA\n") . lenSpace 50 . show
-	hash0 <- clientVerifyHash pub
+	hash0 <- rsaPadding pub `liftM` handshakeHash
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -324,9 +330,8 @@ certificateVerify (X509.PubKeyRSA pub) = do
 			let hash1 = RSA.ep pub s
 			unless (hash1 == hash0) . throwError $ Alert
 				AlertLevelFatal
-				AlertDescriptionDecryptError -- $
+				AlertDescriptionDecryptError
 				"client authentification failed "
---				++ show hash1 ++ " " ++ show hash0
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -342,8 +347,7 @@ certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ " - VERIFY WITH ECDSA\n") . lenSpace 50 . show
-	hash0 <- clientVerifyHashEc
---	liftIO . putStrLn $ "CLIENT VERIFY HASH: " ++ show hash0
+	hash0 <- handshakeHash
 	hs <- readHandshake (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -392,7 +396,6 @@ clientChangeCipherSuite = do
 clientFinished :: HandleLike h => HandshakeM h gen ()
 clientFinished = do
 	fhc <- finishedHash Client
---	liftIO . putStrLn $ "FINISHED HASH: " ++ show fhc
 	cnt <- readContent (== (3, 3))
 	case cnt of
 		ContentHandshake (HandshakeFinished f) ->
@@ -433,9 +436,6 @@ readContent :: HandleLike h => (Version -> Bool) -> HandshakeM h gen Content
 readContent vc = do
 	c <- const `liftM` getContent (readContentType vc) (readByteString (== (3, 3)))
 		`ap` updateSequenceNumber Client
-	case contentToByteString c of
-		(ContentTypeHandshake, bs) -> updateHash bs
-		_ -> return ()
 	return c
 
 rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>

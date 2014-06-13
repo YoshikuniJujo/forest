@@ -20,8 +20,7 @@ module Fragment (
 
 	updateSequenceNumber,
 	randomByteString,
-	clientVerifyHash,
-	clientVerifyHashEc,
+	handshakeHash,
 
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	checkName, clientName,
@@ -53,17 +52,14 @@ readContentType vc = getContentType vc readFragment
 
 readByteString :: HandleLike h =>
 	((Word8, Word8) -> Bool) -> Int -> HandshakeM h gen (ContentType, BS.ByteString)
-readByteString vc n = buffered n $ do
-	(ct, v@(vmjr, vmnr), bs) <- readFragment
-	unless (vc v) $ throwError alertVersion
-	let bs' = BS.concat [
-		B.toByteString ct,
-		B.toByteString vmjr,
-		B.toByteString vmnr,
-		bs ]
+readByteString vc n = do
+	(ct, bs) <- buffered n $ do
+		(t, v, b) <- readFragment
+		unless (vc v) $ throwError alertVersion
+		return (t, b)
 	case ct of
-		ContentTypeHandshake -> updateHash bs' >> updateHash bs'
-		_ -> updateHash bs' -- return ()
+		ContentTypeHandshake -> updateHash bs
+		_ -> return ()
 	return (ct, bs)
 
 readFragment :: HandleLike h => HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
@@ -89,12 +85,11 @@ writeByteString :: (HandleLike h, CPRG gen) =>
 	ContentType -> BS.ByteString -> HandshakeM h gen ()
 writeByteString ct bs = do
 	enc <- tlsEncryptMessage ct (3, 3) bs
-	let bs' = BS.concat [
+	case ct of
+		ContentTypeHandshake -> updateHash bs
+		_ -> return ()
+	write $ BS.concat [
 		B.toByteString ct,
 		B.toByteString (3 :: Word8),
 		B.toByteString (3 :: Word8),
 		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
-	write bs'
---	case ct of
---		ContentTypeHandshake -> updateHash bs'
---		_ -> return ()
