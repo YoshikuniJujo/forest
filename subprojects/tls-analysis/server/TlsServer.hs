@@ -1,52 +1,41 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
-	ValidateHandle(..),
-	TlsClient, openClient, withClient, evalClient,
-	checkName, clientName,
+	TlsClient, openClient, evalClient, checkName, clientName,
+	ValidateHandle(..), SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-
-	SecretKey,
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Exception
-import Data.Maybe
-import Data.List
-import Data.Word
-import Data.HandleLike
-import Data.ASN1.Types
-import Data.X509
-import qualified Data.X509.Validation as X509
-import Data.X509.CertificateStore
-import System.IO
-import Handshake
-import Fragment
-
-import "monads-tf" Control.Monad.State
-
-import "crypto-random" Crypto.Random
+import Control.Applicative ((<$>))
+import Control.Monad (when, unless, liftM, ap)
+import "monads-tf" Control.Monad.State (StateT, runStateT, lift)
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.List (find)
+import Data.Word (Word8, Word16)
+import Data.HandleLike (HandleLike(..))
+import System.IO (Handle)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ASN1.Types as ASN1
+import qualified Data.ASN1.Encoding as ASN1
+import qualified Data.ASN1.BinaryEncoding as ASN1
+import qualified Data.X509 as X509
+import qualified Data.X509.Validation as X509
+import qualified Data.X509.CertificateStore as X509
+import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-
 import qualified Crypto.Hash.SHA1 as SHA1
 
+import Handshake
+import Fragment
 import KeyExchange
-
-import Control.Concurrent.STM
-
-import qualified Codec.Bytable as B
-
-import Data.ASN1.Encoding
-import Data.ASN1.BinaryEncoding
 
 type Version = (Word8, Word8)
 
@@ -80,24 +69,6 @@ validationCache = X509.ValidationCache
 validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
-withClient :: SecretKey sk => Handle -> [CipherSuite] ->
-	RSA.PrivateKey -> CertificateChain ->
-	(sk, CertificateChain) -> Maybe CertificateStore -> (TlsClient -> IO a) ->
-	IO a
-withClient h css pk cc ecks mcs =
-	bracket (openClientIo h css (pk, cc) ecks mcs) hlClose
-
-openClientIo :: SecretKey sk =>
-	Handle -> [CipherSuite] ->
-	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
-	Maybe CertificateStore -> IO TlsClient
-openClientIo h css (pk, cc) ecks mcs = do
-	ep <- createEntropyPool
-	(tc, ts) <- openClient h css (pk, cc) ecks mcs `runClient`
-		(cprgCreate ep :: SystemRNG)
-	tstv <- atomically $ newTVar ts
-	return $ TlsClient tc tstv
-
 evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
 evalClient s g = fst `liftM` runClient s g
 
@@ -106,8 +77,8 @@ runClient :: (Monad m, CPRG g) =>
 runClient s g = s `runStateT` initialTlsState g
 
 openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
-	(RSA.PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
-	Maybe CertificateStore ->
+	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
+	Maybe X509.CertificateStore ->
 	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
 openClient h css (pk, cc) ecks mcs = runOpenSt h (helloHandshake css pk cc ecks mcs)
 
@@ -115,8 +86,8 @@ curve :: Curve
 curve = fst (generateBase undefined () :: (Curve, SystemRNG))
 
 helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
- 	[CipherSuite] ->  RSA.PrivateKey -> CertificateChain ->
- 	(sk, CertificateChain) -> Maybe CertificateStore -> TlsIo h gen [String]
+ 	[CipherSuite] ->  RSA.PrivateKey -> X509.CertificateChain ->
+ 	(sk, X509.CertificateChain) -> Maybe X509.CertificateStore -> TlsIo h gen [String]
 helloHandshake css sk cc (pkec, ccec) mcs = do
 	cv <- hello css cc ccec
 	cs <- getCipherSuite
@@ -132,7 +103,7 @@ helloHandshake css sk cc (pkec, ccec) mcs = do
 		_ -> error "bad"
 
 hello :: (HandleLike h, CPRG gen) => [CipherSuite] ->
-	CertificateChain -> CertificateChain -> TlsIo h gen (Word8, Word8)
+	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen (Word8, Word8)
 hello csssv cc ccec = do
 	(cv, css) <- clientHello
 	serverHello csssv css cc ccec
@@ -142,7 +113,7 @@ handshake ::
 	(Base b, B.Bytable b, SecretKey sk, CPRG gen, ValidateHandle h,
 		B.Bytable (Public b)) =>
 	Bool -> b -> (Word8, Word8) -> sk ->
-	RSA.PrivateKey -> Maybe CertificateStore -> TlsIo h gen [String]
+	RSA.PrivateKey -> Maybe X509.CertificateStore -> TlsIo h gen [String]
 handshake isdh ps cv sks skd mcs = do
 	pn <- if not isdh then return $ error "bad" else do
 		gen <- getRandomGen
@@ -187,7 +158,7 @@ clientHello = do
 
 serverHello :: (HandleLike h, CPRG gen) =>
 	[CipherSuite] -> [CipherSuite] ->
-	CertificateChain -> CertificateChain -> TlsIo h gen ()
+	X509.CertificateChain -> X509.CertificateChain -> TlsIo h gen ()
 serverHello csssv css cc ccec = do
 	sr <- randomByteString 32
 	let (vmjr, vmnr) = version in setVersion (vmjr, vmnr)
@@ -221,7 +192,7 @@ serverKeyExchange sk ps pn = do
 	when dh $ sndServerKeyExchange ps pn sk rsr
 
 serverToHelloDone :: (HandleLike h, CPRG gen) =>
-	Maybe CertificateStore -> TlsIo h gen ()
+	Maybe X509.CertificateStore -> TlsIo h gen ()
 serverToHelloDone mcs = do
 	let	cont = map ContentHandshake $ catMaybes [
 			case mcs of
@@ -229,8 +200,8 @@ serverToHelloDone mcs = do
 					. CertificateRequest
 						[clientCertificateType]
 						[clientCertificateAlgorithm]
-					. map (certIssuerDN . signedObject . getSigned)
-					$ listCertificates cs
+					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+					$ X509.listCertificates cs
 				_ -> Nothing,
 			Just HandshakeServerHelloDone]
 		(ct, bs) = contentListToByteString cont
@@ -238,20 +209,21 @@ serverToHelloDone mcs = do
 	updateHash bs
 
 class HandleLike h => ValidateHandle h where
-	validate :: h -> CertificateStore -> CertificateChain ->
+	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
 		HandleMonad h [X509.FailedReason]
 
 instance ValidateHandle Handle where
 	validate _ cs = X509.validate
-		HashSHA256 X509.defaultHooks validationChecks cs validationCache ("", "")
+		X509.HashSHA256 X509.defaultHooks validationChecks cs validationCache ("", "")
 
-clientCertificate :: ValidateHandle h => CertificateStore -> TlsIo h gen (PubKey, [String])
+clientCertificate :: ValidateHandle h =>
+	X509.CertificateStore -> TlsIo h gen (X509.PubKey, [String])
 clientCertificate cs = do
 	hs <- readHandshake (== (3, 3))
 	h <- getHandle
 	case hs of
-		HandshakeCertificate cc@(CertificateChain (c : _)) ->
-			case certPubKey $ getCertificate c of
+		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
+			case X509.certPubKey $ X509.getCertificate c of
 				pub -> chk h cc >> return (pub, names cc)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -269,14 +241,15 @@ clientCertificate cs = do
 		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
 		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
-	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>= asn1CharacterToString
-	cn = getDnElement DnCommonName . certSubjectDN
-	ans = maybe [] (\(ExtSubjectAltName ns) -> mapMaybe uan ns)
-		. extensionGet . certExtensions
+	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>=
+		ASN1.asn1CharacterToString
+	cn = X509.getDnElement X509.DnCommonName . X509.certSubjectDN
+	ans = maybe [] (\(X509.ExtSubjectAltName ns) -> mapMaybe uan ns)
+		. X509.extensionGet . X509.certExtensions
 	crt cc = case cc of
-		CertificateChain (t : _) -> getCertificate t
+		X509.CertificateChain (t : _) -> X509.getCertificate t
 		_ -> error "TlsServer.clientCertificate: empty certificate chain"
-	uan (AltNameDNS s) = Just s
+	uan (X509.AltNameDNS s) = Just s
 	uan _ = Nothing
 
 clientKeyExchange :: (HandleLike h, CPRG gen) =>
@@ -307,8 +280,8 @@ clientKeyExchange sk (cvmjr, cvmnr) = do
 			_ -> throwError "bad: never occur"
 		return pms
 
-certificateVerify :: HandleLike h => PubKey -> TlsIo h gen ()
-certificateVerify (PubKeyRSA pub) = do
+certificateVerify :: HandleLike h => X509.PubKey -> TlsIo h gen ()
+certificateVerify (X509.PubKeyRSA pub) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ " - VERIFY WITH RSA\n") . lenSpace 50 . show
@@ -334,7 +307,7 @@ certificateVerify (PubKeyRSA pub) = do
 			AlertLevelFatal
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
-certificateVerify (PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
+certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	h <- getHandle
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ " - VERIFY WITH ECDSA\n") . lenSpace 50 . show
@@ -557,8 +530,11 @@ instance B.Bytable ECDSA.Signature where
 	toByteString = undefined
 
 decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
-decodeSignature bs = case decodeASN1' DER bs of
-	Right [Start Sequence, IntVal r, IntVal s, End Sequence] ->
+decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
+	Right [ASN1.Start ASN1.Sequence,
+		ASN1.IntVal r,
+		ASN1.IntVal s,
+		ASN1.End ASN1.Sequence] ->
 		Right $ ECDSA.Signature r s
 	Right _ -> Left "KeyExchange.decodeSignature"
 	Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
@@ -591,9 +567,14 @@ encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
 		h = hs bs
-		a = [Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26],
-			Null, End Sequence, OctetString h, End Sequence]
-		b = encodeASN1' DER a
+		a = [ASN1.Start ASN1.Sequence,
+			ASN1.Start ASN1.Sequence,
+			ASN1.OID [1, 3, 14, 3, 2, 26],
+			ASN1.Null,
+			ASN1.End ASN1.Sequence,
+			ASN1.OctetString h,
+			ASN1.End ASN1.Sequence]
+		b = ASN1.encodeASN1' ASN1.DER a
 		pd = BS.concat [
 			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
 			"\NUL", b ] in
