@@ -83,7 +83,6 @@ data TlsClient = TlsClient {
 data TlsClientConst h g = TlsClientConst {
 	clientId :: ClientId,
 	tlsNames :: [String],
-	tlsVersion :: MSVersion,
 	tlsCipherSuite :: CipherSuite,
 	tlsHandle :: h,
 	tlsClientWriteMacKey :: BS.ByteString,
@@ -127,7 +126,6 @@ runOpenSt_ s cl opn = do
 		tc = TlsClientConst {
 			clientId = cid,
 			tlsNames = ns,
-			tlsVersion = fromJust $ tlssVersion tlss,
 			tlsCipherSuite = tlssClientWriteCipherSuite tlss,
 			tlsHandle = tlssClientHandle tlss,
 			tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
@@ -179,14 +177,14 @@ tPutWithCtSt tc ct msg = do
 		B.toByteString $ snd v,
 		B.addLength (undefined :: Word16) ebody ]
 	where
-	(_vr, cs, h) = vrcshSt tc
+	(cs, h) = vrcshSt tc
 	key = tlsServerWriteKey tc
 	mk = tlsServerWriteMacKey tc
 	v = (3, 3)
 	enc hs gen sn = encryptMessage hs gen key sn mk ct v msg
 
-vrcshSt :: TlsClientConst h gen -> (MSVersion, CipherSuite, h)
-vrcshSt tc = (tlsVersion tc, tlsCipherSuite tc, tlsHandle tc)
+vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
+vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
 
 tGetWholeSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
@@ -224,7 +222,7 @@ tGetWholeWithCtSt tc = do
 			Left err -> error err
 		return (ct, ret)
 	where
-	(_vr, cs, h) = vrcshSt tc
+	(cs, h) = vrcshSt tc
 	key = tlsClientWriteKey tc
 	mk = tlsClientWriteMacKey tc
 	dec hs sn = decryptMessage hs key sn mk
