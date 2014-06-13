@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, PackageImports #-}
 
 module MyServer (
 	server,
@@ -6,41 +6,41 @@ module MyServer (
 	ValidateHandle(..),
 ) where
 
-import "monads-tf" Control.Monad.State
+import Control.Monad (liftM)
 import Data.Maybe (fromMaybe)
 import Data.HandleLike (HandleLike(..))
-import Data.X509
-import Data.X509.CertificateStore
-import "crypto-random" Crypto.Random
-import Crypto.PubKey.RSA
+import "crypto-random" Crypto.Random (CPRG)
+
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
+import qualified Crypto.PubKey.RSA as RSA
 
 import TlsServer (
-	SecretKey, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..), evalClient, openClient, getName)
+	SecretKey,
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ValidateHandle(..), evalClient, openClient, clientName)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> g -> [CipherSuite] ->
-	(PrivateKey, CertificateChain) -> (sk, CertificateChain) ->
-	Maybe CertificateStore -> HandleMonad h ()
+	(RSA.PrivateKey, X509.CertificateChain) ->
+	(sk, X509.CertificateChain) ->
+	Maybe X509.CertificateStore -> HandleMonad h ()
 server h g css rsa ec mcs = (`evalClient` g) $ do
 	cl <- openClient h css rsa ec mcs
-	doUntil BS.null (hlGetLine cl) >>=
-		const (return ())
---		lift . mapM_ (hlDebug h . (`BS.append` "\n"))
-	hlPut cl . answer . fromMaybe "Anonym" $ getName cl
+	const () `liftM` doUntil BS.null (hlGetLine cl)
+	hlPut cl . answer . fromMaybe "Anonym" $ clientName cl
 	hlClose cl
 
 answer :: String -> BS.ByteString
 answer name = BS.concat [
-	"HTTP/1.1 200 OK\r\n", "Transfer-Encoding: chunked\r\n",
-	"Date: Wed, 07 May 2014 02:27:34 GMT\r\n", "Server: Warp/2.1.4\r\n",
+	"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n",
+	"Date: Wed, 07 May 2014 02:27:34 GMT\r\nServer: Warp/2.1.4\r\n",
 	"Content-Type: text/plain\r\n\r\n",
-	"007\r\n", "Hello, \r\n",
+	"007\r\nHello, \r\n",
 	BSC.pack . show $ length name, "\r\n", BSC.pack name, "\r\n",
-	"001\r\n", "!\r\n",
-	"0\r\n\r\n" ]
+	"001\r\n!\r\n0\r\n\r\n" ]
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
 doUntil p rd =

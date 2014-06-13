@@ -4,7 +4,7 @@
 module TlsServer (
 	ValidateHandle(..),
 	TlsClient, openClient, withClient, evalClient,
-	checkName, getName,
+	checkName, clientName,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 
 	SecretKey,
