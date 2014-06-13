@@ -2,10 +2,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
-	X509.CertificateChain,
 	CertificateRequest(..),
 	ClientCertificateType(..),
-	EncryptedPreMasterSecret(..),
+	ClientKeyExchange(..),
 	DigitallySigned(..),
 ) where
 
@@ -132,15 +131,14 @@ clientCertificateTypeToByteString ClientCertificateTypeRsaSign = "\x01"
 clientCertificateTypeToByteString ClientCertificateTypeEcdsaSign = "\x40"
 clientCertificateTypeToByteString (ClientCertificateTypeRaw w) = BS.pack [w]
 
-data EncryptedPreMasterSecret
-	= EncryptedPreMasterSecret { getEncryptedPreMasterSecret :: BS.ByteString }
+data ClientKeyExchange = ClientKeyExchange { getClientKeyExchange :: BS.ByteString }
 
-instance Show EncryptedPreMasterSecret where
-	show (EncryptedPreMasterSecret epms) = "(EncryptedPreMasterSecret " ++
+instance Show ClientKeyExchange where
+	show (ClientKeyExchange epms) = "(ClientKeyExchange " ++
 		showKeyPMS epms ++ ")"
 
-instance B.Bytable EncryptedPreMasterSecret where
-	fromByteString = Right . EncryptedPreMasterSecret
+instance B.Bytable ClientKeyExchange where
+	fromByteString = Right . ClientKeyExchange
 	toByteString = encryptedPreMasterSecretToByteString
 
 showKeyPMS :: BS.ByteString -> String
@@ -151,8 +149,8 @@ showH w = replicate (2 - length s) '0' ++ s
 	where
 	s = showHex w ""
 
-encryptedPreMasterSecretToByteString :: EncryptedPreMasterSecret -> BS.ByteString
-encryptedPreMasterSecretToByteString (EncryptedPreMasterSecret epms) = epms
+encryptedPreMasterSecretToByteString :: ClientKeyExchange -> BS.ByteString
+encryptedPreMasterSecretToByteString (ClientKeyExchange epms) = epms
 
 data DigitallySigned
 	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) BS.ByteString

@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
-	TlsClient, openClient, evalClient, checkName, clientName,
+	TlsClient, evalClient, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 ) where
@@ -35,13 +35,16 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
 import Handshake (
-	SignatureAlgorithm(..), HashAlgorithm(..), NamedCurve(..),
-	Handshake(..), takeHandshake, handshakeToByteString,
-	EncryptedPreMasterSecret(..), DigitallySigned(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	SessionId(..), CompressionMethod(..), ClientCertificateType(..),
-	ClientHello(..), ServerHello(..), CertificateRequest(..),
- )
+	Handshake(..),
+	ClientHello(..), ServerHello(..),
+		SessionId(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+		CompressionMethod(..), NamedCurve(..),
+	CertificateRequest(..),
+		ClientCertificateType(..),
+		SignatureAlgorithm(..), HashAlgorithm(..),
+	ClientKeyExchange(..),
+	DigitallySigned(..) )
 import Fragment (
 	TlsIo,
 	Partner(..),
@@ -88,14 +91,6 @@ clientCertificateAlgorithms :: [(HashAlgorithm, SignatureAlgorithm)]
 clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
-
-validationCache :: X509.ValidationCache
-validationCache = X509.ValidationCache
-	(\_ _ _ -> return X509.ValidationCacheUnknown)
-	(\_ _ _ -> return ())
-
-validationChecks :: X509.ValidationChecks
-validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
 evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
 evalClient s g = fst `liftM` runClient s g
@@ -163,8 +158,6 @@ handshake isdh ps cv sks skd mcs = do
 clientHello :: HandleLike h => TlsIo h gen (Version, [CipherSuite])
 clientHello = do
 	hs <- readHandshake $ \(mj, _) -> mj == 3
---	h <- getHandle
---	lift . lift . hlDebug h 0 . BSC.pack $ "CLIENT HELLO: " ++ show hs ++ "\n"
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> setClientRandom rnd >> return (vsn, css)
@@ -244,6 +237,14 @@ instance ValidateHandle Handle where
 	validate _ cs = X509.validate
 		X509.HashSHA256 X509.defaultHooks validationChecks cs validationCache ("", "")
 
+validationCache :: X509.ValidationCache
+validationCache = X509.ValidationCache
+	(\_ _ _ -> return X509.ValidationCacheUnknown)
+	(\_ _ _ -> return ())
+
+validationChecks :: X509.ValidationChecks
+validationChecks = X509.defaultChecks { X509.checkFQHN = False }
+
 clientCertificate :: ValidateHandle h =>
 	X509.CertificateStore -> TlsIo h gen (X509.PubKey, [String])
 clientCertificate cs = do
@@ -286,7 +287,7 @@ clientKeyExchange sk (cvmjr, cvmnr) = do
 --	h <- getHandle
 	hs <- readHandshake (== (3, 3))
 	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms_) -> do
+		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
 			let epms = BS.drop 2 epms_
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
@@ -457,7 +458,7 @@ rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>
 rcvClientKeyExchange dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake (== (3, 3))
 	case hs of
-		HandshakeClientKeyExchange (EncryptedPreMasterSecret epms) -> do
+		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
 --			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
 --			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
@@ -478,7 +479,11 @@ parseContent rd ContentTypeChangeCipherSpec =
 	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
 parseContent rd ContentTypeAlert =
 	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
-parseContent rd ContentTypeHandshake = ContentHandshake `liftM` takeHandshake rd
+parseContent rd ContentTypeHandshake = ContentHandshake `liftM` do
+	t <- rd 1
+	len <- rd 3
+	body <- rd . either error id $ B.fromByteString len
+	return . either error id . B.fromByteString $ BS.concat [t, len, body]
 parseContent _ ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
 
@@ -491,7 +496,7 @@ contentToByteString (ContentChangeCipherSpec ccs) =
 	(ContentTypeChangeCipherSpec, B.toByteString ccs)
 contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
 contentToByteString (ContentHandshake hss) =
-	(ContentTypeHandshake, handshakeToByteString hss)
+	(ContentTypeHandshake, B.toByteString hss)
 
 data Content
 	= ContentChangeCipherSpec ChangeCipherSpec

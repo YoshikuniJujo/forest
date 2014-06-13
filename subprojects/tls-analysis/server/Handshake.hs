@@ -1,24 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Handshake (
-	Handshake(..), takeHandshake, handshakeToByteString,
-
+	Handshake(..),
 	ClientHello(..), ServerHello(..),
-		-- Version(..), -- Random(..),
 		SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	CertificateRequest(..),
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
-	EncryptedPreMasterSecret(..),
+	ClientKeyExchange(..),
 	DigitallySigned(..),
 	NamedCurve(..),
 ) where
 
+import Control.Applicative
+
 import qualified Codec.Bytable as B
 
-import Control.Monad (liftM)
 import Data.Word (Word8)
 import Data.Word.Word24
 import qualified Data.ByteString as BS
@@ -26,49 +25,47 @@ import qualified Data.ByteString as BS
 import Hello
 --	(Bytable(..), ClientHello(..), ServerHello(..), takeLen', lenBodyToByteString)
 import Certificate
-
-takeInt :: Monad m => (Int -> m BS.ByteString) -> Int -> m Int
-takeInt rd = ((either error id . B.fromByteString) `liftM`) . rd
-
-takeLen :: Monad m => (Int -> m BS.ByteString) -> Int -> m BS.ByteString
-takeLen rd n = do
-	l <- takeInt rd n
-	rd l
+import qualified Data.X509 as X509
 
 data Handshake
 	= HandshakeClientHello ClientHello
 	| HandshakeServerHello ServerHello
-	| HandshakeCertificate CertificateChain
+	| HandshakeCertificate X509.CertificateChain
 	| HandshakeServerKeyExchange BS.ByteString
 	| HandshakeCertificateRequest CertificateRequest
 	| HandshakeServerHelloDone
 	| HandshakeCertificateVerify DigitallySigned
-	| HandshakeClientKeyExchange EncryptedPreMasterSecret
+	| HandshakeClientKeyExchange ClientKeyExchange
 	| HandshakeFinished BS.ByteString
 	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
 
-takeHandshake :: Monad m => (Int -> m BS.ByteString) -> m Handshake
-takeHandshake rd = do
-	mt <- (either error id . B.fromByteString) `liftM` rd 1
-	bs <- takeLen rd 3
-	return $ case mt of
-		HandshakeTypeClientHello -> HandshakeClientHello .
-			either error id $ B.fromByteString bs
-		HandshakeTypeServerHello -> HandshakeServerHello .
-			either error id $ B.fromByteString bs
-		HandshakeTypeCertificate -> HandshakeCertificate .
-			either error id $ B.fromByteString bs
-		HandshakeTypeServerKeyExchange -> HandshakeServerKeyExchange bs
-		HandshakeTypeCertificateRequest -> HandshakeCertificateRequest .
-			either error id $ B.fromByteString bs
-		HandshakeTypeServerHelloDone -> HandshakeServerHelloDone
-		HandshakeTypeCertificateVerify -> HandshakeCertificateVerify .
-			either error id $ B.fromByteString bs
-		HandshakeTypeClientKeyExchange -> HandshakeClientKeyExchange .
-			either error id $ B.fromByteString bs
-		HandshakeTypeFinished -> HandshakeFinished bs
-		_ -> HandshakeRaw mt bs
+instance B.Bytable Handshake where
+	fromByteString = B.evalBytableM B.parse
+	toByteString = handshakeToByteString
+
+instance B.Parsable Handshake where
+	parse = parseHandshake
+
+parseHandshake :: B.BytableM Handshake
+parseHandshake = do
+	t <- B.take 1
+	len <- B.take 3
+	case t of
+		HandshakeTypeClientHello -> HandshakeClientHello <$> B.take len
+		HandshakeTypeServerHello -> HandshakeServerHello <$> B.take len
+		HandshakeTypeCertificate -> HandshakeCertificate <$> B.take len
+		HandshakeTypeServerKeyExchange ->
+			HandshakeServerKeyExchange <$> B.take len
+		HandshakeTypeCertificateRequest ->
+			HandshakeCertificateRequest <$> B.take len
+		HandshakeTypeServerHelloDone -> return HandshakeServerHelloDone
+		HandshakeTypeCertificateVerify ->
+			HandshakeCertificateVerify <$> B.take len
+		HandshakeTypeClientKeyExchange ->
+			HandshakeClientKeyExchange <$> B.take len
+		HandshakeTypeFinished -> HandshakeFinished <$> B.take len
+		_ -> HandshakeRaw t <$> B.take len
 
 handshakeToByteString :: Handshake -> BS.ByteString
 handshakeToByteString (HandshakeClientHello ch) = handshakeToByteString .

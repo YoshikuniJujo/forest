@@ -11,7 +11,6 @@ import qualified Data.ByteString as BS
 
 import Data.Bits
 import Data.Word
--- import NamedCurve
 import SignHashAlgorithm(SignatureAlgorithm(..), HashAlgorithm(..))
 
 import qualified Codec.Bytable as B
