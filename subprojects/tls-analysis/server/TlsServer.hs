@@ -84,8 +84,10 @@ clientCertificateTypes = [
 	ClientCertificateTypeRsaSign,
 	ClientCertificateTypeEcdsaSign ]
 
-clientCertificateAlgorithm :: (HashAlgorithm, SignatureAlgorithm)
-clientCertificateAlgorithm = (HashAlgorithmSha256, SignatureAlgorithmRsa)
+clientCertificateAlgorithms :: [(HashAlgorithm, SignatureAlgorithm)]
+clientCertificateAlgorithms = [
+	(HashAlgorithmSha256, SignatureAlgorithmRsa),
+	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
 validationCache :: X509.ValidationCache
 validationCache = X509.ValidationCache
@@ -225,7 +227,7 @@ serverToHelloDone mcs = do
 				Just cs -> Just . HandshakeCertificateRequest
 					. CertificateRequest
 						clientCertificateTypes
-						[clientCertificateAlgorithm]
+						clientCertificateAlgorithms
 					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
 					$ X509.listCertificates cs
 				_ -> Nothing,
