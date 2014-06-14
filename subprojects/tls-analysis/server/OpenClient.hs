@@ -15,7 +15,8 @@ module OpenClient (
 	cacheCipherSuite, flushCipherSuite,
 
 --	getRandoms,
-	saveKeys, generateKeys_,
+	generateKeys_,
+--	saveKeys,
 	getMasterSecret,
 	finishedHash_,
 
@@ -54,6 +55,7 @@ module OpenClient (
 	hashSha256,
 	TlsHandle,
 	mkTlsHandle,
+	Keys(..),
 ) where
 
 import Prelude hiding (read)
@@ -126,16 +128,17 @@ instance (HandleLike h, CPRG g) =>
 	hlGetContent = tGetContentSt
 	hlClose = tCloseSt
 
-runOpen :: (HandleLike h, CPRG gen) => h -> HandshakeM h gen [String] ->
+runOpen :: (HandleLike h, CPRG gen) => h ->
+	HandshakeM h gen ([String], Keys) ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
 runOpen cl opn = StateT $ \s -> runOpenSt_ s cl opn
 
 runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
-	h -> HandshakeM h gen [String] ->
+	h -> HandshakeM h gen ([String], Keys) ->
 	HandleMonad h (TlsClientConst h gen, TlsClientState gen)
 runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
-	(ns, tlss) <- runHandshakeM (mkTlsHandle cl) opn $
+	((ns, ks), tlss) <- runHandshakeM (mkTlsHandle cl) opn $
 		initTlsState (getRandomGenSt s')
 	let	s'' = setRandomGen (tlssRandomGen tlss) s'
 		tc = TlsClientConst {
@@ -143,10 +146,12 @@ runOpenSt_ s cl opn = do
 			tlsNames = ns,
 			tlsCipherSuite = tlssClientWriteCipherSuite tlss,
 			tlsHandle = cl,
-			tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
-			tlsServerWriteMacKey = fromJust $ tlssServerWriteMacKey tlss,
-			tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
-			tlsServerWriteKey = fromJust $ tlssServerWriteKey tlss }
+--			tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
+			tlsClientWriteMacKey = kClientWriteMacKey ks,
+			tlsServerWriteMacKey = kServerWriteMacKey ks, -- fromJust $ tlssServerWriteMacKey tlss,
+			tlsClientWriteKey = kClientWriteKey ks,
+--			tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
+			tlsServerWriteKey = kServerWriteKey ks } -- fromJust $ tlssServerWriteKey tlss }
 	return (tc, s'')
 
 checkName :: TlsClient -> String -> Bool

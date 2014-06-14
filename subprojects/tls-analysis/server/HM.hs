@@ -11,9 +11,8 @@ module HM (
 	updateHash, handshakeHash, getContentType, buffered,
 	sequenceNumber, updateSequenceNumber,
 
-	writeKey, macKey, cipherSuite, withRandom, getHandle,
-	saveKeys,
-	getServerWrite, getClientWrite,
+	cipherSuite, withRandom, getHandle,
+
 	ifEnc,
 	getKeyExchange,
 	getMasterSecret,
@@ -24,6 +23,10 @@ module HM (
 	ContentType(..),
 
 	TlsHandle,
+	Keys(..),
+
+	getClientWrite,
+	getServerWrite,
 ) where
 
 import Prelude hiding (read)
@@ -68,18 +71,20 @@ write th dat = lift . lift . flip hlPut dat $ getHandle th
 
 type TlsHandle h = h
 
+data Keys = Keys {
+	kMasterSecret :: BS.ByteString,
+	kClientWriteMacKey :: BS.ByteString,
+	kServerWriteMacKey :: BS.ByteString,
+	kClientWriteKey :: BS.ByteString,
+	kServerWriteKey :: BS.ByteString
+ }
+
 data TlsState h gen = TlsState {
 	tlssByteStringBuffer :: (Maybe ContentType, BS.ByteString),
 
 	tlssClientWriteCipherSuite :: CipherSuite,
 	tlssServerWriteCipherSuite :: CipherSuite,
 	tlssCachedCipherSuite :: Maybe CipherSuite,
-
-	tlssMasterSecret :: Maybe BS.ByteString,
-	tlssClientWriteMacKey :: Maybe BS.ByteString,
-	tlssServerWriteMacKey :: Maybe BS.ByteString,
-	tlssClientWriteKey :: Maybe BS.ByteString,
-	tlssServerWriteKey :: Maybe BS.ByteString,
 
 	tlssRandomGen :: gen,
 	tlssClientSequenceNumber :: Word64,
@@ -94,18 +99,11 @@ mkTlsHandle = id
 
 initTlsState :: gen -> TlsState h gen
 initTlsState gen = TlsState {
---	tlssClientHandle = cl,
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssClientWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
 	tlssServerWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
 	tlssCachedCipherSuite = Nothing,
-
-	tlssMasterSecret = Nothing,
-	tlssClientWriteMacKey = Nothing,
-	tlssServerWriteMacKey = Nothing,
-	tlssClientWriteKey = Nothing,
-	tlssServerWriteKey = Nothing,
 
 	tlssRandomGen = gen,
 	tlssSha256Ctx = SHA256.init,
@@ -301,16 +299,6 @@ cipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
 
-writeKey :: HandleLike h => Partner -> HandshakeM h gen (Maybe BS.ByteString)
-writeKey partner = gets $ case partner of
-	Client -> tlssClientWriteKey
-	Server -> tlssServerWriteKey
-
-macKey :: HandleLike h => Partner -> HandshakeM h gen (Maybe BS.ByteString)
-macKey partner = gets $ case partner of
-	Client -> tlssClientWriteMacKey
-	Server -> tlssServerWriteMacKey
-
 withRandom :: HandleLike h => (gen -> (a, gen)) -> HandshakeM h gen a
 withRandom p = do
 	tlss@TlsState { tlssRandomGen = gen } <- get
@@ -321,41 +309,17 @@ withRandom p = do
 getHandle :: HandleLike h => TlsHandle h -> h
 getHandle = id
 
-saveKeys :: HandleLike h =>
-	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
-		-> HandshakeM h gen ()
-saveKeys (ms, cwmk, swmk, cwk, swk) = do
-	tlss <- get
-	put tlss {
-		tlssMasterSecret = Just ms,
-		tlssClientWriteMacKey = Just cwmk,
-		tlssServerWriteMacKey = Just swmk,
-		tlssClientWriteKey = Just cwk,
-		tlssServerWriteKey = Just swk }
-
-getServerWrite :: HandleLike h =>
-	HandshakeM h gen (BS.ByteString, BS.ByteString, Word64)
+getServerWrite :: HandleLike h => HandshakeM h gen Word64
 getServerWrite = do
-	CipherSuite _ be <- cipherSuite Server
-	mwk <- writeKey Server
 	sn <- sequenceNumber Server
 	updateSequenceNumber Server
-	mmk <- macKey Server
-	case (be, mwk, mmk) of
-		(_, Just wk, Just mk) -> return (wk, mk, sn)
-		_ -> error "bad"
+	return sn
 
-getClientWrite :: HandleLike h =>
-	HandshakeM h gen (BS.ByteString, BS.ByteString, Word64)
+getClientWrite :: HandleLike h => HandshakeM h gen Word64
 getClientWrite = do
-	CipherSuite _ be <- cipherSuite Client
-	mwk <- writeKey Client
 	sn <- sequenceNumber Client
 	updateSequenceNumber Client
-	mmk <- macKey Client
-	case (be, mwk, mmk) of
-		(_, Just wk, Just mk) -> return (wk, mk, sn)
-		_ -> error "bad"
+	return sn
 
 ifEnc :: (HandleLike h) => Partner -> BS.ByteString ->
 	(BS.ByteString -> HandshakeM h gen BS.ByteString) ->
@@ -375,9 +339,8 @@ debugCipherSuite th a = do
 lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
 
-getMasterSecret :: HandleLike h => HandshakeM h gen BS.ByteString
-getMasterSecret =
-	maybe (throwError "no master secret") return =<< gets tlssMasterSecret
+getMasterSecret :: Keys -> BS.ByteString
+getMasterSecret = kMasterSecret
 
 data ContentType
 	= ContentTypeChangeCipherSpec
