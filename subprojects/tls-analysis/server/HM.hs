@@ -10,7 +10,8 @@ module HM (
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	
-	Keys(..), nullKeys, cipherSuite, flushCipherSuite,
+	Keys(..), nullKeys, cipherSuite,
+	flushCipherSuite,
 
 	TlsHandle, mkTlsHandle, getHandle,
 ) where
