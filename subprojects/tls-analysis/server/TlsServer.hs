@@ -426,10 +426,9 @@ readHandshake ck = do
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
 readContent :: HandleLike h => (Version -> Bool) -> HandshakeM h gen Content
-readContent vc = do
-	c <- const `liftM` getContent (readContentType vc) (readByteString (== (3, 3)))
+readContent vc = const `liftM`
+	getContent (readContentType vc) (readByteString (== (3, 3)))
 		`ap` updateSequenceNumber Client
-	return c
 
 rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>
 	b -> Secret b -> Version -> HandshakeM h gen ()

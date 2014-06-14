@@ -67,8 +67,8 @@ parseEcdsaKey bs = do
 	tpk <- case BS.uncons pk of
 		Just (4, t) -> return t
 		_ -> Left $ msgp ++ "not implemented point format"
-	(x, y) <- (\(mx, my) -> (,) <$> mx <*> my) $
-			B.fromByteString *** B.fromByteString $ BS.splitAt 32 tpk
+	(x, y) <- (\(mx, my) -> (,) <$> mx <*> my) .
+			(B.fromByteString *** B.fromByteString) $ BS.splitAt 32 tpk
 	unless (ECC.Point x y == ECC.pointMul secp256r1 sk g) .
 		Left $ msgp ++ "bad public key"
 	return $ ECDSA.PrivateKey secp256r1 sk

@@ -108,7 +108,7 @@ tlsEncryptMessage ct msg = ifEnc Server msg $ \m -> do
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
-	enc <- tlsEncryptMessage__ hs wk mk sn
+	let enc = encryptMessage hs wk mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") m
 	withRandom enc
 
@@ -121,7 +121,7 @@ tlsDecryptMessage ct enc = ifEnc Client enc $ \e -> do
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
-	eitherToError $ tlsDecryptMessage__ hs wk mk sn
+	eitherToError $ decryptMessage hs wk mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") e
 
 eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a

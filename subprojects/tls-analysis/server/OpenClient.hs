@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module OpenClient (
---	Version(..),
 	ContentType(..),
 	HandshakeM, liftIO, throwError, catchError,
 	randomByteString,
@@ -38,19 +37,14 @@ module OpenClient (
 
 	write,
 	read,
---	contentTypeToByteString,
---	versionToByteString,
---	intToByteString,
---	byteStringToContentType,
---	byteStringToVersion,
---	byteStringToInt,
 	debugCipherSuite,
 
 	ifEnc,
 	cipherSuite,
 	getServerWrite,
 	getClientWrite,
-	tlsEncryptMessage__, tlsDecryptMessage__,
+	encryptMessage,
+	decryptMessage,
 	CipherSuite(..),
 	BulkEncryption(..),
 
@@ -73,7 +67,6 @@ import Data.HandleLike
 
 import HM
 import CryptoTools
--- import Types
 import ClientState
 import qualified Codec.Bytable as B
 
@@ -195,8 +188,8 @@ tPutWithCtSt tc ct msg = do
 	(cs, h) = vrcshSt tc
 	key = tlsServerWriteKey tc
 	mk = tlsServerWriteMacKey tc
-	enc hs gen sn = encryptMessage hs gen key sn mk
-		(B.toByteString ct `BS.append` "\x03\x03") msg
+	enc hs gen sn = encryptMessage hs key mk sn
+		(B.toByteString ct `BS.append` "\x03\x03") msg gen
 
 vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
 vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
@@ -240,7 +233,7 @@ tGetWholeWithCtSt tc = do
 	(cs, h) = vrcshSt tc
 	key = tlsClientWriteKey tc
 	mk = tlsClientWriteMacKey tc
-	dec hs sn = decryptMessage hs key sn mk
+	dec hs = decryptMessage hs key mk
 
 tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
 	Int -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString

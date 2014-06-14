@@ -10,8 +10,6 @@ module CryptoTools (
 
 	generateKeys_,
 	finishedHash_,
-	tlsEncryptMessage__,
-	tlsDecryptMessage__,
 ) where
 
 import Data.Word
@@ -33,27 +31,13 @@ hashSha1 = (SHA1.hash, 20)
 hashSha256 = (SHA256.hash, 32)
 
 encryptMessage :: CPRG gen =>
-	Hash -> gen -> BS.ByteString -> Word64 -> BS.ByteString ->
-	BS.ByteString -> BS.ByteString -> (BS.ByteString, gen)
-encryptMessage (hs, _) gen key sn mk pre msg = 
+	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> BS.ByteString -> gen -> (BS.ByteString, gen)
+encryptMessage (hs, _) key mk sn pre msg gen = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac hs sn mk $ BS.concat
 		[pre, B.addLength (undefined :: Word16) msg]
-
-decryptMessage :: Hash ->
-	BS.ByteString -> Word64 -> BS.ByteString ->
-	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decryptMessage (hs, ml) key sn mk pre enc = if mac == cmac then Right body else
-	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
-		"Expected: " ++ show cmac ++ "\n\t" ++
-		"Recieved: " ++ show mac ++ "\n\t" ++
-		"ml: " ++ show ml ++ "\n"
-	where
-	bm = unpadd $ decrypt key enc
-	(body, mac) = BS.splitAt (BS.length bm - ml) bm
-	cmac = calcMac hs sn mk $ BS.concat
-		[pre, B.addLength (undefined :: Word16) body]
 
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
@@ -105,29 +89,16 @@ generateKeys_ kl cr sr pms = do
 finishedHash_ :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
 finishedHash_ = MS.generateFinished MS.TLS12
 
-tlsEncryptMessage_ :: CPRG gen =>
-	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString ->
-	BS.ByteString -> gen -> (BS.ByteString, gen)
-tlsEncryptMessage_ hs wk mk sn pre msg gen =
-	encryptMessage hs gen wk sn mk pre msg
-
-tlsEncryptMessage__ :: (Monad m, CPRG gen) =>
-	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString ->
-	BS.ByteString -> m (gen -> (BS.ByteString, gen))
-tlsEncryptMessage__ hs wk mk sn pre msg = do
-	return $ tlsEncryptMessage_ hs wk mk sn pre msg
-
-tlsDecryptMessage_ :: Hash ->
+decryptMessage :: Hash ->
 	BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString ->
-	BS.ByteString ->
-	Either String BS.ByteString
-tlsDecryptMessage_ hs wk mk sn pre msg = decryptMessage hs wk sn mk pre msg
-
-tlsDecryptMessage__ :: Hash -> BS.ByteString -> BS.ByteString ->
-	Word64 ->
-	BS.ByteString ->
-	BS.ByteString -> Either String BS.ByteString
-tlsDecryptMessage__ hs wk mk sn pre msg = tlsDecryptMessage_ hs wk mk sn pre msg
+	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
+decryptMessage (hs, ml) key mk sn pre enc = if mac == cmac then Right body else
+	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
+		"Expected: " ++ show cmac ++ "\n\t" ++
+		"Recieved: " ++ show mac ++ "\n\t" ++
+		"ml: " ++ show ml ++ "\n"
+	where
+	bm = unpadd $ decrypt key enc
+	(body, mac) = BS.splitAt (BS.length bm - ml) bm
+	cmac = calcMac hs sn mk $ BS.concat
+		[pre, B.addLength (undefined :: Word16) body]
