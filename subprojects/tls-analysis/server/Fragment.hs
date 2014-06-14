@@ -109,11 +109,11 @@ writeByteString th ks ct bs = do
 
 tlsEncryptMessage :: (HandleLike h, CPRG gen) => Keys ->
 	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsEncryptMessage ks ct msg = ifEnc Server msg $ \m -> do
-	CipherSuite _ be <- cipherSuite Server
-	let	wk = kServerWriteKey ks
+tlsEncryptMessage ks ct msg = ifEnc Server ks msg $ \m -> do
+	let	CipherSuite _ be = cipherSuite Server ks
+		wk = kServerWriteKey ks
 		mk = kServerWriteMacKey ks
-	sn <- getServerWrite
+	sn <- getServerWrite ks
 	hs <- case be of
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
@@ -124,11 +124,11 @@ tlsEncryptMessage ks ct msg = ifEnc Server msg $ \m -> do
 
 tlsDecryptMessage :: HandleLike h => Keys ->
 	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsDecryptMessage ks ct enc = ifEnc Client enc $ \e -> do
-	CipherSuite _ be <- cipherSuite Client
-	let	wk = kClientWriteKey ks
+tlsDecryptMessage ks ct enc = ifEnc Client ks enc $ \e -> do
+	let	CipherSuite _ be = cipherSuite Client ks
+		wk = kClientWriteKey ks
 		mk = kClientWriteMacKey ks
-	sn <- getClientWrite
+	sn <- getClientWrite ks
 	hs <- case be of
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256

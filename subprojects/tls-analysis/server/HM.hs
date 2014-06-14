@@ -74,6 +74,8 @@ type TlsHandle h = h
 nullKeys :: Keys
 nullKeys = Keys {
 	kCachedCipherSuite = CipherSuite KE_NULL BE_NULL,
+	kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
+	kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
 
 	kMasterSecret = "",
 	kClientWriteMacKey = "",
@@ -83,20 +85,17 @@ nullKeys = Keys {
 
 data Keys = Keys {
 	kCachedCipherSuite :: CipherSuite,
+	kClientCipherSuite :: CipherSuite,
+	kServerCipherSuite :: CipherSuite,
 
 	kMasterSecret :: BS.ByteString,
 	kClientWriteMacKey :: BS.ByteString,
 	kServerWriteMacKey :: BS.ByteString,
 	kClientWriteKey :: BS.ByteString,
-	kServerWriteKey :: BS.ByteString
- }
+	kServerWriteKey :: BS.ByteString }
 
 data TlsState h gen = TlsState {
 	tlssByteStringBuffer :: (Maybe ContentType, BS.ByteString),
-
-	tlssClientWriteCipherSuite :: CipherSuite,
-	tlssServerWriteCipherSuite :: CipherSuite,
-	tlssCachedCipherSuite :: Maybe CipherSuite,
 
 	tlssRandomGen :: gen,
 	tlssClientSequenceNumber :: Word64,
@@ -112,10 +111,6 @@ mkTlsHandle = id
 initTlsState :: gen -> TlsState h gen
 initTlsState gen = TlsState {
 	tlssByteStringBuffer = (Nothing, ""),
-
-	tlssClientWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
-	tlssServerWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
-	tlssCachedCipherSuite = Nothing,
 
 	tlssRandomGen = gen,
 	tlssSha256Ctx = SHA256.init,
@@ -190,15 +185,28 @@ getServerRandom :: HandleLike h => HandshakeM h gen (Maybe BS.ByteString)
 getServerRandom = gets tlssServerRandom
 -}
 
+{-
 getKeyExchange :: HandleLike h => HandshakeM h gen KeyExchange
 getKeyExchange = (\(CipherSuite ke _) -> ke) `liftM` getCipherSuite
 
 getBulkEncryption :: HandleLike h => HandshakeM h gen BulkEncryption
 getBulkEncryption = (\(CipherSuite _ be) -> be) `liftM` getCipherSuite
+-}
 
+getKeyExchange :: Keys -> KeyExchange
+getKeyExchange k = let CipherSuite ke _ = getCipherSuite k in ke
+
+getBulkEncryption :: Keys -> BulkEncryption
+getBulkEncryption k = let CipherSuite _ be = getCipherSuite k in be
+
+getCipherSuite :: Keys -> CipherSuite
+getCipherSuite = kCachedCipherSuite
+
+{-
 getCipherSuite :: HandleLike h => HandshakeM h gen CipherSuite
 getCipherSuite =
 	maybe (throwError "no cipher suite") return =<< gets tlssCachedCipherSuite
+-}
 
 randomByteString :: (HandleLike h, CPRG gen) => Int -> HandshakeM h gen BS.ByteString
 randomByteString len = do
@@ -221,10 +229,19 @@ setServerRandom sr = do
 	-}
 
 cacheCipherSuite :: HandleLike h => CipherSuite -> HandshakeM h gen ()
-cacheCipherSuite cs = do
+cacheCipherSuite _ = do
+	return ()
+{-
 	tlss <- get
 	put $ tlss { tlssCachedCipherSuite = Just cs }
+	-}
 
+flushCipherSuite :: Partner -> Keys -> Keys
+flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
+	Client -> k { kClientCipherSuite = cs }
+	Server -> k { kServerCipherSuite = cs }
+
+{-
 flushCipherSuite :: HandleLike h => Partner -> HandshakeM h gen ()
 flushCipherSuite p = do
 	tlss <- get
@@ -233,6 +250,7 @@ flushCipherSuite p = do
 			Client -> put tlss { tlssClientWriteCipherSuite = cs }
 			Server -> put tlss { tlssServerWriteCipherSuite = cs }
 		_ -> throwError "No cached cipher suites"
+		-}
 
 data Partner = Server | Client deriving (Show, Eq)
 
@@ -276,8 +294,11 @@ buffered n rd = do
 			else tlss{ tlssByteStringBuffer = (mct, bf') }
 		return (fromJust mct, ret)
 	else do	(ct', bf') <- rd
-		unless (maybe True (== ct') mct) $
-			throwError "Content Type confliction"
+		unless (maybe True (== ct') mct) .
+			throwError . strMsg $ "Content Type confliction\n" ++
+				"\tExpected: " ++ show mct ++ "\n" ++
+				"\tActual  : " ++ show ct' ++ "\n" ++
+				"\tData    : " ++ show bf'
 		when (BS.null bf') $ throwError "buffered: No data available"
 		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
 		((ct' ,) . (bf `BS.append`) . snd) `liftM` buffered (n - BS.length bf) rd
@@ -287,11 +308,15 @@ sequenceNumber partner = gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
 
-updateSequenceNumber :: HandleLike h => Partner -> HandshakeM h gen ()
-updateSequenceNumber partner = do
+updateSequenceNumber :: HandleLike h =>
+	Partner -> Keys -> HandshakeM h gen ()
+updateSequenceNumber partner ks = do
+	let cs = cipherSuite partner ks
+{-
 	cs <- gets $ case partner of
 		Client -> tlssClientWriteCipherSuite
 		Server -> tlssServerWriteCipherSuite
+		-}
 	sn <- gets $ case partner of
 		Client -> tlssClientSequenceNumber
 		Server -> tlssServerSequenceNumber
@@ -306,10 +331,17 @@ updateSequenceNumber partner = do
 		CipherSuite KE_NULL BE_NULL -> return ()
 		_ -> throwError . strMsg $ "HandshakeM.updateSequenceNumber: not implemented: " ++ show cs
 
+cipherSuite :: Partner -> Keys -> CipherSuite
+cipherSuite p = case p of
+	Client -> kClientCipherSuite
+	Server -> kServerCipherSuite
+
+{-
 cipherSuite :: HandleLike h => Partner -> HandshakeM h gen CipherSuite
 cipherSuite partner = gets $ case partner of
 	Client -> tlssClientWriteCipherSuite
 	Server -> tlssServerWriteCipherSuite
+	-}
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> HandshakeM h gen a
 withRandom p = do
@@ -321,32 +353,42 @@ withRandom p = do
 getHandle :: HandleLike h => TlsHandle h -> h
 getHandle = id
 
-getServerWrite :: HandleLike h => HandshakeM h gen Word64
-getServerWrite = do
+getServerWrite :: HandleLike h => Keys -> HandshakeM h gen Word64
+getServerWrite ks = do
 	sn <- sequenceNumber Server
-	updateSequenceNumber Server
+	updateSequenceNumber Server ks
 	return sn
 
-getClientWrite :: HandleLike h => HandshakeM h gen Word64
-getClientWrite = do
+getClientWrite :: HandleLike h => Keys -> HandshakeM h gen Word64
+getClientWrite ks = do
 	sn <- sequenceNumber Client
-	updateSequenceNumber Client
+	updateSequenceNumber Client ks
 	return sn
 
-ifEnc :: (HandleLike h) => Partner -> BS.ByteString ->
+ifEnc :: (HandleLike h) => Partner -> Keys -> BS.ByteString ->
 	(BS.ByteString -> HandshakeM h gen BS.ByteString) ->
 	HandshakeM h gen BS.ByteString
-ifEnc p bs t = do
-	CipherSuite _ be <- cipherSuite p
+ifEnc p ks bs t = do
+	let CipherSuite _ be = cipherSuite p ks
 	case be of
 		BE_NULL -> return bs
 		_ -> t bs
 
+debugCipherSuite :: HandleLike h =>
+	TlsHandle h -> Keys -> String -> HandshakeM h gen ()
+debugCipherSuite th k a = do
+	let h = getHandle th
+	lift . lift . hlDebug h 5 . BSC.pack
+		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
+		. show $ getCipherSuite k
+
+{-
 debugCipherSuite :: HandleLike h => TlsHandle h -> String -> HandshakeM h gen ()
 debugCipherSuite th a = do
 	let h = getHandle th
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50 . show
+		-}
 
 lenSpace :: Int -> String -> String
 lenSpace n str = str ++ replicate (n - length str) ' '
