@@ -7,23 +7,14 @@ module OpenClient (
 	randomByteString,
 	Partner(..),
 
---	setClientRandom, setServerRandom,
-	setVersion,
---	getClientRandom, getServerRandom,
-	getBulkEncryption,
-	getKeyExchange,
-	cacheCipherSuite, flushCipherSuite,
+--	getBulkEncryption,
+	flushCipherSuite,
 
---	getRandoms,
 	generateKeys_,
---	saveKeys,
-	getMasterSecret,
 	finishedHash_,
 
 	updateHash,
 	handshakeHash,
-
-	updateSequenceNumber,
 
 	TlsClient(..),
 	TlsClientConst,
@@ -32,7 +23,7 @@ module OpenClient (
 	initialTlsState,
 
 	buffered, getContentType,
-	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion, processAlert,
+	Alert(..), AlertLevel(..), AlertDescription(..), -- alertVersion,
 	checkName, clientName,
 
 	withRandom,
@@ -42,10 +33,10 @@ module OpenClient (
 	read,
 	debugCipherSuite,
 
-	ifEnc,
 	cipherSuite,
-	getServerWrite,
-	getClientWrite,
+--	getServerWrite,
+--	getClientWrite,
+	updateSequenceNumber,
 	encryptMessage,
 	decryptMessage,
 	CipherSuite(..),
@@ -139,19 +130,17 @@ runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
 runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
 	((ns, ks), tlss) <- runHandshakeM (mkTlsHandle cl) opn $
-		initTlsState (getRandomGenSt s')
-	let	s'' = setRandomGen (tlssRandomGen tlss) s'
+		initHandshakeState (getRandomGenSt s')
+	let	s'' = setRandomGen (randomGen tlss) s'
 		tc = TlsClientConst {
 			clientId = cid,
 			tlsNames = ns,
-			tlsCipherSuite = cipherSuite Client ks, -- tlssClientWriteCipherSuite tlss,
+			tlsCipherSuite = cipherSuite Client ks,
 			tlsHandle = cl,
---			tlsClientWriteMacKey = fromJust $ tlssClientWriteMacKey tlss,
 			tlsClientWriteMacKey = kClientWriteMacKey ks,
-			tlsServerWriteMacKey = kServerWriteMacKey ks, -- fromJust $ tlssServerWriteMacKey tlss,
+			tlsServerWriteMacKey = kServerWriteMacKey ks,
 			tlsClientWriteKey = kClientWriteKey ks,
---			tlsClientWriteKey = fromJust $ tlssClientWriteKey tlss,
-			tlsServerWriteKey = kServerWriteKey ks } -- fromJust $ tlssServerWriteKey tlss }
+			tlsServerWriteKey = kServerWriteKey ks }
 	return (tc, s'')
 
 checkName :: TlsClient -> String -> Bool

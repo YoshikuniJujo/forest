@@ -9,23 +9,15 @@ module Fragment (
 	writeByteString,
 	updateHash,
 
---	setClientRandom, setServerRandom,
-	setVersion,
---	getClientRandom, getServerRandom,
-	getKeyExchange, getBulkEncryption,
 	debugCipherSuite,
-	cacheCipherSuite, flushCipherSuite,
+	flushCipherSuite,
 
---	getRandoms,
---	saveKeys,
 	generateKeys_,
-	getMasterSecret,
 	finishedHash_,
 
 	Partner(..),
 	HandshakeM, liftIO,
 
-	updateSequenceNumber,
 	randomByteString,
 	handshakeHash,
 
@@ -67,7 +59,10 @@ readByteString :: HandleLike h => TlsHandle h -> Keys ->
 readByteString th ks vc n = do
 	(ct, bs) <- buffered n $ do
 		(t, v, b) <- readFragment th ks
-		unless (vc v) $ throwError alertVersion
+		unless (vc v) . throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionProtocolVersion
+			"Fragment.readByteString: bad Version"
 		return (t, b)
 	case ct of
 		ContentTypeHandshake -> updateHash bs
@@ -79,19 +74,10 @@ readFragment :: HandleLike h => TlsHandle h -> Keys ->
 readFragment th ks = do
 	ct <- (either error id . B.fromByteString) `liftM` read th 1
 	[vmjr, vmnr] <- BS.unpack `liftM` read th 2
---	Version vmjr vmnr <- (either error id . B.fromByteString) `liftM` read 2
 	let v = (vmjr, vmnr)
 	ebody <- read th . either error id . B.fromByteString =<< read th 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ks ct ebody
---	let bs' = BS.concat [
---		B.toByteString ct,
---		B.toByteString vmjr,
---		B.toByteString vmnr,
---		body ]
---	case ct of
---		ContentTypeHandshake -> updateHash bs'
---		_ -> return ()
 	return (ct, v, body)
 
 writeByteString :: (HandleLike h, CPRG gen) => TlsHandle h -> Keys ->
@@ -109,32 +95,36 @@ writeByteString th ks ct bs = do
 
 tlsEncryptMessage :: (HandleLike h, CPRG gen) => Keys ->
 	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsEncryptMessage ks ct msg = ifEnc Server ks msg $ \m -> do
+tlsEncryptMessage Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } _ msg =
+	return msg
+tlsEncryptMessage ks ct msg = do
 	let	CipherSuite _ be = cipherSuite Server ks
 		wk = kServerWriteKey ks
 		mk = kServerWriteMacKey ks
-	sn <- getServerWrite ks
+	sn <- updateSequenceNumber Server ks
 	hs <- case be of
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
 	let enc = encryptMessage hs wk mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") m
+		(B.toByteString ct `BS.append` "\x03\x03") msg
 	withRandom enc
 
 tlsDecryptMessage :: HandleLike h => Keys ->
 	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsDecryptMessage ks ct enc = ifEnc Client ks enc $ \e -> do
+tlsDecryptMessage Keys{ kClientCipherSuite = CipherSuite _ BE_NULL } _ enc =
+	return enc
+tlsDecryptMessage ks ct enc = do
 	let	CipherSuite _ be = cipherSuite Client ks
 		wk = kClientWriteKey ks
 		mk = kClientWriteMacKey ks
-	sn <- getClientWrite ks
+	sn <- updateSequenceNumber Client ks
 	hs <- case be of
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
 	eitherToError $ decryptMessage hs wk mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") e
+		(B.toByteString ct `BS.append` "\x03\x03") enc
 
 eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
 eitherToError = either (throwError . strMsg . show) return

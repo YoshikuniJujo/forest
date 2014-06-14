@@ -47,23 +47,18 @@ import HandshakeType (
 	ClientKeyExchange(..),
 	DigitallySigned(..) )
 import Fragment (
-	Keys(..), nullKeys,
 	TlsHandle,
+	Keys(..), nullKeys, flushCipherSuite,
 	mkTlsHandle,
 	HandshakeM, Partner(..), ContentType(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	readContentType, readByteString, writeByteString,
 	debugCipherSuite,
 
-	setVersion,
-	cacheCipherSuite, flushCipherSuite,
-	updateSequenceNumber,
 
---	getKeyExchange,
---	getBulkEncryption,
 	withRandom,
 	generateKeys_,
-	getMasterSecret,
+--	getMasterSecret,
 	finishedHash_,
 
 	handshakeHash,
@@ -127,7 +122,6 @@ helloHandshake :: (SecretKey sk, CPRG gen, ValidateHandle h) =>
  	(sk, X509.CertificateChain) -> Maybe X509.CertificateStore -> HandshakeM h gen ([String], Keys)
 helloHandshake th css sk cc (pkec, ccec) mcs = do
 	(cv, cs, cr, sr) <- hello th css cc ccec
---	ke <- getKeyExchange
 	let CipherSuite ke _ = cs
 	case ke of
 		RSA -> handshake False th cs cr sr NoDH cv sk sk mcs
@@ -201,13 +195,11 @@ serverHello :: (HandleLike h, CPRG gen) =>
 	HandshakeM h gen (CipherSuite, BS.ByteString)
 serverHello th csssv css cc ccec = do
 	sr <- randomByteString 32
-	let (vmjr, vmnr) = version in setVersion (vmjr, vmnr)
 	cs <- case cipherSuite csssv css of
-		Just cs -> cacheCipherSuite cs >> return cs
+		Just cs -> return cs
 		_ -> throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello: no supported cipher suites"
---	ke <- getKeyExchange
 	let CipherSuite ke _ = cs
 	let	cccc = case ke of
 			ECDHE_ECDSA -> ccec
@@ -275,7 +267,6 @@ clientCertificate :: ValidateHandle h =>
 	X509.CertificateStore -> HandshakeM h gen (X509.PubKey, [String])
 clientCertificate th cs = do
 	hs <- readHandshake th nullKeys (== (3, 3))
---	h <- getHandle
 	case hs of
 		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
 			case X509.certPubKey $ X509.getCertificate c of
@@ -457,9 +448,8 @@ readHandshake ht ks ck = do
 
 readContent :: HandleLike h => TlsHandle h -> Keys ->
 	(Version -> Bool) -> HandshakeM h gen Content
-readContent th ks vc = const `liftM`
+readContent th ks vc =
 	getContent (readContentType th ks vc) (readByteString th ks (== (3, 3)))
-		`ap` updateSequenceNumber Client ks
 
 rcvClientKeyExchange :: (HandleLike h, Base b, B.Bytable (Public b)) =>
 	TlsHandle h -> CipherSuite ->
@@ -469,9 +459,7 @@ rcvClientKeyExchange th cs cr sr dhps dhpn (_cvmjr, _cvmnr) = do
 	hs <- readHandshake th nullKeys (== (3, 3))
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
---			liftIO . putStrLn $ "CLIENT KEY: " ++ show epms
 			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
---			liftIO . putStrLn $ "PRE MASTER SECRET: " ++ show pms
 			generateKeys cs cr sr pms
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -632,14 +620,13 @@ generateKeys :: HandleLike h => CipherSuite ->
 	BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> HandshakeM h gen Keys
 generateKeys cs cr sr pms = do
---	be <- getBulkEncryption
 	let CipherSuite _ be = cs
 	kl <- case be of
 		AES_128_CBC_SHA -> return 20
 		AES_128_CBC_SHA256 -> return 32
 		_ -> throwError "bad"
 	let Right (ms, cwmk, swmk, cwk, swk) = generateKeys_ kl cr sr pms
-	return $ Keys {
+	return Keys {
 		kCachedCipherSuite = cs,
 		kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
 		kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
@@ -653,6 +640,6 @@ generateKeys cs cr sr pms = do
 
 finishedHash :: HandleLike h => Keys -> Partner -> HandshakeM h gen BS.ByteString
 finishedHash ks partner = do
-	let ms = getMasterSecret ks
+	let ms = kMasterSecret ks
 	sha256 <- handshakeHash
 	return $ finishedHash_ (partner == Client) ms sha256

@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module ClientState (
---	TlsClientState(..),
 	TlsClientState,
 	ClientId,
 	newClientId,
