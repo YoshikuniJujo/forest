@@ -52,6 +52,10 @@ module OpenClient (
 	getClientWrite,
 	tlsEncryptMessage__, tlsDecryptMessage__,
 	CipherSuite(..),
+	BulkEncryption(..),
+
+	hashSha1,
+	hashSha256,
 ) where
 
 import Prelude hiding (read)
@@ -185,16 +189,13 @@ tPutWithCtSt tc ct msg = do
 	modify $ setRandomGen gen'
 	modify . setServerSequenceNumber (clientId tc) $ succ sn
 	lift . hlPut h $ BS.concat [
-		B.toByteString ct,
-		B.toByteString $ fst v,
-		B.toByteString $ snd v,
+		B.toByteString ct, "\x03\x03",
 		B.addLength (undefined :: Word16) ebody ]
 	where
 	(cs, h) = vrcshSt tc
 	key = tlsServerWriteKey tc
 	mk = tlsServerWriteMacKey tc
-	v = (3, 3)
-	enc hs gen sn = encryptMessage hs gen key sn mk ct v msg
+	enc hs gen sn = encryptMessage hs gen key sn mk ct msg
 
 vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
 vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
@@ -223,14 +224,14 @@ tGetWholeWithCtSt tc = do
 		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
 		_ -> lift $ hlError h "OpenClient.tGetWholeWithCT"
 	ct <- (either error id . B.fromByteString) `liftM` lift (hlGet h 1)
-	[vmjr, vmnr] <- BS.unpack `liftM` lift (hlGet h 2)
+	[_vmjr, _vmnr] <- BS.unpack `liftM` lift (hlGet h 2)
 --	Version vmjr vmnr <- (either error id . B.fromByteString) `liftM` lift (hlGet h 2)
 	enc <- lift . hlGet h . either error id . B.fromByteString
 		=<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
 	if BS.null enc then return (ct, "") else do
-		ret <- case dec hs sn ct (vmjr, vmnr) enc of
+		ret <- case dec hs sn ct enc of
 			Right r -> return r
 			Left err -> error err
 		return (ct, ret)

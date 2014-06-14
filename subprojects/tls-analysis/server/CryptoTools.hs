@@ -8,9 +8,6 @@ module CryptoTools (
 	MS.ClientRandom(..), MS.ServerRandom(..),
 	MS.generateMasterSecret, MS.generateKeyBlock, MS.generateFinished,
 
-	ContentType(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-
 	generateKeys_,
 	finishedHash_,
 	tlsEncryptMessage__,
@@ -23,7 +20,6 @@ import "crypto-random" Crypto.Random
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.Cipher.AES
-import CipherSuite
 
 import qualified MasterSecret as MS
 
@@ -40,20 +36,18 @@ hashSha256 = (SHA256.hash, 32)
 
 encryptMessage :: CPRG gen =>
 	Hash -> gen -> BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> (Word8, Word8) -> BS.ByteString -> (BS.ByteString, gen)
-encryptMessage (hs, _) gen key sn mk ct (vmjr, vmnr) msg = 
+	ContentType -> BS.ByteString -> (BS.ByteString, gen)
+encryptMessage (hs, _) gen key sn mk ct msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac hs sn mk $ BS.concat [
-		B.toByteString ct,
-		B.toByteString vmjr,
-		B.toByteString vmnr,
+		B.toByteString ct, "\x03\x03",
 		B.addLength (undefined :: Word16) msg]
 
 decryptMessage :: Hash ->
 	BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> (Word8, Word8) -> BS.ByteString -> Either String BS.ByteString
-decryptMessage (hs, ml) key sn mk ct (vmjr, vmnr) enc = if mac == cmac then Right body else
+	ContentType -> BS.ByteString -> Either String BS.ByteString
+decryptMessage (hs, ml) key sn mk ct enc = if mac == cmac then Right body else
 	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
 		"Expected: " ++ show cmac ++ "\n\t" ++
 		"Recieved: " ++ show mac ++ "\n\t" ++
@@ -62,9 +56,7 @@ decryptMessage (hs, ml) key sn mk ct (vmjr, vmnr) enc = if mac == cmac then Righ
 	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
 	cmac = calcMac hs sn mk $ BS.concat [
-		B.toByteString ct,
-		B.toByteString vmjr,
-		B.toByteString vmnr,
+		B.toByteString ct, "\x03\x03",
 		B.addLength (undefined :: Word16) body]
 
 calcMac :: (BS.ByteString -> BS.ByteString) ->
@@ -98,14 +90,10 @@ decrypt key ivenc = let
 	(iv, enc) = BS.splitAt 16 ivenc in
 	decryptCBC (initAES key) iv enc
 
-generateKeys_ :: BulkEncryption -> BS.ByteString -> BS.ByteString ->
+generateKeys_ :: Int -> BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> Either String
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
-generateKeys_ be cr sr pms = do
-	kl <- case be of
-		AES_128_CBC_SHA -> Right 20
-		AES_128_CBC_SHA256 -> Right 32
-		_ -> Left "HandshakeMonad.generateKeys: not implemented"
+generateKeys_ kl cr sr pms = do
 	let	ms = MS.generateMasterSecret
 			pms (MS.ClientRandom cr) (MS.ServerRandom sr)
 		ems = MS.generateKeyBlock
@@ -121,42 +109,23 @@ generateKeys_ be cr sr pms = do
 finishedHash_ :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
 finishedHash_ = MS.generateFinished MS.TLS12
 
-tlsEncryptMessage_ :: CPRG gen => BulkEncryption -> ContentType ->
-	BS.ByteString -> BS.ByteString -> Word64 -> BS.ByteString -> gen ->
-	(BS.ByteString, gen)
-tlsEncryptMessage_ be ct wk mk sn msg gen = let
-	mhs = case be of
-		AES_128_CBC_SHA -> Just hashSha1
-		AES_128_CBC_SHA256 -> Just hashSha256
-		BE_NULL -> Nothing
-		_ -> error "not implemented" in
-	case mhs of
-		Just hs -> encryptMessage hs gen wk sn mk ct (3, 3) msg
-		_ -> (msg, gen)
+tlsEncryptMessage_ :: CPRG gen =>
+	Hash -> ContentType -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> gen -> (BS.ByteString, gen)
+tlsEncryptMessage_ hs ct wk mk sn msg gen = encryptMessage hs gen wk sn mk ct msg
 
-tlsEncryptMessage__ :: CPRG gen => BulkEncryption -> ContentType ->
-	BS.ByteString -> BS.ByteString -> Word64 -> BS.ByteString ->
-	Either String (gen -> (BS.ByteString, gen))
-tlsEncryptMessage__ BE_NULL _ _ _ _ msg = Right (msg ,)
-tlsEncryptMessage__ be ct wk mk sn msg = do
-	return $ tlsEncryptMessage_ be ct wk mk sn msg
+tlsEncryptMessage__ :: (Monad m, CPRG gen) =>
+	Hash -> ContentType -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> m (gen -> (BS.ByteString, gen))
+tlsEncryptMessage__ hs ct wk mk sn msg = do
+	return $ tlsEncryptMessage_ hs ct wk mk sn msg
 
-tlsDecryptMessage_ :: BulkEncryption -> ContentType ->
+tlsDecryptMessage_ :: Hash -> ContentType ->
 	BS.ByteString -> BS.ByteString -> Word64 -> BS.ByteString ->
 	Either String BS.ByteString
-tlsDecryptMessage_ be ct wk mk sn msg = do
-	let mhs = case be of
-		AES_128_CBC_SHA -> Just hashSha1
-		AES_128_CBC_SHA256 -> Just hashSha256
-		BE_NULL -> Nothing
-		_ -> error "not implemented"
-	case mhs of
-		Just hs -> decryptMessage hs wk sn mk ct (3, 3) msg
-		Nothing -> return msg
+tlsDecryptMessage_ hs ct wk mk sn msg = decryptMessage hs wk sn mk ct msg
 
-tlsDecryptMessage__ :: BulkEncryption -> ContentType ->
-	BS.ByteString -> BS.ByteString -> Word64 -> BS.ByteString ->
-	Either String BS.ByteString
-tlsDecryptMessage__ BE_NULL _ _ _ _ msg = Right msg
-tlsDecryptMessage__ be ct wk mk sn msg = do
-	tlsDecryptMessage_ be ct wk mk sn msg
+tlsDecryptMessage__ :: Hash -> ContentType -> BS.ByteString -> BS.ByteString ->
+	Word64 -> BS.ByteString -> Either String BS.ByteString
+tlsDecryptMessage__ hs ct wk mk sn msg = do
+	tlsDecryptMessage_ hs ct wk mk sn msg

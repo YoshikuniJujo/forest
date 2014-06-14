@@ -104,7 +104,10 @@ tlsEncryptMessage :: (HandleLike h, CPRG gen) =>
 tlsEncryptMessage ct msg = ifEnc Server msg $ \m -> do
 	CipherSuite _ be <- cipherSuite Server
 	(wk, mk, sn) <- getServerWrite
-	enc <- eitherToError $ tlsEncryptMessage__ be ct wk mk sn m
+	enc <- case be of
+		AES_128_CBC_SHA -> tlsEncryptMessage__ hashSha1 ct wk mk sn m
+		AES_128_CBC_SHA256 -> tlsEncryptMessage__ hashSha256 ct wk mk sn m
+		_ -> error "bad"
 	withRandom enc
 
 tlsDecryptMessage :: HandleLike h =>
@@ -112,7 +115,11 @@ tlsDecryptMessage :: HandleLike h =>
 tlsDecryptMessage ct enc = ifEnc Client enc $ \e -> do
 	CipherSuite _ be <- cipherSuite Client
 	(wk, mk, sn) <- getClientWrite
-	eitherToError $ tlsDecryptMessage__ be ct wk mk sn e
+	hs <- case be of
+		AES_128_CBC_SHA -> return hashSha1
+		AES_128_CBC_SHA256 -> return hashSha256
+		_ -> throwError "bad"
+	eitherToError $ tlsDecryptMessage__ hs ct wk mk sn e
 
 eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
 eitherToError = either (throwError . strMsg . show) return

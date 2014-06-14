@@ -600,7 +600,11 @@ generateKeys :: HandleLike h => BS.ByteString -> HandshakeM h gen ()
 generateKeys pms = do
 	be <- getBulkEncryption
 	(cr, sr) <- getRandoms
-	either (throwError . strMsg) saveKeys $ generateKeys_ be cr sr pms
+	kl <- case be of
+		AES_128_CBC_SHA -> return 20
+		AES_128_CBC_SHA256 -> return 32
+		_ -> throwError "bad"
+	either (throwError . strMsg) saveKeys $ generateKeys_ kl cr sr pms
 
 finishedHash :: HandleLike h => Partner -> HandshakeM h gen BS.ByteString
 finishedHash partner = do

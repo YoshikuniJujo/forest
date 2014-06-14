@@ -19,6 +19,9 @@ module HM (
 	getMasterSecret,
 
 	debugCipherSuite,
+
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ContentType(..),
 ) where
 
 import Prelude hiding (read)
