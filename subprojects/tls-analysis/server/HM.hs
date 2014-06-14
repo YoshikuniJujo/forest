@@ -30,9 +30,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import qualified Codec.Bytable as B
-
 import CipherSuite
+import ContentType
 
 type HandshakeM h gen = ErrorT Alert (StateT (HandshakeState h gen) (HandleMonad h))
 
@@ -268,30 +267,3 @@ debugCipherSuite th k a = do
 		. show $ kCachedCipherSuite k
 	where
 	lenSpace n str = str ++ replicate (n - length str) ' '
-
-data ContentType
-	= ContentTypeChangeCipherSpec
-	| ContentTypeAlert
-	| ContentTypeHandshake
-	| ContentTypeApplicationData
-	| ContentTypeRaw Word8
-	deriving (Show, Eq)
-
-instance B.Bytable ContentType where
-	fromByteString = Right . byteStringToContentType
-	toByteString = contentTypeToByteString
-
-byteStringToContentType :: BS.ByteString -> ContentType
-byteStringToContentType "" = error "Types.byteStringToContentType: empty"
-byteStringToContentType "\20" = ContentTypeChangeCipherSpec
-byteStringToContentType "\21" = ContentTypeAlert
-byteStringToContentType "\22" = ContentTypeHandshake
-byteStringToContentType "\23" = ContentTypeApplicationData
-byteStringToContentType bs = let [ct] = BS.unpack bs in ContentTypeRaw ct
-
-contentTypeToByteString :: ContentType -> BS.ByteString
-contentTypeToByteString ContentTypeChangeCipherSpec = BS.pack [20]
-contentTypeToByteString ContentTypeAlert = BS.pack [21]
-contentTypeToByteString ContentTypeHandshake = BS.pack [22]
-contentTypeToByteString ContentTypeApplicationData = BS.pack [23]
-contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]
