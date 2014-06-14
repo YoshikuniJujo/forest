@@ -1,19 +1,23 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, FlexibleContexts #-}
 
 module Fragment (
+	TlsHandle,
+	mkTlsHandle,
 	ContentType(..),
 	readContentType,
 	readByteString,
 	writeByteString,
 	updateHash,
 
-	setClientRandom, setServerRandom,
+--	setClientRandom, setServerRandom,
 	setVersion,
-	getClientRandom, getServerRandom, getKeyExchange, getBulkEncryption,
+--	getClientRandom, getServerRandom,
+	getKeyExchange, getBulkEncryption,
 	debugCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
 
-	getRandoms, saveKeys, generateKeys_,
+--	getRandoms,
+	saveKeys, generateKeys_,
 	getMasterSecret,
 	finishedHash_,
 
@@ -52,14 +56,15 @@ import Data.HandleLike
 import qualified Codec.Bytable as B
 import Data.Word
 
-readContentType :: HandleLike h => ((Word8, Word8) -> Bool) -> HandshakeM h gen ContentType
-readContentType vc = getContentType vc readFragment
+readContentType :: HandleLike h => TlsHandle h ->
+	((Word8, Word8) -> Bool) -> HandshakeM h gen ContentType
+readContentType th vc = getContentType vc $ readFragment th
 
-readByteString :: HandleLike h =>
+readByteString :: HandleLike h => TlsHandle h ->
 	((Word8, Word8) -> Bool) -> Int -> HandshakeM h gen (ContentType, BS.ByteString)
-readByteString vc n = do
+readByteString th vc n = do
 	(ct, bs) <- buffered n $ do
-		(t, v, b) <- readFragment
+		(t, v, b) <- readFragment th
 		unless (vc v) $ throwError alertVersion
 		return (t, b)
 	case ct of
@@ -67,13 +72,14 @@ readByteString vc n = do
 		_ -> return ()
 	return (ct, bs)
 
-readFragment :: HandleLike h => HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
-readFragment = do
-	ct <- (either error id . B.fromByteString) `liftM` read 1
-	[vmjr, vmnr] <- BS.unpack `liftM` read 2
+readFragment :: HandleLike h => TlsHandle h ->
+	HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
+readFragment th = do
+	ct <- (either error id . B.fromByteString) `liftM` read th 1
+	[vmjr, vmnr] <- BS.unpack `liftM` read th 2
 --	Version vmjr vmnr <- (either error id . B.fromByteString) `liftM` read 2
 	let v = (vmjr, vmnr)
-	ebody <- read . either error id . B.fromByteString =<< read 2
+	ebody <- read th . either error id . B.fromByteString =<< read th 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
 	body <- tlsDecryptMessage ct ebody
 --	let bs' = BS.concat [
@@ -86,14 +92,14 @@ readFragment = do
 --		_ -> return ()
 	return (ct, v, body)
 
-writeByteString :: (HandleLike h, CPRG gen) =>
+writeByteString :: (HandleLike h, CPRG gen) => TlsHandle h ->
 	ContentType -> BS.ByteString -> HandshakeM h gen ()
-writeByteString ct bs = do
+writeByteString th ct bs = do
 	enc <- tlsEncryptMessage ct bs
 	case ct of
 		ContentTypeHandshake -> updateHash bs
 		_ -> return ()
-	write $ BS.concat [
+	write th $ BS.concat [
 		B.toByteString ct,
 		B.toByteString (3 :: Word8),
 		B.toByteString (3 :: Word8),

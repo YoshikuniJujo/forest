@@ -2,17 +2,17 @@
 	FlexibleContexts #-}
 
 module HM (
-	HandshakeM, runHandshakeM, TlsState(..), initTlsState,
+	HandshakeM, runHandshakeM, TlsState(..), initTlsState, mkTlsHandle,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion,
 	alertToByteString, processAlert, write,
-	getClientRandom, getServerRandom, getBulkEncryption, -- getCipherSuite,
+	getBulkEncryption,
 	randomByteString, Partner(..), cacheCipherSuite, flushCipherSuite,
-	setClientRandom, setServerRandom, setVersion, read,
+	setVersion, read,
 	updateHash, handshakeHash, getContentType, buffered,
 	sequenceNumber, updateSequenceNumber,
 
 	writeKey, macKey, cipherSuite, withRandom, getHandle,
-	getRandoms, saveKeys,
+	saveKeys,
 	getServerWrite, getClientWrite,
 	ifEnc,
 	getKeyExchange,
@@ -22,6 +22,8 @@ module HM (
 
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ContentType(..),
+
+	TlsHandle,
 ) where
 
 import Prelude hiding (read)
@@ -45,33 +47,36 @@ import CipherSuite
 
 type HandshakeM h gen = ErrorT Alert (StateT (TlsState h gen) (HandleMonad h))
 
-runHandshakeM :: HandleLike h =>
+runHandshakeM :: HandleLike h => TlsHandle h ->
 	HandshakeM h gen a -> TlsState h gen -> HandleMonad h (a, TlsState h gen)
-runHandshakeM io st = do
-	(ret, st') <- runErrorT (io `catchError` processAlert)
+runHandshakeM th io st = do
+	(ret, st') <- runErrorT (io `catchError` processAlert th)
 		`runStateT` st
 	case ret of
 		Right r -> return (r, st')
 		Left err -> error $ show err
 
-processAlert :: HandleLike h => Alert -> HandshakeM h gen a
-processAlert alt = do
-	write $ alertToByteString alt
+processAlert :: HandleLike h =>
+	TlsHandle h -> Alert -> HandshakeM h gen a
+processAlert th alt = do
+	write th $ alertToByteString alt
 	throwError alt
 
-write :: HandleLike h => BS.ByteString -> HandleLike h => HandshakeM h gen ()
-write dat = (lift . lift . flip hlPut dat) =<< gets tlssClientHandle
+write :: HandleLike h => TlsHandle h ->
+	BS.ByteString -> HandleLike h => HandshakeM h gen ()
+write th dat = lift . lift . flip hlPut dat $ getHandle th
+
+data TlsHandle h = TlsHandle {
+	tlssClientHandle :: h
+	}
 
 data TlsState h gen = TlsState {
-	tlssClientHandle :: h,
 	tlssByteStringBuffer :: (Maybe ContentType, BS.ByteString),
 
 	tlssClientWriteCipherSuite :: CipherSuite,
 	tlssServerWriteCipherSuite :: CipherSuite,
 	tlssCachedCipherSuite :: Maybe CipherSuite,
 
-	tlssClientRandom :: Maybe BS.ByteString,
-	tlssServerRandom :: Maybe BS.ByteString,
 	tlssMasterSecret :: Maybe BS.ByteString,
 	tlssClientWriteMacKey :: Maybe BS.ByteString,
 	tlssServerWriteMacKey :: Maybe BS.ByteString,
@@ -79,21 +84,27 @@ data TlsState h gen = TlsState {
 	tlssServerWriteKey :: Maybe BS.ByteString,
 
 	tlssRandomGen :: gen,
-	tlssSha256Ctx :: SHA256.Ctx,
 	tlssClientSequenceNumber :: Word64,
-	tlssServerSequenceNumber :: Word64 }
+	tlssServerSequenceNumber :: Word64,
 
-initTlsState :: gen -> h -> TlsState h gen
-initTlsState gen cl = TlsState {
-	tlssClientHandle = cl,
+	tlssSha256Ctx :: SHA256.Ctx
+
+	}
+
+mkTlsHandle :: h -> TlsHandle h
+mkTlsHandle h = TlsHandle {
+	tlssClientHandle = h
+	}
+
+initTlsState :: gen -> TlsState h gen
+initTlsState gen = TlsState {
+--	tlssClientHandle = cl,
 	tlssByteStringBuffer = (Nothing, ""),
 
 	tlssClientWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
 	tlssServerWriteCipherSuite = CipherSuite KE_NULL BE_NULL,
 	tlssCachedCipherSuite = Nothing,
 
-	tlssClientRandom = Nothing,
-	tlssServerRandom = Nothing,
 	tlssMasterSecret = Nothing,
 	tlssClientWriteMacKey = Nothing,
 	tlssServerWriteMacKey = Nothing,
@@ -165,11 +176,13 @@ instance Error Alert where
 instance IsString Alert where
 	fromString = NotDetected
 
+{-
 getClientRandom :: HandleLike h => HandshakeM h gen (Maybe BS.ByteString)
 getClientRandom = gets tlssClientRandom
 
 getServerRandom :: HandleLike h => HandshakeM h gen (Maybe BS.ByteString)
 getServerRandom = gets tlssServerRandom
+-}
 
 getKeyExchange :: HandleLike h => HandshakeM h gen KeyExchange
 getKeyExchange = (\(CipherSuite ke _) -> ke) `liftM` getCipherSuite
@@ -191,6 +204,7 @@ randomByteString len = do
 setVersion :: HandleLike h => (Word8, Word8) -> HandshakeM h gen ()
 setVersion _ = return ()
 
+{-
 setClientRandom, setServerRandom :: HandleLike h => BS.ByteString -> HandshakeM h gen ()
 setClientRandom cr = do
 	tlss <- get
@@ -198,6 +212,7 @@ setClientRandom cr = do
 setServerRandom sr = do
 	tlss <- get
 	put $ tlss { tlssServerRandom = Just sr }
+	-}
 
 cacheCipherSuite :: HandleLike h => CipherSuite -> HandshakeM h gen ()
 cacheCipherSuite cs = do
@@ -215,9 +230,9 @@ flushCipherSuite p = do
 
 data Partner = Server | Client deriving (Show, Eq)
 
-read :: HandleLike h => Int -> HandshakeM h gen BS.ByteString
-read n = do
-	r <- lift . lift . flip hlGet n =<< gets tlssClientHandle
+read :: HandleLike h => TlsHandle h -> Int -> HandshakeM h gen BS.ByteString
+read h n = do
+	r <- lift . lift . flip hlGet n $ tlssClientHandle h
 	if BS.length r == n
 		then return r
 		else throwError . strMsg $ "Basic.read: bad reading: " ++
@@ -307,9 +322,10 @@ withRandom p = do
 	put tlss { tlssRandomGen = gen' }
 	return x
 
-getHandle :: HandleLike h => HandshakeM h gen h
-getHandle = gets tlssClientHandle
+getHandle :: HandleLike h => TlsHandle h -> h
+getHandle = tlssClientHandle
 
+{-
 getRandoms :: HandleLike h => HandshakeM h gen (BS.ByteString, BS.ByteString)
 getRandoms = do
 	TlsState {
@@ -318,6 +334,7 @@ getRandoms = do
 	case (mcr, msr) of
 		(Just cr, Just sr) -> return (cr, sr)
 		_ -> throwError "getRandoms: no randoms"
+		-}
 
 saveKeys :: HandleLike h =>
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
@@ -364,9 +381,9 @@ ifEnc p bs t = do
 		BE_NULL -> return bs
 		_ -> t bs
 
-debugCipherSuite :: HandleLike h => String -> HandshakeM h gen ()
-debugCipherSuite a = do
-	h <- getHandle
+debugCipherSuite :: HandleLike h => TlsHandle h -> String -> HandshakeM h gen ()
+debugCipherSuite th a = do
+	let h = getHandle th
 	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50 . show
 
