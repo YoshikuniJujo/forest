@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes, TupleSections #-}
+{-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes, TupleSections,
+	FlexibleContexts #-}
 
 module HM (
 	HandshakeM, runHandshakeM, TlsState(..), initTlsState,
@@ -11,6 +12,10 @@ module HM (
 	sequenceNumber, updateSequenceNumber,
 
 	writeKey, macKey, cipherSuite, withRandom, getHandle,
+	getRandoms, saveKeys,
+	getServerWrite, getClientWrite,
+	eitherToError,
+	ifEnc,
 ) where
 
 import Prelude hiding (read)
@@ -289,3 +294,60 @@ withRandom p = do
 
 getHandle :: HandleLike h => HandshakeM h gen h
 getHandle = gets tlssClientHandle
+
+getRandoms :: HandleLike h => HandshakeM h gen (BS.ByteString, BS.ByteString)
+getRandoms = do
+	TlsState {
+		tlssClientRandom = mcr,
+		tlssServerRandom = msr } <- get
+	case (mcr, msr) of
+		(Just cr, Just sr) -> return (cr, sr)
+		_ -> throwError "getRandoms: no randoms"
+
+saveKeys :: HandleLike h =>
+	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
+		-> HandshakeM h gen ()
+saveKeys (ms, cwmk, swmk, cwk, swk) = do
+	tlss <- get
+	put tlss {
+		tlssMasterSecret = Just ms,
+		tlssClientWriteMacKey = Just cwmk,
+		tlssServerWriteMacKey = Just swmk,
+		tlssClientWriteKey = Just cwk,
+		tlssServerWriteKey = Just swk }
+
+getServerWrite :: HandleLike h =>
+	HandshakeM h gen (BS.ByteString, BS.ByteString, Word64)
+getServerWrite = do
+	CipherSuite _ be <- cipherSuite Server
+	mwk <- writeKey Server
+	sn <- sequenceNumber Server
+	updateSequenceNumber Server
+	mmk <- macKey Server
+	case (be, mwk, mmk) of
+		(_, Just wk, Just mk) -> return (wk, mk, sn)
+		_ -> error "bad"
+
+getClientWrite :: HandleLike h =>
+	HandshakeM h gen (BS.ByteString, BS.ByteString, Word64)
+getClientWrite = do
+	CipherSuite _ be <- cipherSuite Client
+	mwk <- writeKey Client
+	sn <- sequenceNumber Client
+	updateSequenceNumber Client
+	mmk <- macKey Client
+	case (be, mwk, mmk) of
+		(_, Just wk, Just mk) -> return (wk, mk, sn)
+		_ -> error "bad"
+
+eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
+eitherToError = either (throwError . strMsg . show) return
+
+ifEnc :: (HandleLike h) => Partner -> BS.ByteString ->
+	(BS.ByteString -> HandshakeM h gen BS.ByteString) ->
+	HandshakeM h gen BS.ByteString
+ifEnc p bs t = do
+	CipherSuite _ be <- cipherSuite p
+	case be of
+		BE_NULL -> return bs
+		_ -> t bs

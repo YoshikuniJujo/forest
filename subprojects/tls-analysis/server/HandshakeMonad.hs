@@ -1,5 +1,5 @@
 {-# LANGUAGE PackageImports, OverloadedStrings, TupleSections,
-	RankNTypes #-}
+	RankNTypes, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module HandshakeMonad (
@@ -32,16 +32,14 @@ module HandshakeMonad (
 	read,
 
 	CT.ContentType(..),
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	CT.CipherSuite(..), CT.KeyExchange(..), CT.BulkEncryption(..),
 ) where
 
 import Prelude hiding (read)
 
-import Control.Applicative
 import "monads-tf" Control.Monad.Error
 import "monads-tf" Control.Monad.Error.Class
 import "monads-tf" Control.Monad.State
-import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
 import qualified Crypto.PubKey.RSA as RSA
@@ -50,109 +48,40 @@ import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 import HM
 
 import qualified CryptoTools as CT
-import CipherSuite
 
 import Data.HandleLike
 
 decryptRSA :: (HandleLike h, CPRG gen) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h gen BS.ByteString
-decryptRSA pk e = do
-	tlss@TlsState{ tlssRandomGen = gen } <- get
-	let (ret, gen') = RSA.decryptSafer gen pk e
-	put tlss{ tlssRandomGen = gen' }
-	case ret of
-		Right d -> return d
-		Left err -> throwError . strMsg $ show err
+decryptRSA pk e = eitherToError =<< withRandom (\gen -> RSA.decryptSafer gen pk e)
 
 generateKeys :: HandleLike h => BS.ByteString -> HandshakeM h gen ()
 generateKeys pms = do
-	tlss@TlsState{
-		tlssCachedCipherSuite = cs,
-		tlssClientRandom = mcr,
-		tlssServerRandom = msr } <- get
-	mkl <- case cs of
-		Just (CipherSuite _ AES_128_CBC_SHA) -> return 20
-		Just (CipherSuite _ AES_128_CBC_SHA256) -> return 32
-		_ -> throwError "generateKeys: not implemented"
-	case (CT.ClientRandom <$> mcr, CT.ServerRandom <$> msr) of
-		(Just cr, Just sr) -> do
-			let	ms = CT.generateMasterSecret pms cr sr
-				ems = CT.generateKeyBlock cr sr ms $
-					mkl * 2 + 32
-				[cwmk, swmk, cwk, swk] = divide [mkl, mkl, 16, 16] ems
-			put $ tlss {
-				tlssMasterSecret = Just ms,
-				tlssClientWriteMacKey = Just cwmk,
-				tlssServerWriteMacKey = Just swmk,
-				tlssClientWriteKey = Just cwk,
-				tlssServerWriteKey = Just swk }
-		_ -> throwError "No client random / No server random"
-	where
-	divide [] _ = []
-	divide (n : ns) bs
-		| bs == BS.empty = []
-		| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
+	Just (CT.CipherSuite _ be) <- getCipherSuite
+	(cr, sr) <- getRandoms
+	either (throwError . strMsg) saveKeys $ CT.generateKeys_ be cr sr pms
 
 finishedHash :: HandleLike h => Partner -> HandshakeM h gen BS.ByteString
 finishedHash partner = do
-	mms <- gets tlssMasterSecret
+	Just ms <- gets tlssMasterSecret
 	sha256 <- handshakeHash
-	case mms of
-		Just ms -> return $
-			CT.generateFinished CT.TLS12 (partner == Client) ms sha256
-		_ -> throwError "No master secrets"
+	return $ CT.finishedHash_ (partner == Client) ms sha256
 
 tlsEncryptMessage :: (HandleLike h, CPRG gen) =>
-	CT.ContentType -> (Word8, Word8) -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsEncryptMessage ct v msg = do
-	cs <- cipherSuite Server
-	mwk <- writeKey Server
-	sn <- sequenceNumber Server
-	updateSequenceNumber Server
-	mmk <- macKey Server
-	gen <- gets tlssRandomGen
-	mhs <- case cs of
-		CipherSuite _ AES_128_CBC_SHA -> return $ Just CT.hashSha1
-		CipherSuite _ AES_128_CBC_SHA256 -> return $ Just CT.hashSha256
-		CipherSuite KE_NULL BE_NULL -> return Nothing
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionIllegalParameter
-			"HandshakeM.tlsEncryptMessage: not implemented cipher suite"
-	case (mhs, mwk, mmk) of
-		(Just hs, Just wk, Just mk)
-			-> do	let (ret, gen') =
-					CT.encryptMessage hs gen wk sn mk ct v msg
-				tlss <- get
-				put tlss{ tlssRandomGen = gen' }
-				return ret
-		(Nothing, _, _) -> return msg
-		(_, Nothing, _) -> throwError "encryptMessage: No key"
-		(_, _, Nothing) -> throwError "encryptMessage: No MAC key"
+	CT.ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
+tlsEncryptMessage ct msg = ifEnc Server msg $ \m -> do
+	CT.CipherSuite _ be <- cipherSuite Server
+	(wk, mk, sn) <- getServerWrite
+	enc <- case CT.tlsEncryptMessage__ be ct wk mk sn m of
+		Left e -> throwError $ strMsg e
+		Right e -> return e
+	withRandom enc
 
 tlsDecryptMessage :: HandleLike h =>
-	CT.ContentType -> (Word8, Word8) -> BS.ByteString -> HandshakeM h gen BS.ByteString
-tlsDecryptMessage ct v enc = do
-	cs <- cipherSuite Client
-	mwk <- writeKey Client
-	sn <- sequenceNumber Client
-	mmk <- macKey Client
-	case (cs, mwk, mmk) of
-		(CipherSuite _ AES_128_CBC_SHA, Just key, Just mk)
-			-> do	let emsg = CT.decryptMessage CT.hashSha1 key sn mk ct v enc
-				case emsg of
-					Right msg -> return msg
-					Left err -> throwError $ Alert
-						AlertLevelFatal
-						AlertDescriptionBadRecordMac
-						err
-		(CipherSuite _ AES_128_CBC_SHA256, Just key, Just mk)
-			-> do	let emsg = CT.decryptMessage CT.hashSha256 key sn mk ct v enc
-				case emsg of
-					Right msg -> return msg
-					Left err -> throwError $ Alert
-						AlertLevelFatal
-						AlertDescriptionBadRecordMac
-						err
-		(CipherSuite KE_NULL BE_NULL, _, _) -> return enc
-		_ -> throwError "HandshakeM.tlsDecryptMessage: No keys or bad cipher suite"
+	CT.ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
+tlsDecryptMessage ct enc = ifEnc Client enc $ \e -> do
+	CT.CipherSuite _ be <- cipherSuite Client
+	(wk, mk, sn) <- getClientWrite
+	case CT.tlsDecryptMessage__ be ct wk mk sn e of
+		Left err -> throwError $ strMsg err
+		Right m -> return m

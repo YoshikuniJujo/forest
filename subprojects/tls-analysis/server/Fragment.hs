@@ -70,7 +70,7 @@ readFragment = do
 	let v = (vmjr, vmnr)
 	ebody <- read . either error id . B.fromByteString =<< read 2
 	when (BS.null ebody) $ throwError "readFragment: ebody is null"
-	body <- tlsDecryptMessage ct v ebody
+	body <- tlsDecryptMessage ct ebody
 --	let bs' = BS.concat [
 --		B.toByteString ct,
 --		B.toByteString vmjr,
@@ -84,7 +84,7 @@ readFragment = do
 writeByteString :: (HandleLike h, CPRG gen) =>
 	ContentType -> BS.ByteString -> HandshakeM h gen ()
 writeByteString ct bs = do
-	enc <- tlsEncryptMessage ct (3, 3) bs
+	enc <- tlsEncryptMessage ct bs
 	case ct of
 		ContentTypeHandshake -> updateHash bs
 		_ -> return ()
