@@ -195,7 +195,8 @@ tPutWithCtSt tc ct msg = do
 	(cs, h) = vrcshSt tc
 	key = tlsServerWriteKey tc
 	mk = tlsServerWriteMacKey tc
-	enc hs gen sn = encryptMessage hs gen key sn mk ct msg
+	enc hs gen sn = encryptMessage hs gen key sn mk
+		(B.toByteString ct `BS.append` "\x03\x03") msg
 
 vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
 vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
@@ -231,7 +232,7 @@ tGetWholeWithCtSt tc = do
 	sn <- gets . getClientSequenceNumber $ clientId tc
 	modify . setClientSequenceNumber (clientId tc) $ succ sn
 	if BS.null enc then return (ct, "") else do
-		ret <- case dec hs sn ct enc of
+		ret <- case dec hs sn (B.toByteString ct `BS.append` "\x03\x03") enc of
 			Right r -> return r
 			Left err -> error err
 		return (ct, ret)

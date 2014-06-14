@@ -26,8 +26,6 @@ import qualified MasterSecret as MS
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 
-import ContentType
-
 type Hash = (BS.ByteString -> BS.ByteString, Int)
 
 hashSha1, hashSha256 :: Hash
@@ -36,18 +34,17 @@ hashSha256 = (SHA256.hash, 32)
 
 encryptMessage :: CPRG gen =>
 	Hash -> gen -> BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> BS.ByteString -> (BS.ByteString, gen)
-encryptMessage (hs, _) gen key sn mk ct msg = 
+	BS.ByteString -> BS.ByteString -> (BS.ByteString, gen)
+encryptMessage (hs, _) gen key sn mk pre msg = 
 	encrypt gen key . padd $ msg `BS.append` mac
 	where
-	mac = calcMac hs sn mk $ BS.concat [
-		B.toByteString ct, "\x03\x03",
-		B.addLength (undefined :: Word16) msg]
+	mac = calcMac hs sn mk $ BS.concat
+		[pre, B.addLength (undefined :: Word16) msg]
 
 decryptMessage :: Hash ->
 	BS.ByteString -> Word64 -> BS.ByteString ->
-	ContentType -> BS.ByteString -> Either String BS.ByteString
-decryptMessage (hs, ml) key sn mk ct enc = if mac == cmac then Right body else
+	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
+decryptMessage (hs, ml) key sn mk pre enc = if mac == cmac then Right body else
 	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
 		"Expected: " ++ show cmac ++ "\n\t" ++
 		"Recieved: " ++ show mac ++ "\n\t" ++
@@ -55,9 +52,8 @@ decryptMessage (hs, ml) key sn mk ct enc = if mac == cmac then Right body else
 	where
 	bm = unpadd $ decrypt key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
-	cmac = calcMac hs sn mk $ BS.concat [
-		B.toByteString ct, "\x03\x03",
-		B.addLength (undefined :: Word16) body]
+	cmac = calcMac hs sn mk $ BS.concat
+		[pre, B.addLength (undefined :: Word16) body]
 
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
@@ -110,22 +106,28 @@ finishedHash_ :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
 finishedHash_ = MS.generateFinished MS.TLS12
 
 tlsEncryptMessage_ :: CPRG gen =>
-	Hash -> ContentType -> BS.ByteString -> BS.ByteString -> Word64 ->
+	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString ->
 	BS.ByteString -> gen -> (BS.ByteString, gen)
-tlsEncryptMessage_ hs ct wk mk sn msg gen = encryptMessage hs gen wk sn mk ct msg
+tlsEncryptMessage_ hs wk mk sn pre msg gen =
+	encryptMessage hs gen wk sn mk pre msg
 
 tlsEncryptMessage__ :: (Monad m, CPRG gen) =>
-	Hash -> ContentType -> BS.ByteString -> BS.ByteString -> Word64 ->
+	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString ->
 	BS.ByteString -> m (gen -> (BS.ByteString, gen))
-tlsEncryptMessage__ hs ct wk mk sn msg = do
-	return $ tlsEncryptMessage_ hs ct wk mk sn msg
+tlsEncryptMessage__ hs wk mk sn pre msg = do
+	return $ tlsEncryptMessage_ hs wk mk sn pre msg
 
-tlsDecryptMessage_ :: Hash -> ContentType ->
-	BS.ByteString -> BS.ByteString -> Word64 -> BS.ByteString ->
+tlsDecryptMessage_ :: Hash ->
+	BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString ->
+	BS.ByteString ->
 	Either String BS.ByteString
-tlsDecryptMessage_ hs ct wk mk sn msg = decryptMessage hs wk sn mk ct msg
+tlsDecryptMessage_ hs wk mk sn pre msg = decryptMessage hs wk sn mk pre msg
 
-tlsDecryptMessage__ :: Hash -> ContentType -> BS.ByteString -> BS.ByteString ->
-	Word64 -> BS.ByteString -> Either String BS.ByteString
-tlsDecryptMessage__ hs ct wk mk sn msg = do
-	tlsDecryptMessage_ hs ct wk mk sn msg
+tlsDecryptMessage__ :: Hash -> BS.ByteString -> BS.ByteString ->
+	Word64 ->
+	BS.ByteString ->
+	BS.ByteString -> Either String BS.ByteString
+tlsDecryptMessage__ hs wk mk sn pre msg = tlsDecryptMessage_ hs wk mk sn pre msg
