@@ -66,9 +66,7 @@ write :: HandleLike h => TlsHandle h ->
 	BS.ByteString -> HandleLike h => HandshakeM h gen ()
 write th dat = lift . lift . flip hlPut dat $ getHandle th
 
-data TlsHandle h = TlsHandle {
-	tlssClientHandle :: h
-	}
+type TlsHandle h = h
 
 data TlsState h gen = TlsState {
 	tlssByteStringBuffer :: (Maybe ContentType, BS.ByteString),
@@ -92,9 +90,7 @@ data TlsState h gen = TlsState {
 	}
 
 mkTlsHandle :: h -> TlsHandle h
-mkTlsHandle h = TlsHandle {
-	tlssClientHandle = h
-	}
+mkTlsHandle = id
 
 initTlsState :: gen -> TlsState h gen
 initTlsState gen = TlsState {
@@ -232,7 +228,7 @@ data Partner = Server | Client deriving (Show, Eq)
 
 read :: HandleLike h => TlsHandle h -> Int -> HandshakeM h gen BS.ByteString
 read h n = do
-	r <- lift . lift . flip hlGet n $ tlssClientHandle h
+	r <- lift . lift . flip hlGet n $ getHandle h
 	if BS.length r == n
 		then return r
 		else throwError . strMsg $ "Basic.read: bad reading: " ++
@@ -323,18 +319,7 @@ withRandom p = do
 	return x
 
 getHandle :: HandleLike h => TlsHandle h -> h
-getHandle = tlssClientHandle
-
-{-
-getRandoms :: HandleLike h => HandshakeM h gen (BS.ByteString, BS.ByteString)
-getRandoms = do
-	TlsState {
-		tlssClientRandom = mcr,
-		tlssServerRandom = msr } <- get
-	case (mcr, msr) of
-		(Just cr, Just sr) -> return (cr, sr)
-		_ -> throwError "getRandoms: no randoms"
-		-}
+getHandle = id
 
 saveKeys :: HandleLike h =>
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
