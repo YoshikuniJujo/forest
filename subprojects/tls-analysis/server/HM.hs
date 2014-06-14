@@ -5,7 +5,7 @@ module HM (
 	HandshakeM, runHandshakeM, TlsState(..), initTlsState,
 	Alert(..), AlertLevel(..), AlertDescription(..), alertVersion,
 	alertToByteString, processAlert, write,
-	getClientRandom, getServerRandom, getCipherSuite,
+	getClientRandom, getServerRandom, getBulkEncryption, -- getCipherSuite,
 	randomByteString, Partner(..), cacheCipherSuite, flushCipherSuite,
 	setClientRandom, setServerRandom, setVersion, read,
 	updateHash, handshakeHash, getContentType, buffered,
@@ -14,8 +14,11 @@ module HM (
 	writeKey, macKey, cipherSuite, withRandom, getHandle,
 	getRandoms, saveKeys,
 	getServerWrite, getClientWrite,
-	eitherToError,
 	ifEnc,
+	getKeyExchange,
+	getMasterSecret,
+
+	debugCipherSuite,
 ) where
 
 import Prelude hiding (read)
@@ -30,6 +33,7 @@ import Data.HandleLike
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import ContentType
@@ -163,8 +167,15 @@ getClientRandom = gets tlssClientRandom
 getServerRandom :: HandleLike h => HandshakeM h gen (Maybe BS.ByteString)
 getServerRandom = gets tlssServerRandom
 
-getCipherSuite :: HandleLike h => HandshakeM h gen (Maybe CipherSuite)
-getCipherSuite = gets tlssCachedCipherSuite
+getKeyExchange :: HandleLike h => HandshakeM h gen KeyExchange
+getKeyExchange = (\(CipherSuite ke _) -> ke) `liftM` getCipherSuite
+
+getBulkEncryption :: HandleLike h => HandshakeM h gen BulkEncryption
+getBulkEncryption = (\(CipherSuite _ be) -> be) `liftM` getCipherSuite
+
+getCipherSuite :: HandleLike h => HandshakeM h gen CipherSuite
+getCipherSuite =
+	maybe (throwError "no cipher suite") return =<< gets tlssCachedCipherSuite
 
 randomByteString :: (HandleLike h, CPRG gen) => Int -> HandshakeM h gen BS.ByteString
 randomByteString len = do
@@ -340,9 +351,6 @@ getClientWrite = do
 		(_, Just wk, Just mk) -> return (wk, mk, sn)
 		_ -> error "bad"
 
-eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
-eitherToError = either (throwError . strMsg . show) return
-
 ifEnc :: (HandleLike h) => Partner -> BS.ByteString ->
 	(BS.ByteString -> HandshakeM h gen BS.ByteString) ->
 	HandshakeM h gen BS.ByteString
@@ -351,3 +359,16 @@ ifEnc p bs t = do
 	case be of
 		BE_NULL -> return bs
 		_ -> t bs
+
+debugCipherSuite :: HandleLike h => String -> HandshakeM h gen ()
+debugCipherSuite a = do
+	h <- getHandle
+	getCipherSuite >>= lift . lift . hlDebug h 5 . BSC.pack
+		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50 . show
+
+lenSpace :: Int -> String -> String
+lenSpace n str = str ++ replicate (n - length str) ' '
+
+getMasterSecret :: HandleLike h => HandshakeM h gen BS.ByteString
+getMasterSecret =
+	maybe (throwError "no master secret") return =<< gets tlssMasterSecret

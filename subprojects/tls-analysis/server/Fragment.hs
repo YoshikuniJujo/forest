@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, PackageImports, FlexibleContexts #-}
 
 module Fragment (
 	ContentType(..),
@@ -9,11 +9,13 @@ module Fragment (
 
 	setClientRandom, setServerRandom,
 	setVersion,
-	getClientRandom, getServerRandom, getCipherSuite,
+	getClientRandom, getServerRandom, getKeyExchange, getBulkEncryption,
+	debugCipherSuite,
 	cacheCipherSuite, flushCipherSuite,
-	generateKeys,
 
-	decryptRSA, finishedHash,
+	getRandoms, saveKeys, generateKeys_,
+	getMasterSecret,
+	finishedHash_,
 
 	Partner(..),
 	HandshakeM, liftIO,
@@ -31,6 +33,7 @@ module Fragment (
 
 	withRandom,
 	getHandle,
+	eitherToError,
 ) where
 
 import Prelude hiding (read)
@@ -41,6 +44,8 @@ import qualified Data.ByteString as BS
 import OpenClient
 
 import "crypto-random" Crypto.Random
+import "monads-tf" Control.Monad.Error
+import "monads-tf" Control.Monad.Error.Class
 
 import Data.HandleLike
 
@@ -93,3 +98,21 @@ writeByteString ct bs = do
 		B.toByteString (3 :: Word8),
 		B.toByteString (3 :: Word8),
 		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
+
+tlsEncryptMessage :: (HandleLike h, CPRG gen) =>
+	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
+tlsEncryptMessage ct msg = ifEnc Server msg $ \m -> do
+	CipherSuite _ be <- cipherSuite Server
+	(wk, mk, sn) <- getServerWrite
+	enc <- eitherToError $ tlsEncryptMessage__ be ct wk mk sn m
+	withRandom enc
+
+tlsDecryptMessage :: HandleLike h =>
+	ContentType -> BS.ByteString -> HandshakeM h gen BS.ByteString
+tlsDecryptMessage ct enc = ifEnc Client enc $ \e -> do
+	CipherSuite _ be <- cipherSuite Client
+	(wk, mk, sn) <- getClientWrite
+	eitherToError $ tlsDecryptMessage__ be ct wk mk sn e
+
+eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
+eitherToError = either (throwError . strMsg . show) return

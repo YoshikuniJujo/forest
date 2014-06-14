@@ -10,13 +10,17 @@ module OpenClient (
 
 	setClientRandom, setServerRandom,
 	setVersion,
-	getClientRandom, getServerRandom, getCipherSuite,
+	getClientRandom, getServerRandom, getBulkEncryption,
+	getKeyExchange,
 	cacheCipherSuite, flushCipherSuite,
 
-	decryptRSA, generateKeys, updateHash, finishedHash,
+	getRandoms, saveKeys, generateKeys_,
+	getMasterSecret,
+	finishedHash_,
+
+	updateHash,
 	handshakeHash,
 
-	tlsEncryptMessage, tlsDecryptMessage,
 	updateSequenceNumber,
 
 	TlsClient(..),
@@ -40,6 +44,14 @@ module OpenClient (
 --	byteStringToContentType,
 --	byteStringToVersion,
 --	byteStringToInt,
+	debugCipherSuite,
+
+	ifEnc,
+	cipherSuite,
+	getServerWrite,
+	getClientWrite,
+	tlsEncryptMessage__, tlsDecryptMessage__,
+	CipherSuite(..),
 ) where
 
 import Prelude hiding (read)
@@ -55,7 +67,8 @@ import "crypto-random" Crypto.Random
 
 import Data.HandleLike
 
-import HandshakeMonad
+import HM
+import CryptoTools
 -- import Types
 import ClientState
 import qualified Codec.Bytable as B
