@@ -39,7 +39,7 @@ module Fragment (
 	withRandom,
 	getHandle,
 	eitherToError,
-	Keys(..),
+	Keys(..), nullKeys,
 ) where
 
 import Prelude hiding (read)

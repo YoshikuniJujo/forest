@@ -55,7 +55,7 @@ module OpenClient (
 	hashSha256,
 	TlsHandle,
 	mkTlsHandle,
-	Keys(..),
+	Keys(..), nullKeys,
 ) where
 
 import Prelude hiding (read)

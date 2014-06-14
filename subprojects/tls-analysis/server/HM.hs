@@ -23,7 +23,7 @@ module HM (
 	ContentType(..),
 
 	TlsHandle,
-	Keys(..),
+	Keys(..), nullKeys,
 
 	getClientWrite,
 	getServerWrite,
@@ -71,7 +71,19 @@ write th dat = lift . lift . flip hlPut dat $ getHandle th
 
 type TlsHandle h = h
 
+nullKeys :: Keys
+nullKeys = Keys {
+	kCachedCipherSuite = CipherSuite KE_NULL BE_NULL,
+
+	kMasterSecret = "",
+	kClientWriteMacKey = "",
+	kServerWriteMacKey = "",
+	kClientWriteKey = "",
+	kServerWriteKey = "" }
+
 data Keys = Keys {
+	kCachedCipherSuite :: CipherSuite,
+
 	kMasterSecret :: BS.ByteString,
 	kClientWriteMacKey :: BS.ByteString,
 	kServerWriteMacKey :: BS.ByteString,
