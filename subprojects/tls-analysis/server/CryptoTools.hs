@@ -22,8 +22,6 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Crypto.Hash.MD5 as MD5
 import Crypto.Cipher.AES
 
--- import qualified MasterSecret as MS
-
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 

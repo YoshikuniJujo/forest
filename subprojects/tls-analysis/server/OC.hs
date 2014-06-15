@@ -42,7 +42,6 @@ import "crypto-random" Crypto.Random
 
 import Data.HandleLike
 
--- import HM
 import CryptoTools
 import ClientState
 import qualified Codec.Bytable as B
@@ -51,20 +50,6 @@ import CipherSuite
 import ContentType
 
 import "monads-tf" Control.Monad.State
-
-stateToStm :: StateT s IO a -> TVar s -> IO a
-stateToStm m v = do
-	s <- atomically $ readTVar v
-	(r, s') <- m `runStateT` s
-	atomically $ writeTVar v s'
-	return r
-
-toStm :: (TlsClientConst Handle SystemRNG -> StateT (TlsClientState SystemRNG) IO a) -> TlsClient -> IO a
-toStm s (TlsClient tc ts) = stateToStm (s tc) ts
-
-toStm1 :: (TlsClientConst Handle SystemRNG -> a -> StateT (TlsClientState SystemRNG) IO b) ->
-	TlsClient -> a -> IO b
-toStm1 s (TlsClient tc ts) x = stateToStm (s tc x) ts
 
 data TlsClient = TlsClient {
 	tlsConst :: TlsClientConst Handle SystemRNG,
@@ -79,14 +64,6 @@ data TlsClientConst h g = TlsClientConst {
 	tlsServerWriteMacKey :: BS.ByteString,
 	tlsClientWriteKey :: BS.ByteString,
 	tlsServerWriteKey :: BS.ByteString }
-
-instance HandleLike TlsClient where
-	type HandleMonad TlsClient = IO
-	hlPut = tPut
-	hlGet = tGet
-	hlGetLine = tGetLine
-	hlGetContent = tGetContent
-	hlClose = tClose
 
 type family HandleRandomGen h
 
@@ -107,20 +84,6 @@ checkName tc n = n `elem` tlsNames (tlsConst tc)
 
 clientName :: TlsClientConst h g -> Maybe String
 clientName = listToMaybe . tlsNames 
-
-tPut :: TlsClient -> BS.ByteString -> IO ()
-tPut = toStm1 tPutSt
-
-tGet :: TlsClient -> Int -> IO BS.ByteString
-tGet = toStm1 tGetSt
-
-tGetLine :: TlsClient -> IO BS.ByteString
-tGetLine = toStm tGetLineSt
-
-tGetContent :: TlsClient -> IO BS.ByteString
-tGetContent = toStm tGetContentSt
-
---
 
 tPutSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
 	BS.ByteString -> StateT (TlsClientState gen) (HandleMonad h) ()
@@ -234,9 +197,6 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 		(l, ls) = BSC.span (/= '\n') bs
 		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
 	_ -> Nothing
-
-tClose :: TlsClient -> IO ()
-tClose = toStm tCloseSt
 
 tCloseSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) ()

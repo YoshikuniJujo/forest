@@ -621,8 +621,7 @@ generateKeys cs cr sr pms = do
 		kClientWriteMacKey = cwmk,
 		kServerWriteMacKey = swmk,
 		kClientWriteKey = cwk,
-		kServerWriteKey = swk
-		}
+		kServerWriteKey = swk }
 
 finishedHash :: HandleLike h => Keys -> Partner -> HandshakeM h gen BS.ByteString
 finishedHash ks partner = do
