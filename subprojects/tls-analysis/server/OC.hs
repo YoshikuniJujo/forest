@@ -2,36 +2,19 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module OC (
-	ContentType(..),
-	liftIO, throwError, catchError,
+	TlsClientConst(..), checkName, clientName,
+	TlsClientState, initialTlsState, newClientId, getRandomGen, setRandomGen,
 
+	encryptMessage, decryptMessage,
+	hashSha1, hashSha256,
+
+	ContentType(..),
 	generateKeys_,
 	finishedHash_,
-
-	TlsClient(..),
-	initialTlsState,
-
-	checkName, clientName,
-
-	encryptMessage,
-	decryptMessage,
-	CipherSuite(..),
-	BulkEncryption(..),
-
-	hashSha1,
-	hashSha256,
-
-	TlsClientConst(..),
-	TlsClientState,
-
-	newClientId,
-	getRandomGenSt,
-	setRandomGen,
 ) where
 
 import Prelude hiding (read)
 
-import Control.Concurrent.STM
 import "monads-tf" Control.Monad.Error
 import Data.Maybe
 import Data.Word
@@ -50,10 +33,6 @@ import CipherSuite
 import ContentType
 
 import "monads-tf" Control.Monad.State
-
-data TlsClient = TlsClient {
-	tlsConst :: TlsClientConst Handle SystemRNG,
-	tlsState :: TVar (TlsClientState SystemRNG) }
 
 data TlsClientConst h g = TlsClientConst {
 	clientId :: ClientId,
@@ -79,8 +58,8 @@ instance (HandleLike h, CPRG g) =>
 	hlGetContent = tGetContentSt
 	hlClose = tCloseSt
 
-checkName :: TlsClient -> String -> Bool
-checkName tc n = n `elem` tlsNames (tlsConst tc)
+checkName :: TlsClientConst h g -> String -> Bool
+checkName tc n = n `elem` tlsNames tc
 
 clientName :: TlsClientConst h g -> Maybe String
 clientName = listToMaybe . tlsNames 
@@ -97,7 +76,7 @@ tPutWithCtSt tc ct msg = do
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
 		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
 		_ -> error "OpenClient.tPutWithCT"
-	gen <- gets getRandomGenSt
+	gen <- gets getRandomGen
 	sn <- gets . getServerSequenceNumber $ clientId tc
 	let (ebody, gen') = enc hs gen sn
 	modify $ setRandomGen gen'

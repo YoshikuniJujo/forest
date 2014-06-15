@@ -6,7 +6,7 @@ module ClientState (
 	ClientId,
 	newClientId,
 	setBuffer, getBuffer,
-	setRandomGen, getRandomGenSt,
+	setRandomGen, getRandomGen,
 	setClientSequenceNumber, getClientSequenceNumber,
 	setServerSequenceNumber, getServerSequenceNumber,
 	initialTlsState,
@@ -77,8 +77,8 @@ getBuffer cid = tlsBuffer . fromJust . lookup cid . tlsClientStateList
 setRandomGen :: gen -> TlsClientState gen -> TlsClientState gen
 setRandomGen rg st = st { tlsRandomGen = rg }
 
-getRandomGenSt :: TlsClientState gen -> gen
-getRandomGenSt = tlsRandomGen
+getRandomGen :: TlsClientState gen -> gen
+getRandomGen = tlsRandomGen
 
 setClientSequenceNumber, setServerSequenceNumber ::
 	ClientId -> Word64 -> TlsClientState gen -> TlsClientState gen

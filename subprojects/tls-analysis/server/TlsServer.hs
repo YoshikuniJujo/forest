@@ -640,7 +640,7 @@ runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
 runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
 	((ns, ks), tlss) <- runHandshakeM (mkTlsHandle cl) opn $
-		initHandshakeState (getRandomGenSt s')
+		initHandshakeState (getRandomGen s')
 	let	s'' = setRandomGen (randomGen tlss) s'
 		tc = TlsClientConst {
 			clientId = cid,
