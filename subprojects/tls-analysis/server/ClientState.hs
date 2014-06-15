@@ -19,6 +19,8 @@ import Data.Word
 import qualified Data.ByteString as BS
 import "crypto-random" Crypto.Random
 
+import qualified Crypto.Hash.SHA256 as SHA256
+
 data TlsClientState gen = TlsClientState {
 	tlsRandomGen :: gen,
 	tlsNextClientId :: Int,
@@ -41,17 +43,9 @@ modifyClientState cid f cs = let
 data TlsClientStateOne gen = TlsClientStateOne {
 	tlsBuffer :: BS.ByteString,
 	tlsClientSequenceNumber :: Word64,
-	tlsServerSequenceNumber :: Word64 }
-
-{-
-
-data TlsClientState gen = TlsClientState {
-	tlsBuffer :: BS.ByteString,
-	tlsRandomGen :: gen,
-	tlsClientSequenceNumber :: Word64,
-	tlsServerSequenceNumber :: Word64 }
-
--}
+	tlsServerSequenceNumber :: Word64,
+	tlsHandshakeHashCtx :: SHA256.Ctx
+	}
 
 data ClientId = ClientId Int deriving (Show, Eq)
 
@@ -64,7 +58,9 @@ newClientId s = (ClientId cid ,) s {
 	cs = TlsClientStateOne {
 		tlsBuffer = "",
 		tlsClientSequenceNumber = 1,
-		tlsServerSequenceNumber = 1 }
+		tlsServerSequenceNumber = 1,
+		tlsHandshakeHashCtx = SHA256.init
+		}
 	sl = tlsClientStateList s
 
 setBuffer :: ClientId -> BS.ByteString -> TlsClientState gen -> TlsClientState gen

@@ -48,10 +48,11 @@ type family HandleRandomGen h
 
 type instance HandleRandomGen Handle = SystemRNG
 
+type TlsClientM h g = StateT (TlsClientState g) (HandleMonad h)
+
 instance (HandleLike h, CPRG g) =>
 	HandleLike (TlsClientConst h g) where
-	type HandleMonad (TlsClientConst h g) =
-		StateT (TlsClientState g) (HandleMonad h)
+	type HandleMonad (TlsClientConst h g) = TlsClientM h g
 	hlPut = tPutSt
 	hlGet = tGetSt
 	hlGetLine = tGetLineSt
