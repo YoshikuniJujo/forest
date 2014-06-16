@@ -10,7 +10,7 @@ module HmMonad (
 	CS.ContentType(..), CS.CipherSuite(..), CS.KeyExchange, CS.BulkEncryption(..),
 	CS.Keys(..),
 	CS.TlsClientState, CS.ClientId,
-	CS.initialTlsState, CS.clientIdZero, CS.initialTlsStateWithClientZero,
+	CS.initialTlsState,
 	
 	getHash, updateH,
 

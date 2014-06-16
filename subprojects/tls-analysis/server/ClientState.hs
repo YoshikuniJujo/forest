@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module ClientState (
-	clientIdZero,
 	TlsClientState,
 	ClientId,
 	newClientId,
@@ -12,7 +11,6 @@ module ClientState (
 	succClientSequenceNumber, getClientSequenceNumber,
 	succServerSequenceNumber, getServerSequenceNumber,
 	initialTlsState,
-	initialTlsStateWithClientZero,
 
 	ContentType(..),
 
@@ -69,9 +67,6 @@ data TlsClientStateOne gen = TlsClientStateOne {
 	}
 
 data ClientId = ClientId Int deriving (Show, Eq)
-
-clientIdZero :: ClientId
-clientIdZero = ClientId 0
 
 newClientId :: TlsClientState h gen -> (ClientId, TlsClientState h gen)
 newClientId s = (ClientId cid ,) s {
@@ -133,9 +128,6 @@ initialTlsState g = TlsClientState {
 	tlsRandomGen = g,
 	tlsNextClientId = 0,
 	tlsClientStateList = [] }
-
-initialTlsStateWithClientZero :: gen -> TlsClientState h gen
-initialTlsStateWithClientZero = snd . newClientId . initialTlsState
 
 data ContentType
 	= ContentTypeChangeCipherSpec

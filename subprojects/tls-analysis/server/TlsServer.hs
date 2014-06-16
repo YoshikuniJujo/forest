@@ -10,7 +10,6 @@ module TlsServer (
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>))
-import Control.Arrow (first)
 import Control.Monad (when, unless, liftM)
 import "monads-tf" Control.Monad.Error (throwError, catchError, lift)
 import Data.Maybe (catMaybes, mapMaybe)
@@ -50,14 +49,15 @@ import HandshakeType (
 	DigitallySigned(..) )
 
 import HM (
-	HandshakeM, handshakeM, runHandshakeM, runHm,
+	HandshakeM, runHandshakeM,
 	readContentType, readByteString, writeByteString,
 	finishedHash_, handshakeHash, withRandom, randomByteString,
-	TlsClientState, initialTlsStateWithClientZero, clientIdZero,
+	TlsClientState, initialTlsState,
 
 	TlsClientConst(..), checkName, clientName,
 	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
-	TlsHandle, mkTlsHandle, getHandle,
+	TlsHandle, getHandle,
+	newClient,
 
 	Partner(..), ContentType(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
@@ -94,29 +94,23 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
 run :: (HandleLike h, CPRG g) => HandshakeM h g a -> g -> HandleMonad h a
-run s g = fst `liftM` (s `runClient` g)
+run = (liftM fst .) . runClient
 
 runClient :: (HandleLike h, CPRG g) =>
 	HandshakeM h g a -> g -> HandleMonad h (a, TlsClientState h g)
 runClient s g = do
-	(Right ret, st') <- s `runHandshakeM` initialTlsStateWithClientZero g
+	(Right ret, st') <- s `runHandshakeM` initialTlsState g
 	return (ret, st')
-
-openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
-	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
-	Maybe X509.CertificateStore ->
-	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
-openClient h css (pk, cc) ecks mcs =
-	runOpen h (helloHandshake (mkTlsHandle h) css pk cc ecks mcs)
 
 curve :: ECDSA.Curve
 curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
 
-helloHandshake :: (SecretKey sk, CPRG g, ValidateHandle h) =>
-	TlsHandle h g ->
- 	[CipherSuite] ->  RSA.PrivateKey -> X509.CertificateChain ->
- 	(sk, X509.CertificateChain) -> Maybe X509.CertificateStore -> HandshakeM h g ([String], Keys)
-helloHandshake th css sk cc (pkec, ccec) mcs = do
+openClient :: (SecretKey sk, CPRG g, ValidateHandle h) =>
+	h -> [CipherSuite] ->
+	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
+	Maybe X509.CertificateStore -> HandshakeM h g (TlsHandle h g)
+openClient h css (sk, cc) (pkec, ccec) mcs = do
+	th <- newClient h
 	(cv, cs, cr, sr) <- hello th css cc ccec
 	let CipherSuite ke _ = cs
 	case ke of
@@ -144,7 +138,7 @@ handshake ::
 	BS.ByteString -> BS.ByteString ->
 	b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe X509.CertificateStore ->
-	HandshakeM h g ([String], Keys)
+	HandshakeM h g (TlsHandle h g)
 handshake isdh th cs cr sr ps cv sks skd mcs = do
 	pn <- if not isdh then return $ error "bad" else
 		withRandom $ flip generateSecret ps
@@ -158,7 +152,7 @@ handshake isdh th cs cr sr ps cv sks skd mcs = do
 	clientFinished th ks'
 	ks'' <- serverChangeCipherSuite th ks'
 	serverFinished th ks''
-	return (maybe [] snd mpn, ks'')
+	return th { tlsNames = maybe [] snd mpn, keys = ks'' }
 
 clientHello :: (HandleLike h, CPRG g) =>
 	TlsHandle h g ->
@@ -332,7 +326,7 @@ certificateVerify :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Keys -> X509.PubKey -> HandshakeM h g ()
 certificateVerify th ks (X509.PubKeyRSA pub) = do
 	debugCipherSuite th ks "RSA"
-	hash0 <- rsaPadding pub `liftM` handshakeHash
+	hash0 <- rsaPadding pub `liftM` handshakeHash th
 	hs <- readHandshake th nullKeys (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -355,7 +349,7 @@ certificateVerify th ks (X509.PubKeyRSA pub) = do
 			("Not implement such algorithm: " ++ show a)
 certificateVerify th ks (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	debugCipherSuite th ks "ECDSA"
-	hash0 <- handshakeHash
+	hash0 <- handshakeHash th
 	hs <- readHandshake th nullKeys (== (3, 3))
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -402,7 +396,7 @@ clientChangeCipherSuite th ks = do
 clientFinished :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Keys -> HandshakeM h g ()
 clientFinished th ks = do
-	fhc <- finishedHash ks Client
+	fhc <- finishedHash th ks Client
 	cnt <- readContent th ks (== (3, 3))
 	case cnt of
 		ContentHandshake (HandshakeFinished f) ->
@@ -426,7 +420,7 @@ serverFinished :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Keys -> HandshakeM h g ()
 serverFinished th ks =
 	uncurry (writeByteString th { keys = ks }) . contentToByteString .
-	ContentHandshake . HandshakeFinished =<< finishedHash ks Server
+	ContentHandshake . HandshakeFinished =<< finishedHash th ks Server
 
 readHandshake :: (HandleLike h, CPRG g) => TlsHandle h g -> Keys ->
 	(Version -> Bool) -> HandshakeM h g Handshake
@@ -634,28 +628,9 @@ generateKeys cs cr sr pms = do
 		kClientWriteKey = cwk,
 		kServerWriteKey = swk }
 
-finishedHash :: HandleLike h => Keys -> Partner -> HandshakeM h g BS.ByteString
-finishedHash ks partner = do
+finishedHash :: HandleLike h =>
+	TlsHandle h g -> Keys -> Partner -> HandshakeM h g BS.ByteString
+finishedHash th ks partner = do
 	let ms = kMasterSecret ks
-	sha256 <- handshakeHash
+	sha256 <- handshakeHash th
 	return $ finishedHash_ (partner == Client) ms sha256
-
-runOpen :: (HandleLike h, CPRG g) => h ->
-	HandshakeM h g ([String], Keys) ->
-	HandleMonad (TlsClientConst h g) (TlsClientConst h g)
--- runOpen cl opn = ErrorT $ StateT $ \s -> first Right `liftM` runOpenSt_ s cl opn
-runOpen cl opn = handshakeM $ \s -> first Right `liftM` runOpenSt_ s cl opn
-
-runOpenSt_ :: (HandleLike h, CPRG g) => TlsClientState h g ->
-	h -> HandshakeM h g ([String], Keys) ->
-	HandleMonad h (TlsClientConst h g, TlsClientState h g)
-runOpenSt_ s cl opn = do
-	((ns, ks), s') <- runHm (mkTlsHandle cl) opn s
-	let tc = TlsClientConst {
-		clientId = clientIdZero,
-		tlsHandle = cl,
-		tlsNames = ns,
-		keys = ks }
-	return (tc, s')
-
--- runOpenSt__ :: (HandleLike h, CPRG g) => h -> HandshakeM h g
