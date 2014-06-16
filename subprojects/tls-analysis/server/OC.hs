@@ -81,7 +81,7 @@ tPutWithCtSt tc ct msg = do
 	sn <- gets . getServerSequenceNumber $ clientId tc
 	let (ebody, gen') = enc hs gen sn
 	modify $ setRandomGen gen'
-	modify . setServerSequenceNumber (clientId tc) $ succ sn
+	modify . succServerSequenceNumber $ clientId tc
 	lift . hlPut h $ BS.concat [
 		B.toByteString ct, "\x03\x03",
 		B.addLength (undefined :: Word16) ebody ]
@@ -121,7 +121,7 @@ tGetWholeWithCtSt tc = do
 	enc <- lift . hlGet h . either error id . B.fromByteString
 		=<< lift (hlGet h 2)
 	sn <- gets . getClientSequenceNumber $ clientId tc
-	modify . setClientSequenceNumber (clientId tc) $ succ sn
+	modify $ succClientSequenceNumber (clientId tc)
 	if BS.null enc then return (ct, "") else do
 		ret <- case dec hs sn (B.toByteString ct `BS.append` "\x03\x03") enc of
 			Right r -> return r
@@ -136,33 +136,35 @@ tGetWholeWithCtSt tc = do
 tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
 	Int -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
 tGetSt tc n = do
-	bfr <- gets . getBuffer $ clientId tc
+	(mct, bfr) <- gets . getBuffer $ clientId tc
 	if n <= BS.length bfr then do
 		let (ret, bfr') = BS.splitAt n bfr
-		modify $ setBuffer (clientId tc) bfr'
+		modify $ setBuffer (clientId tc) (mct, bfr')
 		return ret
 	else do	msg <- tGetWholeSt tc
-		modify $ setBuffer (clientId tc) msg
+		modify $ setBuffer (clientId tc)
+			(Just $ ContentTypeApplicationData, msg)
 		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
 
 tGetLineSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
 tGetLineSt tc = do
-	bfr <- gets . getBuffer $ clientId tc
+	(mct, bfr) <- gets . getBuffer $ clientId tc
 	case splitOneLine bfr of
 		Just (l, ls) -> do
-			modify $ setBuffer (clientId tc) ls
+			modify $ setBuffer (clientId tc) (mct, ls)
 			return l
 		_ -> do	msg <- tGetWholeSt tc
-			modify $ setBuffer (clientId tc) msg
+			modify $ setBuffer (clientId tc)
+				(Just $ ContentTypeApplicationData, msg)
 			(bfr `BS.append`) `liftM` tGetLineSt tc
 
 tGetContentSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
 tGetContentSt tc = do
-	bfr <- gets . getBuffer $ clientId tc
+	(_, bfr) <- gets . getBuffer $ clientId tc
 	if BS.null bfr then tGetWholeSt tc else do
-		modify $ setBuffer (clientId tc) BS.empty
+		modify $ setBuffer (clientId tc) (Nothing, BS.empty)
 		return bfr
 
 splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)

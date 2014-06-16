@@ -3,8 +3,8 @@
 module HandshakeState (
 	HandshakeState,
 	initHandshakeState,
-	randomGen, setRandomGen,
 	byteStringBuffer, setByteStringBuffer,
+	randomGen, setRandomGen,
 	updateHandshakeHash, getHandshakeHash,
 	clientSequenceNumber, succClientSequenceNumber,
 	serverSequenceNumber, succServerSequenceNumber,
