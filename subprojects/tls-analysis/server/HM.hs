@@ -14,7 +14,6 @@ module HM (
 	flushCipherSuite,
 
 	TlsHandle,
-	getHandle,
 	newClient,
 
 	ErrorType, Error, MonadError, throwError, lift, catchError,
@@ -26,7 +25,7 @@ module HM (
 	TlsClientConst(..),
 	finishedHash_, generateKeys_, checkName, clientName,
 
-	eitherToError, readByteString, readContentType, writeByteString,
+	readByteString, readContentType, writeByteString,
 ) where
 
 import Prelude hiding (read)
@@ -37,6 +36,7 @@ import Data.Word
 import Data.HandleLike
 import "crypto-random" Crypto.Random
 import "monads-tf" Control.Monad.State
+import "monads-tf" Control.Monad.Error.Class
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -64,26 +64,23 @@ processAlert th alt = do
 
 write :: HandleLike h => TlsHandle h g ->
 	BS.ByteString -> HandleLike h => HandshakeM h g ()
-write th dat = flip thlPut dat $ getHandle th
+write th dat = flip thlPut dat $ tlsHandle th
 
 type TlsHandle h g = TlsClientConst h g
-
-getHandle :: HandleLike h => TlsHandle h g -> h
-getHandle = tlsHandle
 
 randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 randomByteString len = withRandom $ cprgGenerate len
 
-flushCipherSuite :: Partner -> Keys -> Keys
-flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
-	Client -> k { kClientCipherSuite = cs }
-	Server -> k { kServerCipherSuite = cs }
+flushCipherSuite :: Partner -> TlsHandle h g -> TlsHandle h g
+flushCipherSuite p th@TlsClientConst { keys = ks } = case p of
+	Client -> th { keys = ks { kClientCipherSuite = kCachedCipherSuite ks } }
+	Server -> th { keys = ks { kServerCipherSuite = kCachedCipherSuite ks } }
 
 data Partner = Server | Client deriving (Show, Eq)
 
 read :: HandleLike h => TlsHandle h g -> Int -> HandshakeM h g BS.ByteString
 read h n = do
-	r <- flip thlGet n $ getHandle h
+	r <- flip thlGet n $ tlsHandle h
 	if BS.length r == n
 		then return r
 		else throwError . strToAlert $ "Basic.read: bad reading: " ++
@@ -149,13 +146,12 @@ cipherSuite p = case p of
 	Client -> kClientCipherSuite
 	Server -> kServerCipherSuite
 
-debugCipherSuite :: HandleLike h =>
-	TlsHandle h g -> Keys -> String -> HandshakeM h g ()
-debugCipherSuite th k a = do
-	let h = getHandle th
+debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> HandshakeM h g ()
+debugCipherSuite th a = do
+	let h = tlsHandle th
 	thlDebug h 5 . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
-		. show $ kCachedCipherSuite k
+		. show . kCachedCipherSuite $ keys th
 	where
 	lenSpace n str = str ++ replicate (n - length str) ' '
 
@@ -293,18 +289,18 @@ tCloseSt tc = do
 	where
 	h = tlsHandle tc
 
-readByteString :: (HandleLike h, CPRG g) => TlsHandle h g -> Keys ->
-	 Int -> HandshakeM h g (ContentType, BS.ByteString)
-readByteString th ks n = do
-	(ct, bs) <- buffered th n $ readFragment (th { keys = ks })
+readByteString :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> Int -> HandshakeM h g (ContentType, BS.ByteString)
+readByteString th n = do
+	(ct, bs) <- buffered th n $ readFragment th
 	case ct of
 		ContentTypeHandshake -> updateHash th bs
 		_ -> return ()
 	return (ct, bs)
 
 readContentType :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> Keys -> HandshakeM h g ContentType
-readContentType th ks = getContentType th $ readFragment (th { keys = ks} )
+	TlsHandle h g -> HandshakeM h g ContentType
+readContentType th = getContentType th $ readFragment th
 
 tlsDecryptMessage :: HandleLike h => TlsClientConst h g ->
 	Keys -> ContentType -> BS.ByteString -> HandshakeM h g BS.ByteString
@@ -319,7 +315,7 @@ tlsDecryptMessage th ks ct enc = do
 		AES_128_CBC_SHA -> return hashSha1
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
-	eitherToError $ decryptMessage hs wk mk sn
+	either (throwError . strMsg . show) return $ decryptMessage hs wk mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") enc
 
 tlsEncryptMessage :: (HandleLike h, CPRG g) => TlsClientConst h g ->

@@ -21,8 +21,6 @@ module HmMonad (
 	CS.alertToByteString, strToAlert,
 
 	CS.newClientId, CS.nullKeys,
-
-	eitherToError,
 ) where
 
 import Prelude hiding (read)
@@ -109,6 +107,3 @@ setRandomGen = CS.setRandomGen
 
 strToAlert :: String -> CS.Alert
 strToAlert = strMsg
-
-eitherToError :: (Show msg, MonadError m, Error (ErrorType m)) => Either msg a -> m a
-eitherToError = either (throwError . strMsg . show) return
