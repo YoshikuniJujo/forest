@@ -6,13 +6,13 @@ module ClientState (
 	TlsClientState,
 	ClientId,
 	newClientId,
-	newClientId',
 	setBuffer, getBuffer,
 	setRandomGen, getRandomGen,
 	updateHandshakeHash, getHandshakeHash,
 	succClientSequenceNumber, getClientSequenceNumber,
 	succServerSequenceNumber, getServerSequenceNumber,
 	initialTlsState,
+	initialTlsStateWithClientZero,
 
 	ContentType(..),
 
@@ -75,20 +75,6 @@ newClientId s = (ClientId cid ,) s {
 	cid = tlsNextClientId s
 	cs = TlsClientStateOne {
 		tlsBuffer = (Nothing, ""),
-		tlsClientSequenceNumber = 1,
-		tlsServerSequenceNumber = 1,
-		tlsHandshakeHashCtx = SHA256.init
-		}
-	sl = tlsClientStateList s
-
-newClientId' :: TlsClientState h gen -> (ClientId, TlsClientState h gen)
-newClientId' s = (ClientId cid ,) s {
-	tlsNextClientId = succ cid,
-	tlsClientStateList = (ClientId cid, cs) : sl }
-	where
-	cid = tlsNextClientId s
-	cs = TlsClientStateOne {
-		tlsBuffer = (Nothing, ""),
 		tlsClientSequenceNumber = 0,
 		tlsServerSequenceNumber = 0,
 		tlsHandshakeHashCtx = SHA256.init
@@ -141,6 +127,9 @@ initialTlsState g = TlsClientState {
 	tlsRandomGen = g,
 	tlsNextClientId = 0,
 	tlsClientStateList = [] }
+
+initialTlsStateWithClientZero :: gen -> TlsClientState h gen
+initialTlsStateWithClientZero = snd . newClientId . initialTlsState
 
 data ContentType
 	= ContentTypeChangeCipherSpec

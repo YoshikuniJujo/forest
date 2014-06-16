@@ -229,7 +229,7 @@ initHandshakeState =
 	(\(i, s) -> if i == CS.clientIdZero
 		then s
 		else error "HandshakeState.initHandshakeState")
-	. CS.newClientId' . CS.initialTlsState
+	. CS.newClientId . CS.initialTlsState
 
 byteStringBuffer :: HandshakeState h gen -> (Maybe CS.ContentType, BS.ByteString)
 byteStringBuffer = CS.getBuffer CS.clientIdZero
