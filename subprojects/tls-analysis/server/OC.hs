@@ -48,7 +48,7 @@ type family HandleRandomGen h
 
 type instance HandleRandomGen Handle = SystemRNG
 
-type TlsClientM h g = StateT (TlsClientState g) (HandleMonad h)
+type TlsClientM h g = StateT (TlsClientState h g) (HandleMonad h)
 
 instance (HandleLike h, CPRG g) =>
 	HandleLike (TlsClientConst h g) where
@@ -66,12 +66,12 @@ clientName :: TlsClientConst h g -> Maybe String
 clientName = listToMaybe . tlsNames 
 
 tPutSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	BS.ByteString -> StateT (TlsClientState gen) (HandleMonad h) ()
+	BS.ByteString -> StateT (TlsClientState h gen) (HandleMonad h) ()
 tPutSt tc = tPutWithCtSt tc ContentTypeApplicationData
 
 tPutWithCtSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> ContentType -> BS.ByteString ->
-	StateT (TlsClientState gen) (HandleMonad h) ()
+	StateT (TlsClientState h gen) (HandleMonad h) ()
 tPutWithCtSt tc ct msg = do
 	hs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
@@ -96,7 +96,7 @@ vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
 vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
 
 tGetWholeSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
+	TlsClientConst h gen -> StateT (TlsClientState h gen) (HandleMonad h) BS.ByteString
 tGetWholeSt tc = do
 	ret <- tGetWholeWithCtSt tc
 	case ret of
@@ -110,7 +110,7 @@ tGetWholeSt tc = do
 	h = tlsHandle tc
 
 tGetWholeWithCtSt :: HandleLike h => TlsClientConst h gen ->
-	StateT (TlsClientState gen) (HandleMonad h) (ContentType, BS.ByteString)
+	StateT (TlsClientState h gen) (HandleMonad h) (ContentType, BS.ByteString)
 tGetWholeWithCtSt tc = do
 	hs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
@@ -134,7 +134,7 @@ tGetWholeWithCtSt tc = do
 	dec hs = decryptMessage hs key mk
 
 tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	Int -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
+	Int -> StateT (TlsClientState h gen) (HandleMonad h) BS.ByteString
 tGetSt tc n = do
 	(mct, bfr) <- gets . getBuffer $ clientId tc
 	if n <= BS.length bfr then do
@@ -147,7 +147,7 @@ tGetSt tc n = do
 		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
 
 tGetLineSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
+	TlsClientConst h gen -> StateT (TlsClientState h gen) (HandleMonad h) BS.ByteString
 tGetLineSt tc = do
 	(mct, bfr) <- gets . getBuffer $ clientId tc
 	case splitOneLine bfr of
@@ -160,7 +160,7 @@ tGetLineSt tc = do
 			(bfr `BS.append`) `liftM` tGetLineSt tc
 
 tGetContentSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) BS.ByteString
+	TlsClientConst h gen -> StateT (TlsClientState h gen) (HandleMonad h) BS.ByteString
 tGetContentSt tc = do
 	(_, bfr) <- gets . getBuffer $ clientId tc
 	if BS.null bfr then tGetWholeSt tc else do
@@ -181,7 +181,7 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 	_ -> Nothing
 
 tCloseSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> StateT (TlsClientState gen) (HandleMonad h) ()
+	TlsClientConst h gen -> StateT (TlsClientState h gen) (HandleMonad h) ()
 tCloseSt tc = do
 	tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
 	lift $ hlClose h

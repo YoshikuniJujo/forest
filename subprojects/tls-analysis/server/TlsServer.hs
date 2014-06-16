@@ -85,11 +85,11 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
-evalClient :: (Monad m, CPRG g) => StateT (TlsClientState g) m a -> g -> m a
+evalClient :: (Monad m, CPRG g) => StateT (TlsClientState h g) m a -> g -> m a
 evalClient s g = fst `liftM` runClient s g
 
 runClient :: (Monad m, CPRG g) =>
-	StateT (TlsClientState g) m a -> g -> m (a, TlsClientState g)
+	StateT (TlsClientState h g) m a -> g -> m (a, TlsClientState h g)
 runClient s g = s `runStateT` initialTlsState g
 
 openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
@@ -634,9 +634,9 @@ runOpen :: (HandleLike h, CPRG gen) => h ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
 runOpen cl opn = StateT $ \s -> runOpenSt_ s cl opn
 
-runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState gen ->
+runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState h gen ->
 	h -> HandshakeM h gen ([String], Keys) ->
-	HandleMonad h (TlsClientConst h gen, TlsClientState gen)
+	HandleMonad h (TlsClientConst h gen, TlsClientState h gen)
 runOpenSt_ s cl opn = do
 	let	(cid, s') = newClientId s
 	((ns, ks), tlss) <- runHandshakeM (mkTlsHandle cl) opn $
