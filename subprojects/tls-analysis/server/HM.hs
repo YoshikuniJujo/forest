@@ -8,15 +8,13 @@ module HM (
 	getContentType, buffered, withRandom, debugCipherSuite,
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
-	ContentType, CipherSuite(..), KeyExchange, BulkEncryption(..),
+	CS.ContentType, CS.CipherSuite(..), CS.KeyExchange, CS.BulkEncryption(..),
 	
-	Keys(..), nullKeys, cipherSuite,
+	CS.Keys(..), CS.nullKeys, cipherSuite,
 	flushCipherSuite,
 
 	TlsHandle, mkTlsHandle, getHandle,
 ) where
-
-import HandshakeState2
 
 import Prelude hiding (read)
 
@@ -32,6 +30,7 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
+import qualified ClientState as CS
 -- import CipherSuite
 -- import ContentType
 
@@ -125,10 +124,10 @@ randomByteString len = do
 	modify $ setRandomGen gen'
 	return r
 
-flushCipherSuite :: Partner -> Keys -> Keys
-flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
-	Client -> k { kClientCipherSuite = cs }
-	Server -> k { kServerCipherSuite = cs }
+flushCipherSuite :: Partner -> CS.Keys -> CS.Keys
+flushCipherSuite p k@CS.Keys{ CS.kCachedCipherSuite = cs } = case p of
+	Client -> k { CS.kClientCipherSuite = cs }
+	Server -> k { CS.kServerCipherSuite = cs }
 
 data Partner = Server | Client deriving (Show, Eq)
 
@@ -147,8 +146,8 @@ handshakeHash :: HandleLike h => HandshakeM h gen BS.ByteString
 handshakeHash = gets getHandshakeHash
 
 getContentType :: HandleLike h => ((Word8, Word8) -> Bool)
-	-> HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
-	-> HandshakeM h gen ContentType
+	-> HandshakeM h gen (CS.ContentType, (Word8, Word8), BS.ByteString)
+	-> HandshakeM h gen CS.ContentType
 getContentType vc rd = do
 	mct <- fst `liftM` gets byteStringBuffer
 	(\gt -> maybe gt return mct) $ do
@@ -162,8 +161,8 @@ getContentType vc rd = do
 
 
 buffered :: HandleLike h =>
-	Int -> HandshakeM h gen (ContentType, BS.ByteString) ->
-	HandshakeM h gen (ContentType, BS.ByteString)
+	Int -> HandshakeM h gen (CS.ContentType, BS.ByteString) ->
+	HandshakeM h gen (CS.ContentType, BS.ByteString)
 buffered n rd = do
 	(mct, bf) <- gets byteStringBuffer
 	if BS.length bf >= n
@@ -182,7 +181,7 @@ buffered n rd = do
 		((ct' ,) . (bf `BS.append`) . snd) `liftM` buffered (n - BS.length bf) rd
 
 updateSequenceNumber :: HandleLike h =>
-	Partner -> Keys -> HandshakeM h gen Word64
+	Partner -> CS.Keys -> HandshakeM h gen Word64
 updateSequenceNumber partner ks = do
 	tlss <- get
 	let	sn = ($ tlss) $ case partner of
@@ -190,16 +189,16 @@ updateSequenceNumber partner ks = do
 			Server -> serverSequenceNumber
 		cs = cipherSuite partner ks
 	case cs of
-		CipherSuite _ BE_NULL -> return ()
+		CS.CipherSuite _ CS.BE_NULL -> return ()
 		_ -> case partner of
 			Client -> modify succClientSequenceNumber
 			Server -> modify succServerSequenceNumber
 	return sn
 
-cipherSuite :: Partner -> Keys -> CipherSuite
+cipherSuite :: Partner -> CS.Keys -> CS.CipherSuite
 cipherSuite p = case p of
-	Client -> kClientCipherSuite
-	Server -> kServerCipherSuite
+	Client -> CS.kClientCipherSuite
+	Server -> CS.kServerCipherSuite
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> HandshakeM h gen a
 withRandom p = do
@@ -212,11 +211,53 @@ getHandle :: HandleLike h => TlsHandle h -> h
 getHandle = id
 
 debugCipherSuite :: HandleLike h =>
-	TlsHandle h -> Keys -> String -> HandshakeM h gen ()
+	TlsHandle h -> CS.Keys -> String -> HandshakeM h gen ()
 debugCipherSuite th k a = do
 	let h = getHandle th
 	lift . lift . hlDebug h 5 . BSC.pack
 		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
-		. show $ kCachedCipherSuite k
+		. show $ CS.kCachedCipherSuite k
 	where
 	lenSpace n str = str ++ replicate (n - length str) ' '
+
+type HandshakeState h gen = CS.TlsClientState h gen
+
+type Modify s = s -> s
+
+initHandshakeState :: gen -> HandshakeState h gen
+initHandshakeState = 
+	(\(i, s) -> if i == CS.clientIdZero
+		then s
+		else error "HandshakeState.initHandshakeState")
+	. CS.newClientId' . CS.initialTlsState
+
+byteStringBuffer :: HandshakeState h gen -> (Maybe CS.ContentType, BS.ByteString)
+byteStringBuffer = CS.getBuffer CS.clientIdZero
+
+setByteStringBuffer ::
+	(Maybe CS.ContentType, BS.ByteString) -> Modify (HandshakeState h gen)
+setByteStringBuffer = CS.setBuffer CS.clientIdZero
+
+updateHandshakeHash :: BS.ByteString -> Modify (HandshakeState h gen)
+updateHandshakeHash = CS.updateHandshakeHash CS.clientIdZero
+
+getHandshakeHash :: HandshakeState h gen -> BS.ByteString
+getHandshakeHash = CS.getHandshakeHash CS.clientIdZero
+
+clientSequenceNumber :: HandshakeState h gen -> Word64
+clientSequenceNumber = CS.getClientSequenceNumber CS.clientIdZero
+
+succClientSequenceNumber :: Modify (HandshakeState h gen)
+succClientSequenceNumber = CS.succClientSequenceNumber CS.clientIdZero
+
+serverSequenceNumber :: HandshakeState h gen -> Word64
+serverSequenceNumber = CS.getServerSequenceNumber CS.clientIdZero
+
+succServerSequenceNumber :: Modify (HandshakeState h gen)
+succServerSequenceNumber = CS.succServerSequenceNumber CS.clientIdZero
+
+randomGen :: HandshakeState h gen -> gen
+randomGen = CS.getRandomGen
+
+setRandomGen :: gen -> Modify (HandshakeState h gen)
+setRandomGen = CS.setRandomGen
