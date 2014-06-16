@@ -638,20 +638,20 @@ runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState h gen ->
 	h -> HandshakeM h gen ([String], Keys) ->
 	HandleMonad h (TlsClientConst h gen, TlsClientState h gen)
 runOpenSt_ s cl opn = do
-	let	(cid, s') = newClientId s
-	((ns, ks), tlss) <- runHandshakeM (mkTlsHandle cl) opn $
-		initHandshakeState (getRandomGen s')
-	let	s'' = setRandomGen (randomGen tlss) s'
-		tc = TlsClientConst {
-			clientId = cid,
-			tlsNames = ns,
-			tlsCipherSuite = HM.cipherSuite Client ks,
-			tlsHandle = cl,
-			tlsClientWriteMacKey = kClientWriteMacKey ks,
-			tlsServerWriteMacKey = kServerWriteMacKey ks,
-			tlsClientWriteKey = kClientWriteKey ks,
-			tlsServerWriteKey = kServerWriteKey ks }
-	return (tc, s'')
+	((ns, ks), s') <- runHandshakeM (mkTlsHandle cl) opn .
+		snd $ newClientId' s
+	let tc = TlsClientConst {
+		clientId = clientIdZero,
+		tlsNames = ns,
+		tlsCipherSuite = HM.cipherSuite Client ks,
+		tlsHandle = cl,
+		tlsClientWriteMacKey = kClientWriteMacKey ks,
+		tlsServerWriteMacKey = kServerWriteMacKey ks,
+		tlsClientWriteKey = kClientWriteKey ks,
+		tlsServerWriteKey = kServerWriteKey ks }
+	return (tc, s')
+
+-- runOpenSt__ :: (HandleLike h, CPRG gen) => h -> HandshakeM h gen
 
 readContentType :: HandleLike h => TlsHandle h -> Keys ->
 	((Word8, Word8) -> Bool) -> HandshakeM h gen ContentType

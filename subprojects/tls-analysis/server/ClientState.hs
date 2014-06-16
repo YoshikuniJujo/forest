@@ -38,8 +38,12 @@ setClientState :: ClientId -> TlsClientStateOne gen ->
 setClientState cid cso cs = cs {
 	tlsClientStateList = (cid, cso) : tlsClientStateList cs }
 
+fromJust' :: String -> Maybe a -> a
+fromJust' _ (Just x) = x
+fromJust' msg _ = error msg
+
 getClientState :: ClientId -> TlsClientState h gen -> TlsClientStateOne gen
-getClientState cid = fromJust . lookup cid . tlsClientStateList
+getClientState cid = fromJust' "getClientState" . lookup cid . tlsClientStateList
 
 modifyClientState :: ClientId -> (TlsClientStateOne gen -> TlsClientStateOne gen) ->
 	TlsClientState h gen -> TlsClientState h gen
@@ -93,7 +97,7 @@ setBuffer cid = modifyClientState cid . sb
 	where sb bs st = st { tlsBuffer = bs }
 
 getBuffer :: ClientId -> TlsClientState h gen -> (Maybe ContentType, BS.ByteString)
-getBuffer cid = tlsBuffer . fromJust . lookup cid . tlsClientStateList
+getBuffer cid = tlsBuffer . fromJust' "getBuffer" . lookup cid . tlsClientStateList
 
 setRandomGen :: gen -> TlsClientState h gen -> TlsClientState h gen
 setRandomGen rg st = st { tlsRandomGen = rg }

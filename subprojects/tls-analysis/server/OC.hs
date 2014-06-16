@@ -4,6 +4,7 @@
 module OC (
 	TlsClientConst(..), checkName, clientName,
 	TlsClientState, initialTlsState, newClientId, getRandomGen, setRandomGen,
+	newClientId',
 
 	encryptMessage, decryptMessage,
 	hashSha1, hashSha256,
@@ -11,6 +12,8 @@ module OC (
 	ContentType(..),
 	generateKeys_,
 	finishedHash_,
+
+	clientIdZero,
 ) where
 
 import Prelude hiding (read)
