@@ -42,7 +42,7 @@ import CryptoTools
 import qualified Codec.Bytable as B
 import System.IO
 
-runHm :: HandleLike h => TlsHandle h ->
+runHm :: HandleLike h => TlsHandle h g ->
 	HandshakeM h gen a -> HandshakeState h gen ->
 	HandleMonad h (a, HandshakeState h gen)
 runHm th io st = do
@@ -52,19 +52,26 @@ runHm th io st = do
 		Left err -> error $ show err
 
 processAlert :: HandleLike h =>
-	TlsHandle h -> Alert -> HandshakeM h gen a
+	TlsHandle h g -> Alert -> HandshakeM h gen a
 processAlert th alt = do
 	write th $ alertToByteString alt
 	throwError alt
 
-write :: HandleLike h => TlsHandle h ->
+write :: HandleLike h => TlsHandle h g ->
 	BS.ByteString -> HandleLike h => HandshakeM h gen ()
 write th dat = flip thlPut dat $ getHandle th
 
-type TlsHandle h = h
+type TlsHandle h g = TlsClientConst h g
 
-mkTlsHandle :: h -> TlsHandle h
-mkTlsHandle = id
+mkTlsHandle :: h -> TlsHandle h g
+mkTlsHandle h = TlsClientConst {
+	clientId = clientIdZero,
+	tlsNames = [],
+	tlsHandle = h,
+	keys = nullKeys }
+
+getHandle :: HandleLike h => TlsHandle h g -> h
+getHandle = tlsHandle
 
 randomByteString :: (HandleLike h, CPRG gen) => Int -> HandshakeM h gen BS.ByteString
 randomByteString len = withRandom $ cprgGenerate len
@@ -76,7 +83,7 @@ flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
 
 data Partner = Server | Client deriving (Show, Eq)
 
-read :: HandleLike h => TlsHandle h -> Int -> HandshakeM h gen BS.ByteString
+read :: HandleLike h => TlsHandle h g -> Int -> HandshakeM h gen BS.ByteString
 read h n = do
 	r <- flip thlGet n $ getHandle h
 	if BS.length r == n
@@ -100,7 +107,7 @@ getContentType vc rd = do
 		unless (vc v) . throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion
-			"readByteString: bad Version"
+			"HM.getContentType: bad Version"
 		setBuf clientIdZero (Just ct, bf)
 		return ct
 
@@ -144,11 +151,8 @@ cipherSuite p = case p of
 	Client -> kClientCipherSuite
 	Server -> kServerCipherSuite
 
-getHandle :: HandleLike h => TlsHandle h -> h
-getHandle = id
-
 debugCipherSuite :: HandleLike h =>
-	TlsHandle h -> Keys -> String -> HandshakeM h gen ()
+	TlsHandle h g -> Keys -> String -> HandshakeM h gen ()
 debugCipherSuite th k a = do
 	let h = getHandle th
 	thlDebug h 5 . BSC.pack
