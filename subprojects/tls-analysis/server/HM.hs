@@ -211,13 +211,12 @@ tPutWithCtSt tc ct msg = do
 		B.addLength (undefined :: Word16) ebody ]
 	where
 	(cs, h) = vrcshSt tc
-	key = kServerWriteKey $ keys tc -- tlsServerWriteKey tc
-	mk = kServerWriteMacKey $ keys tc -- tlsServerWriteMacKey tc
+	key = kServerWriteKey $ keys tc
+	mk = kServerWriteMacKey $ keys tc
 	enc hs gen sn = encryptMessage hs key mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") msg gen
 
 vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
--- vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
 vrcshSt tc = (kCachedCipherSuite $ keys tc, tlsHandle tc)
 
 tGetWholeSt :: (HandleLike h, CPRG gen) =>
