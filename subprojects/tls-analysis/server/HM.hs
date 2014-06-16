@@ -23,6 +23,8 @@ module HM (
 	ContentType(..),
 	TlsClientConst(..),
 	finishedHash_, clientIdZero, generateKeys_, checkName, clientName,
+
+	eitherToError, readByteString, readContentType,
 ) where
 
 import Prelude hiding (read)
@@ -43,8 +45,8 @@ import qualified Codec.Bytable as B
 import System.IO
 
 runHm :: HandleLike h => TlsHandle h g ->
-	HandshakeM h gen a -> HandshakeState h gen ->
-	HandleMonad h (a, HandshakeState h gen)
+	HandshakeM h g a -> HandshakeState h g ->
+	HandleMonad h (a, HandshakeState h g)
 runHm th io st = do
 	(ret, st') <- (io `catchError` processAlert th) `runHandshakeM` st
 	case ret of
@@ -52,13 +54,13 @@ runHm th io st = do
 		Left err -> error $ show err
 
 processAlert :: HandleLike h =>
-	TlsHandle h g -> Alert -> HandshakeM h gen a
+	TlsHandle h g -> Alert -> HandshakeM h g a
 processAlert th alt = do
 	write th $ alertToByteString alt
 	throwError alt
 
 write :: HandleLike h => TlsHandle h g ->
-	BS.ByteString -> HandleLike h => HandshakeM h gen ()
+	BS.ByteString -> HandleLike h => HandshakeM h g ()
 write th dat = flip thlPut dat $ getHandle th
 
 type TlsHandle h g = TlsClientConst h g
@@ -73,7 +75,7 @@ mkTlsHandle h = TlsClientConst {
 getHandle :: HandleLike h => TlsHandle h g -> h
 getHandle = tlsHandle
 
-randomByteString :: (HandleLike h, CPRG gen) => Int -> HandshakeM h gen BS.ByteString
+randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 randomByteString len = withRandom $ cprgGenerate len
 
 flushCipherSuite :: Partner -> Keys -> Keys
@@ -83,7 +85,7 @@ flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
 
 data Partner = Server | Client deriving (Show, Eq)
 
-read :: HandleLike h => TlsHandle h g -> Int -> HandshakeM h gen BS.ByteString
+read :: HandleLike h => TlsHandle h g -> Int -> HandshakeM h g BS.ByteString
 read h n = do
 	r <- flip thlGet n $ getHandle h
 	if BS.length r == n
@@ -91,30 +93,26 @@ read h n = do
 		else throwError . strToAlert $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
-updateHash :: HandleLike h => BS.ByteString -> HandshakeM h gen ()
+updateHash :: HandleLike h => BS.ByteString -> HandshakeM h g ()
 updateHash = updateH clientIdZero
 
-handshakeHash :: HandleLike h => HandshakeM h gen BS.ByteString
+handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = getHash clientIdZero
 
-getContentType :: HandleLike h => ((Word8, Word8) -> Bool)
-	-> HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
-	-> HandshakeM h gen ContentType
-getContentType vc rd = do
+getContentType :: HandleLike h =>
+	HandshakeM h g (ContentType, BS.ByteString) ->
+	HandshakeM h g ContentType
+getContentType rd = do
 	mct <- fst `liftM` getBuf clientIdZero
 	(\gt -> maybe gt return mct) $ do
-		(ct, v, bf) <- rd
-		unless (vc v) . throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionProtocolVersion
-			"HM.getContentType: bad Version"
+		(ct, bf) <- rd
 		setBuf clientIdZero (Just ct, bf)
 		return ct
 
 
 buffered :: HandleLike h =>
-	Int -> HandshakeM h gen (ContentType, BS.ByteString) ->
-	HandshakeM h gen (ContentType, BS.ByteString)
+	Int -> HandshakeM h g (ContentType, BS.ByteString) ->
+	HandshakeM h g (ContentType, BS.ByteString)
 buffered n rd = do
 	(mct, bf) <- getBuf clientIdZero
 	if BS.length bf >= n
@@ -133,7 +131,7 @@ buffered n rd = do
 		((ct' ,) . (bf `BS.append`) . snd) `liftM` buffered (n - BS.length bf) rd
 
 updateSequenceNumber :: HandleLike h =>
-	Partner -> Keys -> HandshakeM h gen Word64
+	Partner -> Keys -> HandshakeM h g Word64
 updateSequenceNumber partner ks = do
 	sn <- case partner of
 		Client -> getClientSn clientIdZero
@@ -152,7 +150,7 @@ cipherSuite p = case p of
 	Server -> kServerCipherSuite
 
 debugCipherSuite :: HandleLike h =>
-	TlsHandle h g -> Keys -> String -> HandshakeM h gen ()
+	TlsHandle h g -> Keys -> String -> HandshakeM h g ()
 debugCipherSuite th k a = do
 	let h = getHandle th
 	thlDebug h 5 . BSC.pack
@@ -161,9 +159,9 @@ debugCipherSuite th k a = do
 	where
 	lenSpace n str = str ++ replicate (n - length str) ' '
 
-type HandshakeState h gen = TlsClientState h gen
+type HandshakeState h g = TlsClientState h g
 
-initHandshakeState :: gen -> HandshakeState h gen
+initHandshakeState :: g -> HandshakeState h g
 initHandshakeState = 
 	(\(i, s) -> if i == clientIdZero
 		then s
@@ -183,10 +181,12 @@ type instance HandleRandomGen Handle = SystemRNG
 instance (HandleLike h, CPRG g) =>
 	HandleLike (TlsClientConst h g) where
 	type HandleMonad (TlsClientConst h g) = HandshakeM h g
+	type DebugLevel (TlsClientConst h g) = DebugLevel h
 	hlPut = tPutSt
 	hlGet = tGetSt
 	hlGetLine = tGetLineSt
 	hlGetContent = tGetContentSt
+	hlDebug h l = lift . lift . hlDebug (tlsHandle h) l
 	hlClose = tCloseSt
 
 checkName :: TlsClientConst h g -> String -> Bool
@@ -195,13 +195,13 @@ checkName tc n = n `elem` tlsNames tc
 clientName :: TlsClientConst h g -> Maybe String
 clientName = listToMaybe . tlsNames 
 
-tPutSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	BS.ByteString -> HandshakeM h gen ()
+tPutSt :: (HandleLike h, CPRG g) => TlsClientConst h g ->
+	BS.ByteString -> HandshakeM h g ()
 tPutSt tc = tPutWithCtSt tc ContentTypeApplicationData
 
-tPutWithCtSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> ContentType -> BS.ByteString ->
-	HandshakeM h gen ()
+tPutWithCtSt :: (HandleLike h, CPRG g) =>
+	TlsClientConst h g -> ContentType -> BS.ByteString ->
+	HandshakeM h g ()
 tPutWithCtSt tc ct msg = do
 	hs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
@@ -220,13 +220,13 @@ tPutWithCtSt tc ct msg = do
 	enc hs gen sn = encryptMessage hs key mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") msg gen
 
-vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
+vrcshSt :: TlsClientConst h g -> (CipherSuite, h)
 vrcshSt tc = (kCachedCipherSuite $ keys tc, tlsHandle tc)
 
-tGetWholeSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
+tGetWholeSt :: (HandleLike h, CPRG g) =>
+	TlsClientConst h g -> HandshakeM h g BS.ByteString
 tGetWholeSt tc = do
-	ret <- tGetWholeWithCtSt tc
+	ret <- readFragment tc
 	case ret of
 		(ContentTypeApplicationData, ad) -> return ad
 		(ContentTypeAlert, "\SOH\NUL") -> do
@@ -237,32 +237,18 @@ tGetWholeSt tc = do
 	where
 	h = tlsHandle tc
 
-tGetWholeWithCtSt :: HandleLike h => TlsClientConst h gen ->
-	HandshakeM h gen (ContentType, BS.ByteString)
-tGetWholeWithCtSt tc = do
-	hs <- case cs of
-		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
-		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
-		_ -> thlError h "OpenClient.tGetWholeWithCT"
-	ct <- (either error id . B.fromByteString) `liftM` thlGet h 1
-	[_vmjr, _vmnr] <- BS.unpack `liftM` thlGet h 2
-	enc <- thlGet h . either error id . B.fromByteString
-		=<< thlGet h 2
-	sn <- getClientSn $ clientId tc
-	succClientSn $ clientId tc
-	if BS.null enc then return (ct, "") else do
-		ret <- case dec hs sn (B.toByteString ct `BS.append` "\x03\x03") enc of
-			Right r -> return r
-			Left err -> error err
-		return (ct, ret)
-	where
-	(cs, h) = vrcshSt tc
-	key = kClientWriteKey $ keys tc
-	mk = kClientWriteMacKey $ keys tc
-	dec hs = decryptMessage hs key mk
+readFragment :: HandleLike h =>
+	TlsHandle h g -> HandshakeM h g (ContentType, BS.ByteString)
+readFragment th = do
+	ct <- (either error id . B.fromByteString) `liftM` read th 1
+	[_vmjr, _vmnr] <- BS.unpack `liftM` read th 2
+	ebody <- read th . either error id . B.fromByteString =<< read th 2
+	when (BS.null ebody) $ throwError "readFragment: ebody is null"
+	body <- tlsDecryptMessage (keys th) ct ebody
+	return (ct, body)
 
-tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	Int -> HandshakeM h gen BS.ByteString
+tGetSt :: (HandleLike h, CPRG g) => TlsClientConst h g ->
+	Int -> HandshakeM h g BS.ByteString
 tGetSt tc n = do
 	(mct, bfr) <- getBuf $ clientId tc
 	if n <= BS.length bfr then do
@@ -273,8 +259,8 @@ tGetSt tc n = do
 		setBuf (clientId tc) (Just ContentTypeApplicationData, msg)
 		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
 
-tGetLineSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
+tGetLineSt :: (HandleLike h, CPRG g) =>
+	TlsClientConst h g -> HandshakeM h g BS.ByteString
 tGetLineSt tc = do
 	(mct, bfr) <- getBuf $ clientId tc
 	case splitOneLine bfr of
@@ -285,8 +271,8 @@ tGetLineSt tc = do
 			setBuf (clientId tc) (Just ContentTypeApplicationData, msg)
 			(bfr `BS.append`) `liftM` tGetLineSt tc
 
-tGetContentSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
+tGetContentSt :: (HandleLike h, CPRG g) =>
+	TlsClientConst h g -> HandshakeM h g BS.ByteString
 tGetContentSt tc = do
 	(_, bfr) <- getBuf $ clientId tc
 	if BS.null bfr then tGetWholeSt tc else do
@@ -306,10 +292,39 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
 	_ -> Nothing
 
-tCloseSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> HandshakeM h gen ()
+tCloseSt :: (HandleLike h, CPRG g) =>
+	TlsClientConst h g -> HandshakeM h g ()
 tCloseSt tc = do
 	tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
 	thlClose h
 	where
 	h = tlsHandle tc
+
+readByteString :: (HandleLike h, CPRG g) => TlsHandle h g -> Keys ->
+	 Int -> HandshakeM h g (ContentType, BS.ByteString)
+readByteString th ks n = do
+	(ct, bs) <- buffered n $ readFragment (th { keys = ks })
+	case ct of
+		ContentTypeHandshake -> updateHash bs
+		_ -> return ()
+	return (ct, bs)
+
+readContentType :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> Keys -> HandshakeM h g ContentType
+readContentType th ks = getContentType $ readFragment (th { keys = ks} )
+
+tlsDecryptMessage :: HandleLike h => Keys ->
+	ContentType -> BS.ByteString -> HandshakeM h g BS.ByteString
+tlsDecryptMessage Keys{ kClientCipherSuite = CipherSuite _ BE_NULL } _ enc =
+	return enc
+tlsDecryptMessage ks ct enc = do
+	let	CipherSuite _ be = HM.cipherSuite Client ks
+		wk = kClientWriteKey ks
+		mk = kClientWriteMacKey ks
+	sn <- updateSequenceNumber Client ks
+	hs <- case be of
+		AES_128_CBC_SHA -> return hashSha1
+		AES_128_CBC_SHA256 -> return hashSha256
+		_ -> throwError "bad"
+	eitherToError $ decryptMessage hs wk mk sn
+		(B.toByteString ct `BS.append` "\x03\x03") enc

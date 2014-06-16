@@ -186,6 +186,7 @@ data Keys = Keys {
 	kServerWriteMacKey :: BS.ByteString,
 	kClientWriteKey :: BS.ByteString,
 	kServerWriteKey :: BS.ByteString }
+	deriving (Show, Eq)
 
 data Alert
 	= Alert AlertLevel AlertDescription String
