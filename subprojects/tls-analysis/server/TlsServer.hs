@@ -10,10 +10,11 @@ module TlsServer (
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>))
--- import Control.Monad (when, unless, liftM, ap)
-import "monads-tf" Control.Monad.State -- (StateT, runStateT, lift)
-import "monads-tf" Control.Monad.Error -- (throwError, catchError)
-import "monads-tf" Control.Monad.Error.Class -- (throwError, catchError)
+import Control.Monad
+-- import "monads-tf" Control.Monad.State -- (StateT, runStateT, lift)
+-- import "monads-tf" Control.Monad.Error -- (throwError, catchError)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
+import "monads-tf" Control.Monad.Trans (lift)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)

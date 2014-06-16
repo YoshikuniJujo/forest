@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module ClientState (
@@ -19,6 +19,9 @@ module ClientState (
 	Keys(..),
 	nullKeys,
 	CipherSuite(..), KeyExchange, BulkEncryption(..),
+
+	Alert(..), AlertLevel(..), AlertDescription(..),
+	alertToByteString,
 ) where
 
 import Prelude hiding (read)
@@ -31,6 +34,9 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Codec.Bytable as B
 import CipherSuite
+
+import "monads-tf" Control.Monad.Error.Class
+import Data.String
 
 data TlsClientState h gen = TlsClientState {
 	tlsRandomGen :: gen,
@@ -180,3 +186,59 @@ data Keys = Keys {
 	kServerWriteMacKey :: BS.ByteString,
 	kClientWriteKey :: BS.ByteString,
 	kServerWriteKey :: BS.ByteString }
+
+data Alert
+	= Alert AlertLevel AlertDescription String
+	| NotDetected String
+	deriving Show
+
+alertToByteString :: Alert -> BS.ByteString
+alertToByteString (Alert al ad _) = "\21\3\3\0\2" `BS.append`
+	BS.pack [alertLevelToWord8 al, alertDescriptionToWord8 ad]
+alertToByteString alt = error $ "alertToByteString: " ++ show alt
+
+data AlertLevel
+	= AlertLevelWarning
+	| AlertLevelFatal
+	| AlertLevelRaw Word8
+	deriving Show
+
+alertLevelToWord8 :: AlertLevel -> Word8
+alertLevelToWord8 AlertLevelWarning = 1
+alertLevelToWord8 AlertLevelFatal = 2
+alertLevelToWord8 (AlertLevelRaw al) = al
+
+data AlertDescription
+	= AlertDescriptionCloseNotify
+	| AlertDescriptionUnexpectedMessage
+	| AlertDescriptionBadRecordMac
+	| AlertDescriptionUnsupportedCertificate
+	| AlertDescriptionCertificateExpired
+	| AlertDescriptionCertificateUnknown
+	| AlertDescriptionIllegalParameter
+	| AlertDescriptionUnknownCa
+	| AlertDescriptionDecodeError
+	| AlertDescriptionDecryptError
+	| AlertDescriptionProtocolVersion
+	| AlertDescriptionRaw Word8
+	deriving Show
+
+alertDescriptionToWord8 :: AlertDescription -> Word8
+alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
+alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
+alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
+alertDescriptionToWord8 AlertDescriptionUnsupportedCertificate = 43
+alertDescriptionToWord8 AlertDescriptionCertificateExpired = 45
+alertDescriptionToWord8 AlertDescriptionCertificateUnknown = 46
+alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
+alertDescriptionToWord8 AlertDescriptionUnknownCa = 48
+alertDescriptionToWord8 AlertDescriptionDecodeError = 50
+alertDescriptionToWord8 AlertDescriptionDecryptError = 51
+alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
+alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
+
+instance Error Alert where
+	strMsg = NotDetected
+
+instance IsString Alert where
+	fromString = NotDetected
