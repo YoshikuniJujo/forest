@@ -32,7 +32,6 @@ import CryptoTools
 import ClientState
 import qualified Codec.Bytable as B
 
-import CipherSuite
 -- import ContentType
 
 import "monads-tf" Control.Monad.State
@@ -40,12 +39,15 @@ import "monads-tf" Control.Monad.State
 data TlsClientConst h g = TlsClientConst {
 	clientId :: ClientId,
 	tlsNames :: [String],
-	tlsCipherSuite :: CipherSuite,
 	tlsHandle :: h,
+	keys :: Keys }
+	{-
+	tlsCipherSuite :: CipherSuite,
 	tlsClientWriteMacKey :: BS.ByteString,
 	tlsServerWriteMacKey :: BS.ByteString,
 	tlsClientWriteKey :: BS.ByteString,
 	tlsServerWriteKey :: BS.ByteString }
+	-}
 
 type family HandleRandomGen h
 
@@ -90,13 +92,14 @@ tPutWithCtSt tc ct msg = do
 		B.addLength (undefined :: Word16) ebody ]
 	where
 	(cs, h) = vrcshSt tc
-	key = tlsServerWriteKey tc
-	mk = tlsServerWriteMacKey tc
+	key = kServerWriteKey $ keys tc -- tlsServerWriteKey tc
+	mk = kServerWriteMacKey $ keys tc -- tlsServerWriteMacKey tc
 	enc hs gen sn = encryptMessage hs key mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") msg gen
 
 vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
-vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
+-- vrcshSt tc = (tlsCipherSuite tc, tlsHandle tc)
+vrcshSt tc = (kCachedCipherSuite $ keys tc, tlsHandle tc)
 
 tGetWholeSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> StateT (TlsClientState h gen) (HandleMonad h) BS.ByteString
@@ -132,8 +135,8 @@ tGetWholeWithCtSt tc = do
 		return (ct, ret)
 	where
 	(cs, h) = vrcshSt tc
-	key = tlsClientWriteKey tc
-	mk = tlsClientWriteMacKey tc
+	key = kClientWriteKey $ keys tc
+	mk = kClientWriteMacKey $ keys tc
 	dec hs = decryptMessage hs key mk
 
 tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->

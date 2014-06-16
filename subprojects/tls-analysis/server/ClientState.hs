@@ -15,6 +15,10 @@ module ClientState (
 	initialTlsState,
 
 	ContentType(..),
+
+	Keys(..),
+	nullKeys,
+	CipherSuite(..), KeyExchange, BulkEncryption(..),
 ) where
 
 import Prelude hiding (read)
@@ -26,7 +30,7 @@ import qualified Data.ByteString as BS
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Codec.Bytable as B
--- import ContentType
+import CipherSuite
 
 data TlsClientState h gen = TlsClientState {
 	tlsRandomGen :: gen,
@@ -164,3 +168,26 @@ contentTypeToByteString ContentTypeAlert = BS.pack [21]
 contentTypeToByteString ContentTypeHandshake = BS.pack [22]
 contentTypeToByteString ContentTypeApplicationData = BS.pack [23]
 contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]
+
+nullKeys :: Keys
+nullKeys = Keys {
+	kCachedCipherSuite = CipherSuite KE_NULL BE_NULL,
+	kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
+	kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
+
+	kMasterSecret = "",
+	kClientWriteMacKey = "",
+	kServerWriteMacKey = "",
+	kClientWriteKey = "",
+	kServerWriteKey = "" }
+
+data Keys = Keys {
+	kCachedCipherSuite :: CipherSuite,
+	kClientCipherSuite :: CipherSuite,
+	kServerCipherSuite :: CipherSuite,
+
+	kMasterSecret :: BS.ByteString,
+	kClientWriteMacKey :: BS.ByteString,
+	kServerWriteMacKey :: BS.ByteString,
+	kClientWriteKey :: BS.ByteString,
+	kServerWriteKey :: BS.ByteString }

@@ -8,7 +8,7 @@ module HM (
 	getContentType, buffered, withRandom, debugCipherSuite,
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
-	ContentType, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ContentType, CipherSuite(..), KeyExchange, BulkEncryption(..),
 	
 	Keys(..), nullKeys, cipherSuite,
 	flushCipherSuite,
@@ -32,7 +32,7 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-import CipherSuite
+-- import CipherSuite
 -- import ContentType
 
 type HandshakeM h gen = ErrorT Alert (StateT (HandshakeState h gen) (HandleMonad h))
@@ -58,29 +58,6 @@ write :: HandleLike h => TlsHandle h ->
 write th dat = lift . lift . flip hlPut dat $ getHandle th
 
 type TlsHandle h = h
-
-nullKeys :: Keys
-nullKeys = Keys {
-	kCachedCipherSuite = CipherSuite KE_NULL BE_NULL,
-	kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
-	kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
-
-	kMasterSecret = "",
-	kClientWriteMacKey = "",
-	kServerWriteMacKey = "",
-	kClientWriteKey = "",
-	kServerWriteKey = "" }
-
-data Keys = Keys {
-	kCachedCipherSuite :: CipherSuite,
-	kClientCipherSuite :: CipherSuite,
-	kServerCipherSuite :: CipherSuite,
-
-	kMasterSecret :: BS.ByteString,
-	kClientWriteMacKey :: BS.ByteString,
-	kServerWriteMacKey :: BS.ByteString,
-	kClientWriteKey :: BS.ByteString,
-	kServerWriteKey :: BS.ByteString }
 
 mkTlsHandle :: h -> TlsHandle h
 mkTlsHandle = id

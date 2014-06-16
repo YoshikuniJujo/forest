@@ -8,6 +8,9 @@ module HandshakeState2 (
 	serverSequenceNumber, succServerSequenceNumber,
 
 	CS.ContentType,
+	CS.Keys(..),
+	CS.nullKeys,
+	CS.CipherSuite(..), CS.KeyExchange, CS.BulkEncryption(..),
 ) where
 
 import Data.Word

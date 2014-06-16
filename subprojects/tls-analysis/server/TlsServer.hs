@@ -642,13 +642,9 @@ runOpenSt_ s cl opn = do
 		snd $ newClientId' s
 	let tc = TlsClientConst {
 		clientId = clientIdZero,
-		tlsNames = ns,
-		tlsCipherSuite = HM.cipherSuite Client ks,
 		tlsHandle = cl,
-		tlsClientWriteMacKey = kClientWriteMacKey ks,
-		tlsServerWriteMacKey = kServerWriteMacKey ks,
-		tlsClientWriteKey = kClientWriteKey ks,
-		tlsServerWriteKey = kServerWriteKey ks }
+		tlsNames = ns,
+		keys = ks }
 	return (tc, s')
 
 -- runOpenSt__ :: (HandleLike h, CPRG gen) => h -> HandshakeM h gen
