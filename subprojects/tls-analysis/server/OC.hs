@@ -4,7 +4,7 @@
 module OC (
 	TlsClientConst(..), checkName, clientName,
 	TlsClientState,
-	TlsClientM,
+	HandshakeM,
 	initialTlsState,
 	initialTlsStateWithClientZero,
 
@@ -36,7 +36,7 @@ import Data.HandleLike
 import CryptoTools
 import qualified Codec.Bytable as B
 
-import OcMonad
+import HmMonad
 
 data TlsClientConst h g = TlsClientConst {
 	clientId :: ClientId,
@@ -50,7 +50,7 @@ type instance HandleRandomGen Handle = SystemRNG
 
 instance (HandleLike h, CPRG g) =>
 	HandleLike (TlsClientConst h g) where
-	type HandleMonad (TlsClientConst h g) = TlsClientM h g
+	type HandleMonad (TlsClientConst h g) = HandshakeM h g
 	hlPut = tPutSt
 	hlGet = tGetSt
 	hlGetLine = tGetLineSt
@@ -64,19 +64,19 @@ clientName :: TlsClientConst h g -> Maybe String
 clientName = listToMaybe . tlsNames 
 
 tPutSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	BS.ByteString -> TlsClientM h gen ()
+	BS.ByteString -> HandshakeM h gen ()
 tPutSt tc = tPutWithCtSt tc ContentTypeApplicationData
 
 tPutWithCtSt :: (HandleLike h, CPRG gen) =>
 	TlsClientConst h gen -> ContentType -> BS.ByteString ->
-	TlsClientM h gen ()
+	HandshakeM h gen ()
 tPutWithCtSt tc ct msg = do
 	hs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
 		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
 		_ -> error "OpenClient.tPutWithCT"
 	sn <- getServerSn $ clientId tc
-	ebody <- withRandomGen $ flip (enc hs) sn
+	ebody <- withRandom $ flip (enc hs) sn
 	succServerSn $ clientId tc
 	thlPut h $ BS.concat [
 		B.toByteString ct, "\x03\x03",
@@ -93,7 +93,7 @@ vrcshSt :: TlsClientConst h gen -> (CipherSuite, h)
 vrcshSt tc = (kCachedCipherSuite $ keys tc, tlsHandle tc)
 
 tGetWholeSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> TlsClientM h gen BS.ByteString
+	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
 tGetWholeSt tc = do
 	ret <- tGetWholeWithCtSt tc
 	case ret of
@@ -107,7 +107,7 @@ tGetWholeSt tc = do
 	h = tlsHandle tc
 
 tGetWholeWithCtSt :: HandleLike h => TlsClientConst h gen ->
-	TlsClientM h gen (ContentType, BS.ByteString)
+	HandshakeM h gen (ContentType, BS.ByteString)
 tGetWholeWithCtSt tc = do
 	hs <- case cs of
 		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
@@ -131,7 +131,7 @@ tGetWholeWithCtSt tc = do
 	dec hs = decryptMessage hs key mk
 
 tGetSt :: (HandleLike h, CPRG gen) => TlsClientConst h gen ->
-	Int -> TlsClientM h gen BS.ByteString
+	Int -> HandshakeM h gen BS.ByteString
 tGetSt tc n = do
 	(mct, bfr) <- getBuf $ clientId tc
 	if n <= BS.length bfr then do
@@ -143,7 +143,7 @@ tGetSt tc n = do
 		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
 
 tGetLineSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> TlsClientM h gen BS.ByteString
+	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
 tGetLineSt tc = do
 	(mct, bfr) <- getBuf $ clientId tc
 	case splitOneLine bfr of
@@ -155,7 +155,7 @@ tGetLineSt tc = do
 			(bfr `BS.append`) `liftM` tGetLineSt tc
 
 tGetContentSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> TlsClientM h gen BS.ByteString
+	TlsClientConst h gen -> HandshakeM h gen BS.ByteString
 tGetContentSt tc = do
 	(_, bfr) <- getBuf $ clientId tc
 	if BS.null bfr then tGetWholeSt tc else do
@@ -176,7 +176,7 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 	_ -> Nothing
 
 tCloseSt :: (HandleLike h, CPRG gen) =>
-	TlsClientConst h gen -> TlsClientM h gen ()
+	TlsClientConst h gen -> HandshakeM h gen ()
 tCloseSt tc = do
 	tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
 	thlClose h

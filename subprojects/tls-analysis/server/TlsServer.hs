@@ -10,11 +10,11 @@ module TlsServer (
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>))
+import Control.Arrow
 import Control.Monad
 -- import "monads-tf" Control.Monad.State -- (StateT, runStateT, lift)
--- import "monads-tf" Control.Monad.Error -- (throwError, catchError)
+import "monads-tf" Control.Monad.Error -- (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import "monads-tf" Control.Monad.Trans (lift)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
@@ -86,12 +86,14 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
-evalClient :: (HandleLike h, CPRG g) => TlsClientM h g a -> g -> HandleMonad h a
+evalClient :: (HandleLike h, CPRG g) => HandshakeM h g a -> g -> HandleMonad h a
 evalClient s g = fst `liftM` runClient s g
 
 runClient :: (HandleLike h, CPRG g) =>
-	TlsClientM h g a -> g -> HandleMonad h (a, TlsClientState h g)
-runClient s g = s `runStateT` initialTlsStateWithClientZero g
+	HandshakeM h g a -> g -> HandleMonad h (a, TlsClientState h g)
+runClient s g = do
+	(Right ret, st') <- runErrorT s `runStateT` initialTlsStateWithClientZero g
+	return (ret, st')
 
 openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
@@ -633,7 +635,7 @@ finishedHash ks partner = do
 runOpen :: (HandleLike h, CPRG gen) => h ->
 	HandshakeM h gen ([String], Keys) ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
-runOpen cl opn = StateT $ \s -> runOpenSt_ s cl opn
+runOpen cl opn = ErrorT $ StateT $ \s -> first Right `liftM` runOpenSt_ s cl opn
 
 runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState h gen ->
 	h -> HandshakeM h gen ([String], Keys) ->
