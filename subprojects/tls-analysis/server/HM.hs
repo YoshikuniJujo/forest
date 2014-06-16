@@ -11,7 +11,7 @@ module HM (
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
 	CipherSuite(..), KeyExchange, BulkEncryption(..),
 	
-	Keys(..), nullKeys, cipherSuite,
+	Keys(..), nullKeys,
 	flushCipherSuite,
 
 	TlsHandle, mkTlsHandle, getHandle,
@@ -24,7 +24,7 @@ module HM (
 	TlsClientConst(..),
 	finishedHash_, clientIdZero, generateKeys_, checkName, clientName,
 
-	eitherToError, readByteString, readContentType,
+	eitherToError, readByteString, readContentType, writeByteString,
 ) where
 
 import Prelude hiding (read)
@@ -197,31 +197,20 @@ clientName = listToMaybe . tlsNames
 
 tPutSt :: (HandleLike h, CPRG g) => TlsClientConst h g ->
 	BS.ByteString -> HandshakeM h g ()
-tPutSt tc = tPutWithCtSt tc ContentTypeApplicationData
+tPutSt tc = writeByteString tc ContentTypeApplicationData
 
-tPutWithCtSt :: (HandleLike h, CPRG g) =>
-	TlsClientConst h g -> ContentType -> BS.ByteString ->
-	HandshakeM h g ()
-tPutWithCtSt tc ct msg = do
-	hs <- case cs of
-		CipherSuite _ AES_128_CBC_SHA -> return hashSha1
-		CipherSuite _ AES_128_CBC_SHA256 -> return hashSha256
-		_ -> error "OpenClient.tPutWithCT"
-	sn <- getServerSn $ clientId tc
-	ebody <- withRandom $ flip (enc hs) sn
-	succServerSn $ clientId tc
-	thlPut h $ BS.concat [
-		B.toByteString ct, "\x03\x03",
-		B.addLength (undefined :: Word16) ebody ]
-	where
-	(cs, h) = vrcshSt tc
-	key = kServerWriteKey $ keys tc
-	mk = kServerWriteMacKey $ keys tc
-	enc hs gen sn = encryptMessage hs key mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") msg gen
-
-vrcshSt :: TlsClientConst h g -> (CipherSuite, h)
-vrcshSt tc = (kCachedCipherSuite $ keys tc, tlsHandle tc)
+writeByteString :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> ContentType -> BS.ByteString -> HandshakeM h g ()
+writeByteString th ct bs = do
+	enc <- tlsEncryptMessage (keys th) ct bs
+	case ct of
+		ContentTypeHandshake -> updateHash bs
+		_ -> return ()
+	write th $ BS.concat [
+		B.toByteString ct,
+		B.toByteString (3 :: Word8),
+		B.toByteString (3 :: Word8),
+		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
 
 tGetWholeSt :: (HandleLike h, CPRG g) =>
 	TlsClientConst h g -> HandshakeM h g BS.ByteString
@@ -230,9 +219,9 @@ tGetWholeSt tc = do
 	case ret of
 		(ContentTypeApplicationData, ad) -> return ad
 		(ContentTypeAlert, "\SOH\NUL") -> do
-			tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
+			writeByteString tc ContentTypeAlert "\SOH\NUL"
 			thlError h "tGetWholeSt: EOF"
-		_ -> do	tPutWithCtSt tc ContentTypeAlert "\2\10"
+		_ -> do	writeByteString tc ContentTypeAlert "\2\10"
 			error "not application data"
 	where
 	h = tlsHandle tc
@@ -295,7 +284,7 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 tCloseSt :: (HandleLike h, CPRG g) =>
 	TlsClientConst h g -> HandshakeM h g ()
 tCloseSt tc = do
-	tPutWithCtSt tc ContentTypeAlert "\SOH\NUL"
+	writeByteString tc ContentTypeAlert "\SOH\NUL"
 	thlClose h
 	where
 	h = tlsHandle tc
@@ -328,3 +317,20 @@ tlsDecryptMessage ks ct enc = do
 		_ -> throwError "bad"
 	eitherToError $ decryptMessage hs wk mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") enc
+
+tlsEncryptMessage :: (HandleLike h, CPRG g) => Keys ->
+	ContentType -> BS.ByteString -> HandshakeM h g BS.ByteString
+tlsEncryptMessage Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } _ msg =
+	return msg
+tlsEncryptMessage ks ct msg = do
+	let	CipherSuite _ be = HM.cipherSuite Server ks
+		wk = kServerWriteKey ks
+		mk = kServerWriteMacKey ks
+	sn <- updateSequenceNumber Server ks
+	hs <- case be of
+		AES_128_CBC_SHA -> return hashSha1
+		AES_128_CBC_SHA256 -> return hashSha256
+		_ -> throwError "bad"
+	let enc = encryptMessage hs wk mk sn
+		(B.toByteString ct `BS.append` "\x03\x03") msg
+	withRandom enc

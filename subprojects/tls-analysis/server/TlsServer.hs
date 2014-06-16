@@ -48,8 +48,7 @@ import HandshakeType {- (
 	ClientKeyExchange(..),
 	DigitallySigned(..) ) -}
 
-import HM hiding (cipherSuite)
-import qualified HM
+import HM
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
 type Version = (Word8, Word8)
@@ -193,7 +192,7 @@ serverHello th csssv css cc ccec = do
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th nullKeys ct bs
+	writeByteString th ct bs
 	return (cs, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
@@ -210,7 +209,7 @@ serverKeyExchange th cr sr pk ps dhsk = do
 				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th nullKeys ct bs
+	writeByteString th ct bs
 
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	TlsHandle h g ->
@@ -227,7 +226,7 @@ serverToHelloDone th mcs = do
 				_ -> Nothing,
 			Just HandshakeServerHelloDone]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th nullKeys ct bs
+	writeByteString th ct bs
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -405,13 +404,14 @@ clientFinished th ks = do
 serverChangeCipherSuite :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Keys -> HandshakeM h g Keys
 serverChangeCipherSuite th ks = do
-	uncurry (writeByteString th nullKeys) . contentToByteString $
+	uncurry (writeByteString th) . contentToByteString $
 		ContentChangeCipherSpec ChangeCipherSpec
 	return $ flushCipherSuite Server ks
 
 serverFinished :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Keys -> HandshakeM h g ()
-serverFinished th ks = uncurry (writeByteString th ks) . contentToByteString .
+serverFinished th ks =
+	uncurry (writeByteString th { keys = ks }) . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash ks Server
 
 readHandshake :: (HandleLike h, CPRG g) => TlsHandle h g -> Keys ->
@@ -645,33 +645,3 @@ runOpenSt_ s cl opn = do
 	return (tc, s')
 
 -- runOpenSt__ :: (HandleLike h, CPRG g) => h -> HandshakeM h g
-
-writeByteString :: (HandleLike h, CPRG g) => TlsHandle h g -> Keys ->
-	ContentType -> BS.ByteString -> HandshakeM h g ()
-writeByteString th ks ct bs = do
-	enc <- tlsEncryptMessage ks ct bs
-	case ct of
-		ContentTypeHandshake -> updateHash bs
-		_ -> return ()
-	write th $ BS.concat [
-		B.toByteString ct,
-		B.toByteString (3 :: Word8),
-		B.toByteString (3 :: Word8),
-		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
-
-tlsEncryptMessage :: (HandleLike h, CPRG g) => Keys ->
-	ContentType -> BS.ByteString -> HandshakeM h g BS.ByteString
-tlsEncryptMessage Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } _ msg =
-	return msg
-tlsEncryptMessage ks ct msg = do
-	let	CipherSuite _ be = HM.cipherSuite Server ks
-		wk = kServerWriteKey ks
-		mk = kServerWriteMacKey ks
-	sn <- updateSequenceNumber Server ks
-	hs <- case be of
-		AES_128_CBC_SHA -> return hashSha1
-		AES_128_CBC_SHA256 -> return hashSha256
-		_ -> throwError "bad"
-	let enc = encryptMessage hs wk mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") msg
-	withRandom enc
