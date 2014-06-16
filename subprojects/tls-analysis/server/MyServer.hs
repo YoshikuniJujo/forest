@@ -20,14 +20,14 @@ import qualified Crypto.PubKey.RSA as RSA
 import TlsServer (
 	SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..), evalClient, openClient, clientName)
+	ValidateHandle(..), run, openClient, clientName)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> g -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) ->
 	(sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
-server h g css rsa ec mcs = (`evalClient` g) $ do
+server h g css rsa ec mcs = (`run` g) $ do
 	cl <- openClient h css rsa ec mcs
 	const () `liftM` doUntil BS.null (hlGetLine cl)
 	hlPut cl . answer . fromMaybe "Anonym" $ clientName cl

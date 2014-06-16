@@ -2,16 +2,17 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
-	evalClient, openClient, checkName, clientName,
-	ValidateHandle(..), SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ValidateHandle(..), SecretKey,
+	run, openClient, checkName, clientName
 ) where
 
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>))
-import Control.Arrow
-import Control.Monad
+import Control.Arrow (first)
+import Control.Monad (when, unless, liftM)
+import "monads-tf" Control.Monad.Error (throwError, catchError, lift)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
@@ -36,7 +37,7 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import HandshakeType {- (
+import HandshakeType (
 	Handshake(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
@@ -46,9 +47,19 @@ import HandshakeType {- (
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ClientKeyExchange(..),
-	DigitallySigned(..) ) -}
+	DigitallySigned(..) )
 
-import HM
+import HM (
+	TlsClientConst(..), TlsClientState, mkTlsHandle, clientIdZero,
+	runHm, Keys(..), HandshakeM, handshakeM, Partner(..),
+	finishedHash_, generateKeys_, withRandom, eitherToError,
+	ContentType(..), handshakeHash,
+	Alert(..), AlertLevel(..), AlertDescription(..), nullKeys,
+	TlsHandle, readByteString, readContentType, writeByteString,
+	flushCipherSuite, debugCipherSuite,
+	randomByteString, getHandle, initialTlsStateWithClientZero, runHandshakeM,
+	checkName, clientName,
+	)
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
 type Version = (Word8, Word8)
@@ -79,8 +90,8 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
-evalClient :: (HandleLike h, CPRG g) => HandshakeM h g a -> g -> HandleMonad h a
-evalClient s g = fst `liftM` runClient s g
+run :: (HandleLike h, CPRG g) => HandshakeM h g a -> g -> HandleMonad h a
+run s g = fst `liftM` (s `runClient` g)
 
 runClient :: (HandleLike h, CPRG g) =>
 	HandshakeM h g a -> g -> HandleMonad h (a, TlsClientState h g)

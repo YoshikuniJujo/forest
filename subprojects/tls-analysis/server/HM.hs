@@ -9,7 +9,6 @@ module HM (
 	getContentType, buffered, withRandom, debugCipherSuite,
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
-	CipherSuite(..), KeyExchange, BulkEncryption(..),
 	
 	Keys(..), nullKeys,
 	flushCipherSuite,
