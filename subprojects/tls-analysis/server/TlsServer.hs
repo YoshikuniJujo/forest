@@ -47,14 +47,11 @@ import HandshakeType {- (
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ClientKeyExchange(..),
-	DigitallySigned(..) )
-	-}
-import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
+	DigitallySigned(..) ) -}
 
--- import Fragment
 import HM hiding (cipherSuite)
 import qualified HM
--- import OC
+import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
 type Version = (Word8, Word8)
 
