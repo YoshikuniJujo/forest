@@ -54,7 +54,7 @@ import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 -- import Fragment
 import HM hiding (cipherSuite)
 import qualified HM
-import OC
+-- import OC
 
 type Version = (Word8, Word8)
 
