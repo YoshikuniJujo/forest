@@ -50,15 +50,18 @@ import HandshakeType (
 	DigitallySigned(..) )
 
 import HM (
-	TlsClientConst(..), TlsClientState, mkTlsHandle, clientIdZero,
-	runHm, Keys(..), HandshakeM, handshakeM, Partner(..),
-	finishedHash_, generateKeys_, withRandom, eitherToError,
-	ContentType(..), handshakeHash,
-	Alert(..), AlertLevel(..), AlertDescription(..), nullKeys,
-	TlsHandle, readByteString, readContentType, writeByteString,
-	flushCipherSuite, debugCipherSuite,
-	randomByteString, getHandle, initialTlsStateWithClientZero, runHandshakeM,
-	checkName, clientName,
+	HandshakeM, handshakeM, runHandshakeM, runHm,
+	readContentType, readByteString, writeByteString,
+	finishedHash_, handshakeHash, withRandom, randomByteString,
+	TlsClientState, initialTlsStateWithClientZero, clientIdZero,
+
+	TlsClientConst(..), checkName, clientName,
+	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
+	TlsHandle, mkTlsHandle, getHandle,
+
+	Partner(..), ContentType(..),
+	Alert(..), AlertLevel(..), AlertDescription(..),
+	eitherToError,
 	)
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
