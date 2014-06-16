@@ -1,7 +1,7 @@
 {-# LANGUAGE PackageImports, OverloadedStrings, TupleSections, TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module OCMonad (
+module OcMonad (
 	TlsClientM,
 	thlPut, thlGet, thlError, thlClose,
 	getBuf, setBuf, withRandomGen,
