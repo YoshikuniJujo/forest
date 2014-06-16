@@ -16,6 +16,8 @@ module HM (
 	TlsHandle, mkTlsHandle, getHandle,
 ) where
 
+import HandshakeState
+
 import Prelude hiding (read)
 
 import "monads-tf" Control.Monad.State
@@ -29,7 +31,6 @@ import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
-import qualified Crypto.Hash.SHA256 as SHA256
 
 import CipherSuite
 import ContentType
@@ -81,27 +82,8 @@ data Keys = Keys {
 	kClientWriteKey :: BS.ByteString,
 	kServerWriteKey :: BS.ByteString }
 
-data HandshakeState h gen = HandshakeState {
-	tlssByteStringBuffer :: (Maybe ContentType, BS.ByteString),
-
-	tlssRandomGen :: gen,
-	tlssClientSequenceNumber :: Word64,
-	tlssServerSequenceNumber :: Word64,
-
-	tlssSha256Ctx :: SHA256.Ctx
-	}
-
 mkTlsHandle :: h -> TlsHandle h
 mkTlsHandle = id
-
-initHandshakeState :: gen -> HandshakeState h gen
-initHandshakeState gen = HandshakeState {
-	tlssByteStringBuffer = (Nothing, ""),
-
-	tlssRandomGen = gen,
-	tlssSha256Ctx = SHA256.init,
-	tlssClientSequenceNumber = 0,
-	tlssServerSequenceNumber = 0 }
 
 data Alert
 	= Alert AlertLevel AlertDescription String
@@ -161,13 +143,10 @@ instance IsString Alert where
 
 randomByteString :: (HandleLike h, CPRG gen) => Int -> HandshakeM h gen BS.ByteString
 randomByteString len = do
-	tlss@HandshakeState{ tlssRandomGen = gen } <- get
+	gen <- gets randomGen
 	let (r, gen') = cprgGenerate len gen
-	put tlss { tlssRandomGen = gen' }
+	modify $ setRandomGen gen'
 	return r
-
-randomGen :: HandshakeState h gen -> gen
-randomGen = tlssRandomGen
 
 flushCipherSuite :: Partner -> Keys -> Keys
 flushCipherSuite p k@Keys{ kCachedCipherSuite = cs } = case p of
@@ -185,26 +164,23 @@ read h n = do
 			show (BS.length r) ++ " " ++ show n
 
 updateHash :: HandleLike h => BS.ByteString -> HandshakeM h gen ()
-updateHash bs = do
-	tlss@HandshakeState{ tlssSha256Ctx = sha256 } <- get
-	put tlss { tlssSha256Ctx = SHA256.update sha256 bs }
+updateHash = modify . updateHandshakeHash
 
 handshakeHash :: HandleLike h => HandshakeM h gen BS.ByteString
-handshakeHash = gets $ SHA256.finalize . tlssSha256Ctx
+handshakeHash = gets getHandshakeHash
 
 getContentType :: HandleLike h => ((Word8, Word8) -> Bool)
 	-> HandshakeM h gen (ContentType, (Word8, Word8), BS.ByteString)
 	-> HandshakeM h gen ContentType
 getContentType vc rd = do
-	mct <- fst `liftM` gets tlssByteStringBuffer
+	mct <- fst `liftM` gets byteStringBuffer
 	(\gt -> maybe gt return mct) $ do
 		(ct, v, bf) <- rd
 		unless (vc v) . throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionProtocolVersion
 			"readByteString: bad Version"
-		tlss <- get
-		put tlss{ tlssByteStringBuffer = (Just ct, bf) }
+		modify $ setByteStringBuffer (Just ct, bf)
 		return ct
 
 
@@ -212,12 +188,11 @@ buffered :: HandleLike h =>
 	Int -> HandshakeM h gen (ContentType, BS.ByteString) ->
 	HandshakeM h gen (ContentType, BS.ByteString)
 buffered n rd = do
-	tlss@HandshakeState{ tlssByteStringBuffer = (mct, bf) } <- get
+	(mct, bf) <- gets byteStringBuffer
 	if BS.length bf >= n
 	then do	let (ret, bf') = BS.splitAt n bf
-		put $ if BS.null bf'
-			then tlss{ tlssByteStringBuffer = (Nothing, "") }
-			else tlss{ tlssByteStringBuffer = (mct, bf') }
+		modify . setByteStringBuffer $
+			if BS.null bf' then (Nothing, "") else (mct, bf')
 		return (fromJust mct, ret)
 	else do	(ct', bf') <- rd
 		unless (maybe True (== ct') mct) .
@@ -226,7 +201,7 @@ buffered n rd = do
 				"\tActual  : " ++ show ct' ++ "\n" ++
 				"\tData    : " ++ show bf'
 		when (BS.null bf') $ throwError "buffered: No data available"
-		put tlss{ tlssByteStringBuffer = (Just ct', bf') }
+		modify $ setByteStringBuffer (Just ct', bf')
 		((ct' ,) . (bf `BS.append`) . snd) `liftM` buffered (n - BS.length bf) rd
 
 updateSequenceNumber :: HandleLike h =>
@@ -234,14 +209,14 @@ updateSequenceNumber :: HandleLike h =>
 updateSequenceNumber partner ks = do
 	tlss <- get
 	let	sn = ($ tlss) $ case partner of
-			Client -> tlssClientSequenceNumber
-			Server -> tlssServerSequenceNumber
+			Client -> clientSequenceNumber
+			Server -> serverSequenceNumber
 		cs = cipherSuite partner ks
 	case cs of
 		CipherSuite _ BE_NULL -> return ()
-		_ -> put $ case partner of
-			Client -> tlss { tlssClientSequenceNumber = succ sn }
-			Server -> tlss { tlssServerSequenceNumber = succ sn }
+		_ -> case partner of
+			Client -> modify succClientSequenceNumber
+			Server -> modify succServerSequenceNumber
 	return sn
 
 cipherSuite :: Partner -> Keys -> CipherSuite
@@ -251,9 +226,9 @@ cipherSuite p = case p of
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> HandshakeM h gen a
 withRandom p = do
-	tlss@HandshakeState { tlssRandomGen = gen } <- get
+	gen <- gets randomGen
 	let (x, gen') = p gen
-	put tlss { tlssRandomGen = gen' }
+	modify $ setRandomGen gen'
 	return x
 
 getHandle :: HandleLike h => TlsHandle h -> h
