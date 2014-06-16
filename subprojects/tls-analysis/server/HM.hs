@@ -2,7 +2,8 @@
 	FlexibleContexts #-}
 
 module HM (
-	HandshakeM, runHandshakeM, HandshakeState, initHandshakeState,
+	HandshakeM, runHm, runHandshakeM, handshakeM,
+	HandshakeState, initHandshakeState,
 	read, write, randomByteString, updateHash, handshakeHash,
 	updateSequenceNumber,
 	getContentType, buffered, withRandom, debugCipherSuite,
@@ -15,8 +16,7 @@ module HM (
 
 	TlsHandle, mkTlsHandle, getHandle,
 
-	throwError, ErrorType, Error, MonadError, catchError,
-	StateT(..),
+	ErrorType, Error, MonadError, throwError, lift, catchError,
 ) where
 
 import Prelude hiding (read)
@@ -32,12 +32,11 @@ import qualified Data.ByteString.Char8 as BSC
 
 import HmMonad
 
-runHandshakeM :: HandleLike h => TlsHandle h ->
+runHm :: HandleLike h => TlsHandle h ->
 	HandshakeM h gen a -> HandshakeState h gen ->
 	HandleMonad h (a, HandshakeState h gen)
-runHandshakeM th io st = do
-	(ret, st') <- runErrorT (io `catchError` processAlert th)
-		`runStateT` st
+runHm th io st = do
+	(ret, st') <- (io `catchError` processAlert th) `runHandshakeM` st
 	case ret of
 		Right r -> return (r, st')
 		Left err -> error $ show err

@@ -12,8 +12,6 @@ import Prelude hiding (read)
 import Control.Applicative ((<$>))
 import Control.Arrow
 import Control.Monad
--- import "monads-tf" Control.Monad.State -- (StateT, runStateT, lift)
-import "monads-tf" Control.Monad.Error -- (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
@@ -92,7 +90,7 @@ evalClient s g = fst `liftM` runClient s g
 runClient :: (HandleLike h, CPRG g) =>
 	HandshakeM h g a -> g -> HandleMonad h (a, TlsClientState h g)
 runClient s g = do
-	(Right ret, st') <- runErrorT s `runStateT` initialTlsStateWithClientZero g
+	(Right ret, st') <- s `runHandshakeM` initialTlsStateWithClientZero g
 	return (ret, st')
 
 openClient :: (SecretKey sk, ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
@@ -635,13 +633,14 @@ finishedHash ks partner = do
 runOpen :: (HandleLike h, CPRG gen) => h ->
 	HandshakeM h gen ([String], Keys) ->
 	HandleMonad (TlsClientConst h gen) (TlsClientConst h gen)
-runOpen cl opn = ErrorT $ StateT $ \s -> first Right `liftM` runOpenSt_ s cl opn
+-- runOpen cl opn = ErrorT $ StateT $ \s -> first Right `liftM` runOpenSt_ s cl opn
+runOpen cl opn = handshakeM $ \s -> first Right `liftM` runOpenSt_ s cl opn
 
 runOpenSt_ :: (HandleLike h, CPRG gen) => TlsClientState h gen ->
 	h -> HandshakeM h gen ([String], Keys) ->
 	HandleMonad h (TlsClientConst h gen, TlsClientState h gen)
 runOpenSt_ s cl opn = do
-	((ns, ks), s') <- runHandshakeM (mkTlsHandle cl) opn s
+	((ns, ks), s') <- runHm (mkTlsHandle cl) opn s
 	let tc = TlsClientConst {
 		clientId = clientIdZero,
 		tlsHandle = cl,

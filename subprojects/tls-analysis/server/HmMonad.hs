@@ -2,7 +2,7 @@
 	FlexibleContexts #-}
 
 module HmMonad (
-	HandshakeM,
+	HandshakeM, handshakeM, runHandshakeM,
 	thlPut, thlGet, thlDebug, thlError, thlClose,
 	getBuf, setBuf, withRandom,
 	getServerSn, getClientSn, succServerSn, succClientSn,
@@ -14,7 +14,7 @@ module HmMonad (
 	
 	getHash, updateH,
 
-	throwError, runErrorT, catchError, ErrorType, Error, MonadError,
+	throwError, runErrorT, catchError, ErrorType, Error, MonadError, lift,
 	modify, StateT(..),
 	
 	CS.Alert(..), CS.AlertLevel(..), CS.AlertDescription(..),
@@ -37,6 +37,16 @@ import qualified ClientState as CS
 
 type HandshakeM h gen =
 	ErrorT CS.Alert (StateT (HandshakeState h gen) (HandleMonad h))
+
+runHandshakeM :: HandleLike h =>
+	HandshakeM h g a -> HandshakeState h g ->
+	HandleMonad h (Either CS.Alert a, HandshakeState h g)
+runHandshakeM m st = runErrorT m `runStateT` st
+
+handshakeM :: HandleLike h => (HandshakeState h g ->
+		HandleMonad h (Either CS.Alert a, HandshakeState h g)) ->
+	HandshakeM h g a
+handshakeM = ErrorT . StateT
 
 data Partner = Server | Client deriving (Show, Eq)
 
