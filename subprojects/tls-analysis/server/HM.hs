@@ -8,7 +8,7 @@ module HM (
 	getContentType, buffered, withRandom, debugCipherSuite,
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
-	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ContentType, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	
 	Keys(..), nullKeys, cipherSuite,
 	flushCipherSuite,
@@ -16,7 +16,7 @@ module HM (
 	TlsHandle, mkTlsHandle, getHandle,
 ) where
 
-import HandshakeState
+import HandshakeState2
 
 import Prelude hiding (read)
 
@@ -33,7 +33,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import CipherSuite
-import ContentType
+-- import ContentType
 
 type HandshakeM h gen = ErrorT Alert (StateT (HandshakeState h gen) (HandleMonad h))
 

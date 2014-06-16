@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports, OverloadedStrings, TupleSections, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module ClientState (
@@ -6,12 +6,15 @@ module ClientState (
 	TlsClientState,
 	ClientId,
 	newClientId,
+	newClientId',
 	setBuffer, getBuffer,
 	setRandomGen, getRandomGen,
 	updateHandshakeHash, getHandshakeHash,
 	succClientSequenceNumber, getClientSequenceNumber,
 	succServerSequenceNumber, getServerSequenceNumber,
 	initialTlsState,
+
+	ContentType(..),
 ) where
 
 import Prelude hiding (read)
@@ -19,11 +22,11 @@ import Prelude hiding (read)
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
-import "crypto-random" Crypto.Random
 
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import ContentType
+import qualified Codec.Bytable as B
+-- import ContentType
 
 data TlsClientState h gen = TlsClientState {
 	tlsRandomGen :: gen,
@@ -70,6 +73,20 @@ newClientId s = (ClientId cid ,) s {
 		}
 	sl = tlsClientStateList s
 
+newClientId' :: TlsClientState h gen -> (ClientId, TlsClientState h gen)
+newClientId' s = (ClientId cid ,) s {
+	tlsNextClientId = succ cid,
+	tlsClientStateList = (ClientId cid, cs) : sl }
+	where
+	cid = tlsNextClientId s
+	cs = TlsClientStateOne {
+		tlsBuffer = (Nothing, ""),
+		tlsClientSequenceNumber = 0,
+		tlsServerSequenceNumber = 0,
+		tlsHandshakeHashCtx = SHA256.init
+		}
+	sl = tlsClientStateList s
+
 setBuffer :: ClientId ->
 	(Maybe ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
 setBuffer cid = modifyClientState cid . sb
@@ -111,8 +128,35 @@ getClientSequenceNumber cid =
 getServerSequenceNumber cid =
 	tlsServerSequenceNumber . fromJust . lookup cid . tlsClientStateList
 
-initialTlsState :: CPRG gen => gen -> TlsClientState h gen
+initialTlsState :: gen -> TlsClientState h gen
 initialTlsState g = TlsClientState {
 	tlsRandomGen = g,
 	tlsNextClientId = 0,
 	tlsClientStateList = [] }
+
+data ContentType
+	= ContentTypeChangeCipherSpec
+	| ContentTypeAlert
+	| ContentTypeHandshake
+	| ContentTypeApplicationData
+	| ContentTypeRaw Word8
+	deriving (Show, Eq)
+
+instance B.Bytable ContentType where
+	fromByteString = Right . byteStringToContentType
+	toByteString = contentTypeToByteString
+
+byteStringToContentType :: BS.ByteString -> ContentType
+byteStringToContentType "" = error "Types.byteStringToContentType: empty"
+byteStringToContentType "\20" = ContentTypeChangeCipherSpec
+byteStringToContentType "\21" = ContentTypeAlert
+byteStringToContentType "\22" = ContentTypeHandshake
+byteStringToContentType "\23" = ContentTypeApplicationData
+byteStringToContentType bs = let [ct] = BS.unpack bs in ContentTypeRaw ct
+
+contentTypeToByteString :: ContentType -> BS.ByteString
+contentTypeToByteString ContentTypeChangeCipherSpec = BS.pack [20]
+contentTypeToByteString ContentTypeAlert = BS.pack [21]
+contentTypeToByteString ContentTypeHandshake = BS.pack [22]
+contentTypeToByteString ContentTypeApplicationData = BS.pack [23]
+contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]

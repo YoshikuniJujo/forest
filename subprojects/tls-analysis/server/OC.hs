@@ -30,7 +30,7 @@ import ClientState
 import qualified Codec.Bytable as B
 
 import CipherSuite
-import ContentType
+-- import ContentType
 
 import "monads-tf" Control.Monad.State
 
@@ -143,7 +143,7 @@ tGetSt tc n = do
 		return ret
 	else do	msg <- tGetWholeSt tc
 		modify $ setBuffer (clientId tc)
-			(Just $ ContentTypeApplicationData, msg)
+			(Just ContentTypeApplicationData, msg)
 		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
 
 tGetLineSt :: (HandleLike h, CPRG gen) =>
@@ -156,7 +156,7 @@ tGetLineSt tc = do
 			return l
 		_ -> do	msg <- tGetWholeSt tc
 			modify $ setBuffer (clientId tc)
-				(Just $ ContentTypeApplicationData, msg)
+				(Just ContentTypeApplicationData, msg)
 			(bfr `BS.append`) `liftM` tGetLineSt tc
 
 tGetContentSt :: (HandleLike h, CPRG gen) =>
