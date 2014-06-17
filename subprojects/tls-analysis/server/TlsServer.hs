@@ -176,14 +176,14 @@ serverKeyExchange :: (HandleLike h, CPRG g,
 	Bool -> BS.ByteString -> BS.ByteString -> b -> sk ->
 	Maybe (X509.CertificateStore) -> HandshakeM h g (Maybe (Secret b))
 serverKeyExchange dh cr sr b sks mcs = do
-	t <- get
 	msk <- if dh
-		then lift $ do
-			sk <- withRandom (generateSecret b)
-			serverKeyExchange_ t cr sr sks b sk
+		then do
+			sk <- lift $ withRandom (generateSecret b)
+			t <- get
+			lift $ serverKeyExchange_ t cr sr sks b sk
 			return $ Just sk
 		else return Nothing
-	lift $ serverToHelloDone t mcs
+	get >>= lift . flip serverToHelloDone mcs
 	return msk
 
 serverKeyExchange_ :: (HandleLike h, SecretKey sk, CPRG g,
@@ -198,6 +198,26 @@ serverKeyExchange_ th cr sr pk ps dhsk = do
 				(B.toByteString $ calculatePublic ps dhsk)
 				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
+		(ct, bs) = contentListToByteString cont
+	tlsPut th ct bs
+
+serverToHelloDone' :: (HandleLike h, CPRG g) =>
+	Maybe X509.CertificateStore -> HandshakeM h g ()
+serverToHelloDone' = (get >>=) . lift . flip serverToHelloDone
+
+serverToHelloDone :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> Maybe X509.CertificateStore -> TlsM h g ()
+serverToHelloDone th mcs = do
+	let	cont = map ContentHandshake $ catMaybes [
+			case mcs of
+				Just cs -> Just . HandshakeCertificateRequest
+					. CertificateRequest
+						clientCertificateTypes
+						clientCertificateAlgorithms
+					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+					$ X509.listCertificates cs
+				_ -> Nothing,
+			Just HandshakeServerHelloDone]
 		(ct, bs) = contentListToByteString cont
 	tlsPut th ct bs
 
@@ -235,22 +255,6 @@ serverChangeCipherSpec = get >>= lift . serverChangeCipherSuite >>= put
 
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverFinished = get >>= lift . serverFinished_
-
-serverToHelloDone :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> Maybe X509.CertificateStore -> TlsM h g ()
-serverToHelloDone th mcs = do
-	let	cont = map ContentHandshake $ catMaybes [
-			case mcs of
-				Just cs -> Just . HandshakeCertificateRequest
-					. CertificateRequest
-						clientCertificateTypes
-						clientCertificateAlgorithms
-					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
-					$ X509.listCertificates cs
-				_ -> Nothing,
-			Just HandshakeServerHelloDone]
-		(ct, bs) = contentListToByteString cont
-	tlsPut th ct bs
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
