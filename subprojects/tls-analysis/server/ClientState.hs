@@ -16,7 +16,7 @@ module ClientState (
 
 	Keys(..),
 	nullKeys,
-	CipherSuite(..), KeyExchange, BulkEncryption(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	alertToByteString,

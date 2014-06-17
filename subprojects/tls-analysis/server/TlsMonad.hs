@@ -7,7 +7,8 @@ module TlsMonad (
 	getBuf, setBuf, withRandom,
 	getServerSn, getClientSn, succServerSn, succClientSn,
 
-	CS.ContentType(..), CS.CipherSuite(..), CS.KeyExchange, CS.BulkEncryption(..),
+	CS.ContentType(..),
+	CS.CipherSuite(..), CS.KeyExchange(..), CS.BulkEncryption(..),
 	CS.Keys(..),
 	CS.TlsClientState, CS.ClientId,
 	CS.initialTlsState,
@@ -41,8 +42,10 @@ run = (liftM fst .) . runClient
 runClient :: HandleLike h =>
 	TlsM h g a -> g -> HandleMonad h (a, CS.TlsClientState h g)
 runClient s g = do
-	(Right ret, st') <- s `runTlsM` CS.initialTlsState g
-	return (ret, st')
+	(ret, st') <- s `runTlsM` CS.initialTlsState g
+	case ret of
+		Right r -> return (r, st')
+		Left msg -> error $ show msg
 
 type TlsM h g = ErrorT CS.Alert (StateT (HandshakeState h g) (HandleMonad h))
 

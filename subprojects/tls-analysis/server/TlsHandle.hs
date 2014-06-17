@@ -2,7 +2,7 @@
 	FlexibleContexts, TypeFamilies #-}
 
 module TlsHandle (
-	TlsM, run,
+	TlsM, run, cipherSuite, setCipherSuite,
 	read, write, randomByteString, updateHash, handshakeHash,
 	updateSequenceNumber,
 	getContentType, buffered, withRandom, debugCipherSuite,
@@ -21,7 +21,7 @@ module TlsHandle (
 	hashSha1, hashSha256, encryptMessage,
 	ContentType(..),
 	TlsHandle(..),
-	finishedHash_, generateKeys_,
+	finishedHash, generateKeys,
 
 	tlsGetContentType, tlsGet, tlsPut,
 ) where
@@ -44,6 +44,13 @@ import TlsMonad
 import CryptoTools
 
 import qualified Codec.Bytable as B
+
+cipherSuite :: TlsHandle h g -> CipherSuite
+cipherSuite = kCachedCipherSuite . keys
+
+setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
+setCipherSuite cs th@TlsHandle { keys = ks } =
+	th { keys = ks { kCachedCipherSuite = cs } }
 
 write :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
 write = thlPut . tlsHandle
@@ -107,7 +114,7 @@ updateSequenceNumber th partner ks = do
 	sn <- case partner of
 		Client -> getClientSn $ clientId th
 		Server -> getServerSn $ clientId th
-	let	cs = cipherSuite partner ks
+	let	cs = pCipherSuite partner ks
 	case cs of
 		CipherSuite _ BE_NULL -> return ()
 		_ -> case partner of
@@ -115,8 +122,8 @@ updateSequenceNumber th partner ks = do
 			Server -> succServerSn $ clientId th
 	return sn
 
-cipherSuite :: Partner -> Keys -> CipherSuite
-cipherSuite p = case p of
+pCipherSuite :: Partner -> Keys -> CipherSuite
+pCipherSuite p = case p of
 	Client -> kClientCipherSuite
 	Server -> kServerCipherSuite
 
@@ -247,7 +254,7 @@ tlsDecryptMessage :: HandleLike h => TlsHandle h g ->
 tlsDecryptMessage _ Keys{ kClientCipherSuite = CipherSuite _ BE_NULL } _ enc =
 	return enc
 tlsDecryptMessage th ks ct enc = do
-	let	CipherSuite _ be = cipherSuite Client ks
+	let	CipherSuite _ be = pCipherSuite Client ks
 		wk = kClientWriteKey ks
 		mk = kClientWriteMacKey ks
 	sn <- updateSequenceNumber th Client ks
@@ -263,7 +270,7 @@ tlsEncryptMessage :: (HandleLike h, CPRG g) => TlsHandle h g ->
 tlsEncryptMessage _ Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } _ msg =
 	return msg
 tlsEncryptMessage th ks ct msg = do
-	let	CipherSuite _ be = cipherSuite Server ks
+	let	CipherSuite _ be = pCipherSuite Server ks
 		wk = kServerWriteKey ks
 		mk = kServerWriteMacKey ks
 	sn <- updateSequenceNumber th Server ks
@@ -274,3 +281,28 @@ tlsEncryptMessage th ks ct msg = do
 	let enc = encryptMessage hs wk mk sn
 		(B.toByteString ct `BS.append` "\x03\x03") msg
 	withRandom enc
+
+finishedHash :: HandleLike h => TlsHandle h g -> Partner -> TlsM h g BS.ByteString
+finishedHash th partner = do
+	let ms = kMasterSecret $ keys th
+	sha256 <- handshakeHash th
+	return $ finishedHash_ (partner == Client) ms sha256
+
+generateKeys :: HandleLike h => CipherSuite ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
+generateKeys cs cr sr pms = do
+	let CipherSuite _ be = cs
+	kl <- case be of
+		AES_128_CBC_SHA -> return 20
+		AES_128_CBC_SHA256 -> return 32
+		_ -> throwError "TlsServer.generateKeys"
+	let Right (ms, cwmk, swmk, cwk, swk) = makeKeys kl cr sr pms
+	return Keys {
+		kCachedCipherSuite = cs,
+		kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
+		kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
+		kMasterSecret = ms,
+		kClientWriteMacKey = cwmk,
+		kServerWriteMacKey = swmk,
+		kClientWriteKey = cwk,
+		kServerWriteKey = swk }

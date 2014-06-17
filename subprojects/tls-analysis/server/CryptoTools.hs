@@ -6,7 +6,7 @@ module CryptoTools (
 	MSVersion(..), tupleToVersion,
 	ClientRandom(..), ServerRandom(..),
 
-	generateKeys_, finishedHash_,
+	makeKeys, finishedHash_,
 ) where
 
 import Data.Bits
@@ -67,10 +67,10 @@ decrypt key ivenc = let
 	(iv, enc) = BS.splitAt 16 ivenc in
 	decryptCBC (initAES key) iv enc
 
-generateKeys_ :: Int -> BS.ByteString -> BS.ByteString ->
+makeKeys :: Int -> BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> Either String
 	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
-generateKeys_ kl cr sr pms = do
+makeKeys kl cr sr pms = do
 	let	ms = generateMasterSecret pms cr sr
 		ems = generateKeyBlock
 			(ClientRandom cr) (ServerRandom sr) ms $ kl * 2 + 32
