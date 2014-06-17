@@ -109,7 +109,7 @@ openClient h cssv (sk, cc) (esk, ecc) mcs = (newHandle h >>=) . execStateT $ do
 		ECDHE_RSA -> keyExchange True cr cv sr curve sk undefined mcs
 		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
 		_ -> throwError "TlsServer.openClient"
-	certificateVerify mpk
+	maybe (return ()) certificateVerify mpk
 	clientChangeCipherSpec
 	clientFinished
 	serverChangeCipherSpec
@@ -303,11 +303,71 @@ decryptRSA' :: (HandleLike h, CPRG g) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
 decryptRSA' = (lift .) . decryptRSA
 
-certificateVerify :: (HandleLike h, CPRG g) =>
-	Maybe X509.PubKey -> HandshakeM h g ()
-certificateVerify mp = do
-	t <- get
-	lift $ maybe (return ()) (certificateVerify_ t) mp
+debugCipherSuite' :: HandleLike h => String -> HandshakeM h g ()
+debugCipherSuite' msg = do
+	th <- get
+	lift $ debugCipherSuite th msg
+
+handshakeHash' :: HandleLike h => HandshakeM h g BS.ByteString
+handshakeHash' = get >>= lift . handshakeHash
+
+certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
+certificateVerify (X509.PubKeyRSA pub) = do
+	debugCipherSuite' "RSA"
+	hash0 <- rsaPadding pub `liftM` handshakeHash'
+	hs <- readHandshake'
+	case hs of
+		HandshakeCertificateVerify (DigitallySigned a s) -> do
+			chk a
+			let hash1 = RSA.ep pub s
+			unless (hash1 == hash0) . throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionDecryptError
+				"client authentification failed "
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Certificate Verify"
+	where
+	chk a = case a of
+		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionDecodeError
+			("Not implement such algorithm: " ++ show a)
+certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
+	debugCipherSuite' "ECDSA"
+	hash0 <- handshakeHash'
+	hs <- readHandshake'
+	case hs of
+		HandshakeCertificateVerify (DigitallySigned a s) -> do
+			chk a
+			unless (ECDSA.verify id (pub pnt)
+				(either error id $ B.fromByteString s) hash0) .
+					throwError $ Alert
+						AlertLevelFatal
+						AlertDescriptionDecryptError
+						"ECDSA: client authentification failed"
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"Not Certificate Verify"
+	where
+	point s = let 
+		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
+		ECDSA.Point
+			(either error id $ B.fromByteString x)
+			(either error id $ B.fromByteString y)
+	pub = ECDSA.PublicKey secp256r1 . point
+	chk a = case a of
+		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
+		_ -> throwError $ Alert
+			AlertLevelFatal
+			AlertDescriptionDecodeError
+			("Not implement such algorithm: " ++ show a)
+certificateVerify p = throwError $ Alert AlertLevelFatal
+	AlertDescriptionUnsupportedCertificate
+	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
 
 clientChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 clientChangeCipherSpec = get >>= lift . clientChangeCipherSuite >>= put
@@ -343,65 +403,6 @@ rsaPadding pub bs =
 			RSA.digestToASN1 RSA.hashDescrSHA256 bs of
 		Right pd -> pd
 		Left msg -> error $ show msg
-
-certificateVerify_ :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> X509.PubKey -> TlsM h g ()
-certificateVerify_ th (X509.PubKeyRSA pub) = do
-	debugCipherSuite th "RSA"
-	hash0 <- rsaPadding pub `liftM` handshakeHash th
-	hs <- readHandshake th
-	case hs of
-		HandshakeCertificateVerify (DigitallySigned a s) -> do
-			chk a
-			let hash1 = RSA.ep pub s
-			unless (hash1 == hash0) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"client authentification failed "
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Certificate Verify"
-	where
-	chk a = case a of
-		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionDecodeError
-			("Not implement such algorithm: " ++ show a)
-certificateVerify_ th (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
-	debugCipherSuite th "ECDSA"
-	hash0 <- handshakeHash th
-	hs <- readHandshake th
-	case hs of
-		HandshakeCertificateVerify (DigitallySigned a s) -> do
-			chk a
-			unless (ECDSA.verify id (pub pnt)
-				(either error id $ B.fromByteString s) hash0) .
-					throwError $ Alert
-						AlertLevelFatal
-						AlertDescriptionDecryptError
-						"ECDSA: client authentification failed"
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Certificate Verify"
-	where
-	point s = let 
-		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
-		ECDSA.Point
-			(either error id $ B.fromByteString x)
-			(either error id $ B.fromByteString y)
-	pub = ECDSA.PublicKey secp256r1 . point
-	chk a = case a of
-		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionDecodeError
-			("Not implement such algorithm: " ++ show a)
-certificateVerify_ _ p = throwError $ Alert AlertLevelFatal
-	AlertDescriptionUnsupportedCertificate
-	("TlsServer.certificateVerify_: " ++ "not implemented: " ++ show p)
 
 clientChangeCipherSuite :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (TlsHandle h g)
