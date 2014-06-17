@@ -55,9 +55,9 @@ import TlsMonad (
 	finishedHash_, handshakeHash, withRandom, randomByteString,
 	TlsClientState, initialTlsState,
 
-	TlsClientConst(..), checkName, clientName,
+	checkName, clientName,
 	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
-	TlsHandle, newClient,
+	TlsHandle(..), newClient,
 
 	Partner(..), ContentType(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
