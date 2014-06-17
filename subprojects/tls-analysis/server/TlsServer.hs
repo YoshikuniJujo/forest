@@ -92,6 +92,10 @@ curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
 
 type HandshakeM h g = StateT (TlsHandle h g) (TlsM h g)
 
+tlsPut' :: (HandleLike h, CPRG g) =>
+	ContentType -> BS.ByteString -> HandshakeM h g ()
+tlsPut' ct bs = get >>= lift . \t -> tlsPut t ct bs
+
 openClient :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
@@ -145,28 +149,16 @@ clientHello = do
 			"TlsServer.clientHello_: no supported compression method"
 		| otherwise = return ()
 
-serverHello :: (HandleLike h, CPRG g) =>
-	[CipherSuite] -> [CipherSuite] ->
+serverHello :: (HandleLike h, CPRG g) => [CipherSuite] -> [CipherSuite] ->
 	X509.CertificateChain -> X509.CertificateChain ->
 	HandshakeM h g (KeyExchange, BS.ByteString)
-serverHello cssv cscl cc ecc = do
-	th <- get
-	(cs@(CipherSuite ke _), sr) <- lift $ serverHello_ th cssv cscl cc ecc
-	modify $ setCipherSuite cs
-	return (ke, sr)
-
-serverHello_ :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> [CipherSuite] -> [CipherSuite] ->
-	X509.CertificateChain -> X509.CertificateChain ->
-	TlsM h g (CipherSuite, BS.ByteString)
-serverHello_ th csssv css cc ccec = do
-	sr <- randomByteString 32
-	cs <- case cipherSuiteSel csssv css of
+serverHello csssv css cc ccec = do
+	sr <- lift $ randomByteString 32
+	cs@(CipherSuite ke _) <- case cipherSuiteSel csssv css of
 		Just cs -> return cs
 		_ -> throwError $ Alert
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.clientHello_: no supported cipher suites"
-	let CipherSuite ke _ = cs
 	let	cccc = case ke of
 			ECDHE_ECDSA -> ccec
 			_ -> cc
@@ -175,9 +167,9 @@ serverHello_ th csssv css cc ccec = do
 				version sr sessionId
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
-		(ct, bs) = contentListToByteString cont
-	tlsPut th ct bs
-	return (cs, sr)
+	uncurry tlsPut' $ contentListToByteString cont
+	modify $ setCipherSuite cs
+	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, CPRG g,
 	Base b, B.Bytable b, B.Bytable (Public b), SecretKey sk) =>
