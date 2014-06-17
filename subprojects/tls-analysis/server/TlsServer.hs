@@ -14,12 +14,10 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.State (execStateT, get, put, modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
--- import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
--- import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
@@ -32,8 +30,6 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
--- import qualified Crypto.PubKey.RSA.PKCS15 as RSA
--- import qualified Crypto.PubKey.HashDescr as RSA
 import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -274,14 +270,6 @@ clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
 			_ -> throwError "bad: never occur"
 		return pms
 
-{-
-decryptRSA :: (HandleLike h, CPRG g) =>
-	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-decryptRSA sk e =
-	either (throwError . strMsg . show) return =<<
-	withRandom' (\g -> RSA.decryptSafer g sk e)
-	-}
-
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	debugCipherSuite' "RSA"
@@ -339,15 +327,6 @@ certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
-
-{-
-rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
-rsaPadding pub bs =
-	case RSA.padSignature (RSA.public_size pub) $
-			RSA.digestToASN1 RSA.hashDescrSHA256 bs of
-		Right pd -> pd
-		Left msg -> error $ show msg
-		-}
 
 clientChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 clientChangeCipherSpec = do

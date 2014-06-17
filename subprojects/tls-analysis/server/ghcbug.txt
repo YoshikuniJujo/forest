@@ -1,0 +1,2 @@
+tlsGet' :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+tlsGet' n = get >>= lift $ flip tlsGet n
