@@ -9,7 +9,6 @@ module TlsHandle (
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
 	
-	Keys(..),
 	flushCipherSuite,
 
 	newHandle,
@@ -20,7 +19,7 @@ module TlsHandle (
 	decryptMessage,
 	hashSha1, hashSha256, encryptMessage,
 	ContentType(..),
-	TlsHandle(..),
+	TlsHandle(..), Keys,
 	finishedHash, generateKeys,
 
 	tlsGetContentType, tlsGet, tlsPut,

@@ -54,7 +54,7 @@ import HandshakeType (
 import TlsHandle (
 	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), ContentType(..),
+	TlsHandle(..), Keys, ContentType(..),
 		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 	Partner(..), finishedHash, handshakeHash )
@@ -201,20 +201,20 @@ serverToHelloDone mcs = uncurry tlsPut' . contentListToByteString .
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
 clientCertificate cs = do
-	th <- get
-	hs <- lift $ readHandshake th
+	hs <- readHandshake'
 	(pk, nm) <- case hs of
 		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
 			case X509.certPubKey $ X509.getCertificate c of
-				pub -> lift (chk th cc) >> return (pub, names cc)
+				pub -> chk cc >> return (pub, names cc)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientCertificate_: not certificate"
+	th <- get
 	put th { clientNames = nm }
 	return pk
 	where
-	chk th cc = do
-		rs <- lift .lift $ validate (tlsHandle th) cs cc
+	chk cc = do
+		rs <- validate' cs cc
 		unless (null rs) . throwError $ Alert AlertLevelFatal
 			(selectAlert rs)
 			("TlsServer.clientCertificate_: Validate Failure: "
@@ -236,13 +236,72 @@ clientCertificate cs = do
 	uan (X509.AltNameDNS s) = Just s
 	uan _ = Nothing
 
+validate' :: ValidateHandle h =>
+	X509.CertificateStore -> X509.CertificateChain ->
+	HandshakeM h g [X509.FailedReason]
+validate' cs cc = get >>= \t -> lift . lift . lift $ validate (tlsHandle t) cs cc
+
 clientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	b -> Maybe (Secret b) -> HandshakeM h g ()
-clientKeyExchange cr cv sr rsk bs msk = get >>= \t -> (put =<<) . lift $
-	case msk of
-		Just sk -> ecClientKeyExchange t cr sr bs sk
-		_ -> clientKeyExchange_ t cr cv sr rsk
+clientKeyExchange cr cv sr rsk bs msk = case msk of
+	Just sk -> ecClientKeyExchange cr sr bs sk
+	_ -> clientKeyExchange_ cr cv sr rsk
+
+ecClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
+	BS.ByteString -> BS.ByteString -> b -> Secret b -> HandshakeM h g ()
+ecClientKeyExchange cr sr dhps dhpn = do
+	hs <- readHandshake'
+	case hs of
+		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
+			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
+			ks <- generateKeys' cr sr pms
+			th <- get
+			put th { keys = ks }
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientKeyExchange: not client key exchange"
+
+generateKeys' :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
+	HandshakeM h g Keys
+generateKeys' cr sr pms = do
+	th <- get
+	lift $ generateKeys (cipherSuite th) cr sr pms
+
+clientKeyExchange_ :: (HandleLike h, CPRG g) =>
+	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
+	HandshakeM h g ()
+clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
+	hs <- readHandshake'
+	case hs of
+		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
+			let epms = BS.drop 2 epms_
+			r <- randomByteString' 46
+			pms <- mkpms epms `catchError` const (return $ dummy r)
+			ks <- generateKeys' cr sr pms
+			th <- get
+			put th { keys = ks }
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientKeyExchange: not client key exchange"
+	where
+	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
+	mkpms epms = do
+		pms <- decryptRSA' sk epms
+		unless (BS.length pms == 48) $ throwError "bad: length"
+		case BS.unpack $ BS.take 2 pms of
+			[pmsvmjr, pmsvmnr] ->
+				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
+					throwError "bad: version"
+			_ -> throwError "bad: never occur"
+		return pms
+
+randomByteString' :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+randomByteString' = lift . randomByteString
+
+decryptRSA' :: (HandleLike h, CPRG g) =>
+	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
+decryptRSA' = (lift .) . decryptRSA
 
 certificateVerify :: (HandleLike h, CPRG g) =>
 	Maybe X509.PubKey -> HandshakeM h g ()
@@ -277,34 +336,6 @@ validationCache = X509.ValidationCache
 
 validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
-
-clientKeyExchange_ :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> BS.ByteString -> Version -> BS.ByteString ->
-	RSA.PrivateKey -> TlsM h g (TlsHandle h g)
-clientKeyExchange_ th cr (cvmjr, cvmnr) sr sk = do
-	hs <- readHandshake th
-	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
-			let epms = BS.drop 2 epms_
-			r <- randomByteString 46
-			pms <- mkpms epms `catchError` const (return $ dummy r)
-			ks <- generateKeys cs cr sr pms
-			return $ th { keys = ks }
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
-	where
-	cs = cipherSuite th
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
-	mkpms epms = do
-		pms <- decryptRSA sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
-		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] ->
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
-		return pms
 
 rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
 rsaPadding pub bs =
@@ -444,21 +475,6 @@ parseContent rd ContentTypeHandshake = ContentHandshake `liftM` do
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
 parseContent _ ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
-
-ecClientKeyExchange ::
-	(HandleLike h, Base b, B.Bytable (Public b), CPRG g) =>
-	TlsHandle h g -> BS.ByteString -> BS.ByteString ->
-	b -> Secret b -> TlsM h g (TlsHandle h g)
-ecClientKeyExchange th cr sr dhps dhpn = do
-	hs <- readHandshake th
-	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
-			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
-			ks <- generateKeys (cipherSuite th) cr sr pms
-			return th { keys = ks }
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
 
 contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
 contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
