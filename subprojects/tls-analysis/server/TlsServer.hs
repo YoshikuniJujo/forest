@@ -138,7 +138,7 @@ serverHello :: (HandleLike h, CPRG g) => [CipherSuite] -> [CipherSuite] ->
 	X509.CertificateChain -> X509.CertificateChain ->
 	HandshakeM h g (KeyExchange, BS.ByteString)
 serverHello csssv css cc ccec = do
-	sr <- randomByteString' 32
+	sr <- randomByteString 32
 	cs@(CipherSuite ke _) <- case cipherSuiteSel csssv css of
 		Just cs -> return cs
 		_ -> throwError $ Alert
@@ -152,14 +152,14 @@ serverHello csssv css cc ccec = do
 				version sr sessionId
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
-	uncurry tlsPut' $ contentListToByteString cont
+	uncurry tlsPut $ contentListToByteString cont
 	modify $ setCipherSuite cs
 	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 		Base b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
-serverKeyExchange cr sr sk ps dhsk = uncurry tlsPut' . contentListToByteString .
+serverKeyExchange cr sr sk ps dhsk = uncurry tlsPut . contentListToByteString .
 	(: []) . ContentHandshake .  HandshakeServerKeyExchange . B.toByteString $
 		ServerKeyExchange bs pv
 			HashAlgorithmSha1 (signatureAlgorithm sk)
@@ -170,11 +170,11 @@ serverKeyExchange cr sr sk ps dhsk = uncurry tlsPut' . contentListToByteString .
 
 generateSecretKey ::
 	(HandleLike h, CPRG g, Base b) => b -> HandshakeM h g (Secret b)
-generateSecretKey bs = withRandom' $ generateSecret bs
+generateSecretKey bs = withRandom $ generateSecret bs
 
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g ()
-serverToHelloDone mcs = uncurry tlsPut' . contentListToByteString .
+serverToHelloDone mcs = uncurry tlsPut . contentListToByteString .
 	map ContentHandshake . catMaybes . (: [Just HandshakeServerHelloDone]) $
 		mcs >>= return . HandshakeCertificateRequest . CertificateRequest
 				clientCertificateTypes
@@ -235,7 +235,7 @@ ecClientKeyExchange cr sr dhps dhpn = do
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
 			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
-			ks <- generateKeys' cr sr pms
+			ks <- generateKeys cr sr pms
 			th <- get
 			put th { keys = ks }
 		_ -> throwError $ Alert AlertLevelFatal
@@ -250,9 +250,9 @@ clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
 			let epms = BS.drop 2 epms_
-			r <- randomByteString' 46
+			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
-			ks <- generateKeys' cr sr pms
+			ks <- generateKeys cr sr pms
 			th <- get
 			put th { keys = ks }
 		_ -> throwError $ Alert AlertLevelFatal
@@ -272,8 +272,8 @@ clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pub) = do
-	debugCipherSuite' "RSA"
-	hash0 <- rsaPadding pub `liftM` handshakeHash'
+	debugCipherSuite "RSA"
+	hash0 <- rsaPadding pub `liftM` handshakeHash
 	hs <- readHandshake
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -295,8 +295,8 @@ certificateVerify (X509.PubKeyRSA pub) = do
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
 certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
-	debugCipherSuite' "ECDSA"
-	hash0 <- handshakeHash'
+	debugCipherSuite "ECDSA"
+	hash0 <- handshakeHash
 	hs <- readHandshake
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
@@ -341,7 +341,7 @@ clientChangeCipherSpec = do
 
 clientFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 clientFinished = do
-	fhc <- finishedHash' Client
+	fhc <- finishedHash Client
 	cnt <- readContent
 	case cnt of
 		ContentHandshake (HandshakeFinished f) ->
@@ -356,13 +356,13 @@ clientFinished = do
 
 serverChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverChangeCipherSpec = do
-	uncurry tlsPut' . contentToByteString $
+	uncurry tlsPut . contentToByteString $
 		ContentChangeCipherSpec ChangeCipherSpec
 	flushCipherSuite Server `liftM` get >>= put
 
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
-serverFinished = uncurry tlsPut' . contentToByteString .
-	ContentHandshake . HandshakeFinished =<< finishedHash' Server
+serverFinished = uncurry tlsPut . contentToByteString .
+	ContentHandshake . HandshakeFinished =<< finishedHash Server
 
 readHandshake :: (HandleLike h, CPRG g) => HandshakeM h g Handshake
 readHandshake = do
@@ -379,7 +379,7 @@ readHandshake = do
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
 readContent :: (HandleLike h, CPRG g) => HandshakeM h g Content
-readContent = parseContent tlsGet' =<< tlsGetContentType'
+readContent = parseContent tlsGet =<< tlsGetContentType
 
 parseContent :: Monad m => (Int -> m BS.ByteString) -> ContentType -> m Content
 parseContent rd ContentTypeChangeCipherSpec =
