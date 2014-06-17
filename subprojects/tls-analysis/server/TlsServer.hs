@@ -49,7 +49,7 @@ import HandshakeType (
 	ClientKeyExchange(..),
 	DigitallySigned(..) )
 
-import TlsMonad (
+import TlsHandle (
 	TlsM, runTlsM,
 	readContentType, readByteString, writeByteString,
 	finishedHash_, handshakeHash, withRandom, randomByteString,
