@@ -24,12 +24,12 @@ module TlsHandle (
 	TlsHandle(..),
 	finishedHash_, generateKeys_, checkName, clientName,
 
-	tlsGet, tlsPut,
-	readContentType,
+	tlsGetContentType, tlsGet, tlsPut,
 ) where
 
 import Prelude hiding (read)
 
+import Control.Applicative
 import Control.Monad
 import Data.Maybe
 import Data.Word
@@ -81,7 +81,6 @@ getContentType th rd = do
 		(ct, bf) <- rd
 		setBuf (clientId th) (Just ct, bf)
 		return ct
-
 
 buffered :: HandleLike h =>
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString) ->
@@ -150,10 +149,10 @@ newClient h = do
 instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut = tPutSt
-	hlGet = tGetSt
-	hlGetLine = tGetLineSt
-	hlGetContent = tGetContentSt
+	hlPut = flip tlsPut ContentTypeApplicationData
+	hlGet = (.) <$> checkAppData <*> tlsGet
+	hlGetLine = tGetLine
+	hlGetContent = tGetContent
 	hlDebug h l = lift . lift . hlDebug (tlsHandle h) l
 	hlClose = tCloseSt
 
@@ -163,13 +162,9 @@ checkName tc n = n `elem` tlsNames tc
 clientName :: TlsHandle h g -> Maybe String
 clientName = listToMaybe . tlsNames 
 
-tPutSt :: (HandleLike h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-tPutSt tc = writeByteString tc ContentTypeApplicationData
-
-writeByteString, tlsPut :: (HandleLike h, CPRG g) =>
+tlsPut :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g ()
-tlsPut = writeByteString
-writeByteString th ct bs = do
+tlsPut th ct bs = do
 	enc <- tlsEncryptMessage th (keys th) ct bs
 	case ct of
 		ContentTypeHandshake -> updateHash th bs
@@ -180,55 +175,21 @@ writeByteString th ct bs = do
 		B.toByteString (3 :: Word8),
 		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
 
-tGetWholeSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetWholeSt tc = do
-	ret <- readFragment tc
-	case ret of
-		(ContentTypeApplicationData, ad) -> return ad
-		(ContentTypeAlert, "\SOH\NUL") -> do
-			writeByteString tc ContentTypeAlert "\SOH\NUL"
-			thlError h "tGetWholeSt: EOF"
-		_ -> do	writeByteString tc ContentTypeAlert "\2\10"
-			error "not application data"
-	where
-	h = tlsHandle tc
-
-readFragment :: HandleLike h =>
-	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
-readFragment th = do
-	ct <- (either error id . B.fromByteString) `liftM` read th 1
-	[_vmjr, _vmnr] <- BS.unpack `liftM` read th 2
-	ebody <- read th . either error id . B.fromByteString =<< read th 2
-	when (BS.null ebody) $ throwError "readFragment: ebody is null"
-	body <- tlsDecryptMessage th (keys th) ct ebody
-	return (ct, body)
-
-tGetSt :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
-tGetSt tc n = do
-	(mct, bfr) <- getBuf $ clientId tc
-	if n <= BS.length bfr then do
-		let (ret, bfr') = BS.splitAt n bfr
-		setBuf (clientId tc) (mct, bfr')
-		return ret
-	else do	msg <- tGetWholeSt tc
-		setBuf (clientId tc) (Just ContentTypeApplicationData, msg)
-		(bfr `BS.append`) `liftM` tGetSt tc (n - BS.length bfr)
-
-tGetLineSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetLineSt tc = do
+tGetLine :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
+tGetLine tc = do
 	(mct, bfr) <- getBuf $ clientId tc
 	case splitOneLine bfr of
 		Just (l, ls) -> do
 			setBuf (clientId tc) (mct, ls)
 			return l
-		_ -> do	msg <- tGetWholeSt tc
+		_ -> do	msg <- tGetWhole tc
 			setBuf (clientId tc) (Just ContentTypeApplicationData, msg)
-			(bfr `BS.append`) `liftM` tGetLineSt tc
+			(bfr `BS.append`) `liftM` tGetLine tc
 
-tGetContentSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetContentSt tc = do
+tGetContent :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
+tGetContent tc = do
 	(_, bfr) <- getBuf $ clientId tc
-	if BS.null bfr then tGetWholeSt tc else do
+	if BS.null bfr then tGetWhole tc else do
 		setBuf (clientId tc) (Nothing, BS.empty)
 		return bfr
 
@@ -247,7 +208,7 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 
 tCloseSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
 tCloseSt tc = do
-	writeByteString tc ContentTypeAlert "\SOH\NUL"
+	tlsPut tc ContentTypeAlert "\SOH\NUL"
 	thlClose h
 	where
 	h = tlsHandle tc
@@ -256,14 +217,39 @@ tlsGet, readByteString :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
 tlsGet = readByteString
 readByteString th n = do
-	(ct, bs) <- buffered th n $ readFragment th
+	(ct, bs) <- buffered th n $ tGetWholeWithCt th
 	case ct of
 		ContentTypeHandshake -> updateHash th bs
 		_ -> return ()
 	return (ct, bs)
 
-readContentType :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ContentType
-readContentType th = getContentType th $ readFragment th
+tGetWhole :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
+tGetWhole th = checkAppData th $ tGetWholeWithCt th
+
+checkAppData :: (HandleLike h, CPRG g) => TlsHandle h g ->
+	TlsM h g (ContentType, BS.ByteString) -> TlsM h g BS.ByteString
+checkAppData th m = do
+	ctbs <- m
+	case ctbs of
+		(ContentTypeApplicationData, ad) -> return ad
+		(ContentTypeAlert, "\SOH\NUL") -> do
+			tlsPut th ContentTypeAlert "\SOH\NUL"
+			thlError (tlsHandle th) "tGetWhole: EOF"
+		_ -> do	tlsPut th ContentTypeAlert "\2\10"
+			throwError "not application data"
+
+tGetWholeWithCt :: HandleLike h =>
+	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+tGetWholeWithCt th = do
+	ct <- (either error id . B.fromByteString) `liftM` read th 1
+	[_vmjr, _vmnr] <- BS.unpack `liftM` read th 2
+	ebody <- read th . either error id . B.fromByteString =<< read th 2
+	when (BS.null ebody) $ throwError "tGetWholeWithCt: ebody is null"
+	body <- tlsDecryptMessage th (keys th) ct ebody
+	return (ct, body)
+
+tlsGetContentType :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ContentType
+tlsGetContentType th = getContentType th $ tGetWholeWithCt th
 
 tlsDecryptMessage :: HandleLike h => TlsHandle h g ->
 	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString

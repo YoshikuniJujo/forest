@@ -50,10 +50,9 @@ import HandshakeType (
 	DigitallySigned(..) )
 
 import TlsHandle (
-	TlsHandle(..), tlsGet, tlsPut,
-
 	TlsM, runTlsM,
-	readContentType,
+	TlsHandle(..), tlsGetContentType, tlsGet, tlsPut,
+
 	finishedHash_, handshakeHash, withRandom, randomByteString,
 	TlsClientState, initialTlsState,
 
@@ -427,7 +426,21 @@ readHandshake th ks = do
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
 readContent :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g Content
-readContent th = getContent (readContentType th) (tlsGet th)
+readContent th =
+	parseContent ((snd `liftM`) . tlsGet th) =<< tlsGetContentType th
+
+parseContent :: Monad m => (Int -> m BS.ByteString) -> ContentType -> m Content
+parseContent rd ContentTypeChangeCipherSpec =
+	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
+parseContent rd ContentTypeAlert =
+	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
+parseContent rd ContentTypeHandshake = ContentHandshake `liftM` do
+	t <- rd 1
+	len <- rd 3
+	body <- rd . either error id $ B.fromByteString len
+	return . either error id . B.fromByteString $ BS.concat [t, len, body]
+parseContent _ ContentTypeApplicationData = undefined
+parseContent _ _ = undefined
 
 rcvClientKeyExchange ::
 	(HandleLike h, Base b, B.Bytable (Public b), CPRG g) =>
@@ -443,26 +456,6 @@ rcvClientKeyExchange th cs cr sr dhps dhpn (_cvmjr, _cvmnr) = do
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
-
-getContent :: Monad m =>
-	m ContentType -> (Int -> m (ContentType, BS.ByteString)) -> m Content
-getContent rct rd = do
-	ct <- rct
-	parseContent ((snd `liftM`) . rd) ct
-
-parseContent :: Monad m =>
-	(Int -> m BS.ByteString) -> ContentType -> m Content
-parseContent rd ContentTypeChangeCipherSpec =
-	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
-parseContent rd ContentTypeAlert =
-	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
-parseContent rd ContentTypeHandshake = ContentHandshake `liftM` do
-	t <- rd 1
-	len <- rd 3
-	body <- rd . either error id $ B.fromByteString len
-	return . either error id . B.fromByteString $ BS.concat [t, len, body]
-parseContent _ ContentTypeApplicationData = undefined
-parseContent _ _ = undefined
 
 contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
 contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
