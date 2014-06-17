@@ -2,25 +2,41 @@
 	TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TlsServer (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..), SecretKey,
-	run, openClient, checkName, clientName
+module HandshakeMonad (
+	ValidateHandle(..),
+	run, checkName, clientName,
+
+	TlsHandle(..),
+	ContentType(..), Alert(..), AlertLevel(..), AlertDescription(..),
+	Partner(..),
+	cipherSuite,
+	flushCipherSuite,
+	TlsM, newHandle, setCipherSuite,
+	Keys,
+
+	handshakeHash', withRandom', tlsGet', tlsGetContentType', tlsPut',
+	HandshakeM, randomByteString',
+	validate', generateKeys', debugCipherSuite', finishedHash',
+
+	EcdsaSign(..), encodeEcdsaSign,
+
+	rsaPadding,
+	decryptRSA,
 ) where
 
 import Prelude hiding (read)
 
-import Control.Applicative ((<$>), (<*>))
-import Control.Monad (unless, liftM)
-import "monads-tf" Control.Monad.State (execStateT, get, put, modify)
-import "monads-tf" Control.Monad.Error (throwError, catchError)
--- import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Maybe (catMaybes, mapMaybe)
-import Data.List (find)
-import Data.Word (Word8, Word16)
+import Control.Monad (liftM)
+import "monads-tf" Control.Monad.Trans (lift)
+import "monads-tf" Control.Monad.State (StateT, get)
+import "monads-tf" Control.Monad.Error (throwError)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Data.Maybe (listToMaybe)
+-- import Data.List (find)
+import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
--- import System.IO (Handle)
-import "crypto-random" Crypto.Random (CPRG, SystemRNG)
+import System.IO (Handle)
+import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -31,33 +47,31 @@ import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
--- import qualified Crypto.PubKey.RSA.PKCS15 as RSA
--- import qualified Crypto.PubKey.HashDescr as RSA
-import qualified Crypto.Types.PubKey.ECC as ECDSA
+-- import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.PubKey.RSA.PKCS15 as RSA
+import qualified Crypto.PubKey.HashDescr as RSA
+-- import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-import qualified Crypto.Hash.SHA1 as SHA1
+-- import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+-- import qualified Crypto.Hash.SHA1 as SHA1
 
-import HandshakeType (
-	Handshake(..),
-	ClientHello(..), ServerHello(..),
-		SessionId(..),
-		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..), NamedCurve(..),
-	CertificateRequest(..),
-		ClientCertificateType(..),
-		SignatureAlgorithm(..), HashAlgorithm(..),
-	ClientKeyExchange(..),
-	DigitallySigned(..) )
-import HandshakeMonad
-import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
+import TlsHandle (
+	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
+		run, withRandom, randomByteString,
+	TlsHandle(..), Keys, ContentType(..),
+		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
+		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+	Partner(..), finishedHash, handshakeHash )
+-- import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
+{-
 type Version = (Word8, Word8)
 
 version :: Version
 version = (3, 3)
+-}
 
+{-
 sessionId :: SessionId
 sessionId = SessionId ""
 
@@ -79,10 +93,20 @@ clientCertificateAlgorithms :: [(HashAlgorithm, SignatureAlgorithm)]
 clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
+	-}
 
+{-
 curve :: ECDSA.Curve
 curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
+-}
 
+type HandshakeM h g = StateT (TlsHandle h g) (TlsM h g)
+
+tlsPut' :: (HandleLike h, CPRG g) =>
+	ContentType -> BS.ByteString -> HandshakeM h g ()
+tlsPut' ct bs = get >>= lift . \t -> tlsPut t ct bs
+
+{-
 openClient :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
@@ -142,7 +166,7 @@ serverHello :: (HandleLike h, CPRG g) => [CipherSuite] -> [CipherSuite] ->
 	X509.CertificateChain -> X509.CertificateChain ->
 	HandshakeM h g (KeyExchange, BS.ByteString)
 serverHello csssv css cc ccec = do
-	sr <- randomByteString' 32
+	sr <- lift $ randomByteString 32
 	cs@(CipherSuite ke _) <- case cipherSuiteSel csssv css of
 		Just cs -> return cs
 		_ -> throwError $ Alert
@@ -159,7 +183,9 @@ serverHello csssv css cc ccec = do
 	uncurry tlsPut' $ contentListToByteString cont
 	modify $ setCipherSuite cs
 	return (ke, sr)
+	-}
 
+{-
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 		Base b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
@@ -171,7 +197,9 @@ serverKeyExchange cr sr sk ps dhsk = uncurry tlsPut' . contentListToByteString .
 	where
 	bs = B.toByteString ps
 	pv = B.toByteString $ calculatePublic ps dhsk
+	-}
 
+{-
 generateSecretKey ::
 	(HandleLike h, CPRG g, Base b) => b -> HandshakeM h g (Secret b)
 generateSecretKey bs = withRandom' $ generateSecret bs
@@ -224,7 +252,14 @@ clientCertificate cs = do
 		_ -> error "TlsServer.clientCertificate_: empty certificate chain"
 	uan (X509.AltNameDNS s) = Just s
 	uan _ = Nothing
+	-}
 
+validate' :: ValidateHandle h =>
+	X509.CertificateStore -> X509.CertificateChain ->
+	HandshakeM h g [X509.FailedReason]
+validate' cs cc = get >>= \t -> lift . lift . lift $ validate (tlsHandle t) cs cc
+
+{-
 clientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	b -> Maybe (Secret b) -> HandshakeM h g ()
@@ -245,7 +280,15 @@ ecClientKeyExchange cr sr dhps dhpn = do
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
+			-}
 
+generateKeys' :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
+	HandshakeM h g Keys
+generateKeys' cr sr pms = do
+	th <- get
+	lift $ generateKeys (cipherSuite th) cr sr pms
+
+{-
 clientKeyExchange_ :: (HandleLike h, CPRG g) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	HandshakeM h g ()
@@ -273,15 +316,23 @@ clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
 					throwError "bad: version"
 			_ -> throwError "bad: never occur"
 		return pms
+		-}
 
-{-
+randomByteString' :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+randomByteString' = lift . randomByteString
+
 decryptRSA :: (HandleLike h, CPRG g) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
 decryptRSA sk e =
 	either (throwError . strMsg . show) return =<<
 	withRandom' (\g -> RSA.decryptSafer g sk e)
-	-}
 
+debugCipherSuite' :: HandleLike h => String -> HandshakeM h g ()
+debugCipherSuite' msg = do
+	th <- get
+	lift $ debugCipherSuite th msg
+
+{-
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	debugCipherSuite' "RSA"
@@ -339,16 +390,16 @@ certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
+	-}
 
-{-
 rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
 rsaPadding pub bs =
 	case RSA.padSignature (RSA.public_size pub) $
 			RSA.digestToASN1 RSA.hashDescrSHA256 bs of
 		Right pd -> pd
 		Left msg -> error $ show msg
-		-}
 
+{-
 clientChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 clientChangeCipherSpec = do
 	cnt <- readContent
@@ -374,7 +425,12 @@ clientFinished = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"Not Finished"
+			-}
 
+finishedHash' :: (HandleLike h, CPRG g) => Partner -> HandshakeM h g BS.ByteString
+finishedHash' p = get >>= lift . flip finishedHash p
+
+{-
 serverChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverChangeCipherSpec = do
 	uncurry tlsPut' . contentToByteString $
@@ -384,7 +440,22 @@ serverChangeCipherSpec = do
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverFinished = uncurry tlsPut' . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash' Server
+	-}
 
+class HandleLike h => ValidateHandle h where
+	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
+		HandleMonad h [X509.FailedReason]
+
+instance ValidateHandle Handle where
+	validate _ cs = X509.validate X509.HashSHA256 X509.defaultHooks
+		validationChecks cs validationCache ("", "")
+		where
+		validationCache = X509.ValidationCache
+			(\_ _ _ -> return X509.ValidationCacheUnknown)
+			(\_ _ _ -> return ())
+		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
+
+{-
 readHandshake :: (HandleLike h, CPRG g) => HandshakeM h g Handshake
 readHandshake = do
 	cnt <- readContent
@@ -401,6 +472,15 @@ readHandshake = do
 
 readContent :: (HandleLike h, CPRG g) => HandshakeM h g Content
 readContent = parseContent tlsGet' =<< tlsGetContentType'
+-}
+
+tlsGet' :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+tlsGet' = (snd `liftM`) . (get >>=) . (.) lift . flip tlsGet
+
+tlsGetContentType' :: (HandleLike h, CPRG g) => HandshakeM h g ContentType
+tlsGetContentType' = get >>= lift . tlsGetContentType
+
+{-
 
 parseContent :: Monad m => (Int -> m BS.ByteString) -> ContentType -> m Content
 parseContent rd ContentTypeChangeCipherSpec =
@@ -431,6 +511,7 @@ data Content
 	| ContentAlert Word8 Word8
 	| ContentHandshake Handshake
 	deriving Show
+	-}
 
 data ChangeCipherSpec
 	= ChangeCipherSpec
@@ -445,6 +526,7 @@ instance B.Bytable ChangeCipherSpec where
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
+{-
 data ServerKeyExchange
 	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
 	deriving Show
@@ -459,6 +541,7 @@ serverKeyExchangeToByteString
 	BS.concat [
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
 		B.addLength (undefined :: Word16) sn ]
+		-}
 
 data EcCurveType
 	= ExplicitPrime
@@ -474,40 +557,42 @@ instance B.Bytable EcCurveType where
 	toByteString NamedCurve = BS.pack [3]
 	toByteString (EcCurveTypeRaw w) = BS.pack [w]
 
-instance SecretKey RSA.PrivateKey where
-	sign sk hs bs = let
-		h = hs bs
-		a = [ASN1.Start ASN1.Sequence,
-			ASN1.Start ASN1.Sequence,
-			ASN1.OID [1, 3, 14, 3, 2, 26],
-			ASN1.Null,
-			ASN1.End ASN1.Sequence,
-			ASN1.OctetString h,
-			ASN1.End ASN1.Sequence]
-		b = ASN1.encodeASN1' ASN1.DER a
-		pd = BS.concat [
-			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
-			"\NUL", b ] in
-		RSA.dp Nothing sk pd
-	signatureAlgorithm _ = SignatureAlgorithmRsa
+instance B.Bytable ECDSA.Signature where
+	fromByteString = decodeSignature
+	toByteString = undefined
 
-class SecretKey sk where
-	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
-		BS.ByteString -> BS.ByteString
-	signatureAlgorithm :: sk -> SignatureAlgorithm
+decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
+decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
+	Right [ASN1.Start ASN1.Sequence,
+		ASN1.IntVal r,
+		ASN1.IntVal s,
+		ASN1.End ASN1.Sequence] ->
+		Right $ ECDSA.Signature r s
+	Right _ -> Left "KeyExchange.decodeSignature"
+	Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
 
-instance SecretKey ECDSA.PrivateKey where
-	sign sk hs bs = let
-		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
-		encodeEcdsaSign $ EcdsaSign 0x30 (2, r) (2, s)
-	signatureAlgorithm _ = SignatureAlgorithmEcdsa
+data EcdsaSign
+	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
+	deriving Show
 
-instance B.Bytable ECDSA.Curve where
-	fromByteString = undefined
-	toByteString = encodeCurve
+encodeEcdsaSign :: EcdsaSign -> BS.ByteString
+encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
+	BS.pack [t, len rbbs + len sbbs + 4],
+	BS.pack [rt, len rbbs], rbbs,
+	BS.pack [st, len sbbs], sbbs ]
+	where
+	len = fromIntegral . BS.length
+	rbbs = B.toByteString rb
+	sbbs = B.toByteString sb
 
-encodeCurve :: ECDSA.Curve -> BS.ByteString
-encodeCurve c
-	| c == secp256r1 =
-		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
-	| otherwise = error "TlsServer.encodeCurve: not implemented"
+handshakeHash' :: HandleLike h => HandshakeM h g BS.ByteString
+handshakeHash' = get >>= lift . handshakeHash
+
+withRandom' :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
+withRandom' = lift . withRandom
+
+checkName :: TlsHandle h g -> String -> Bool
+checkName tc n = n `elem` clientNames tc
+
+clientName :: TlsHandle h g -> Maybe String
+clientName = listToMaybe . clientNames
