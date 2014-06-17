@@ -50,14 +50,12 @@ import HandshakeType (
 	DigitallySigned(..) )
 
 import TlsHandle (
-	TlsM, runTlsM,
-	TlsHandle(..), tlsGetContentType, tlsGet, tlsPut,
+	TlsM, run,
+	TlsHandle(..), tlsGetContentType, tlsGet, tlsPut, checkName, clientName,
+	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
 
 	finishedHash_, handshakeHash, withRandom, randomByteString,
-	TlsClientState, initialTlsState,
 
-	checkName, clientName,
-	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
 	newClient,
 
 	Partner(..), ContentType(..),
@@ -92,15 +90,6 @@ clientCertificateAlgorithms :: [(HashAlgorithm, SignatureAlgorithm)]
 clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
-
-run :: (HandleLike h, CPRG g) => TlsM h g a -> g -> HandleMonad h a
-run = (liftM fst .) . runClient
-
-runClient :: (HandleLike h, CPRG g) =>
-	TlsM h g a -> g -> HandleMonad h (a, TlsClientState h g)
-runClient s g = do
-	(Right ret, st') <- s `runTlsM` initialTlsState g
-	return (ret, st')
 
 curve :: ECDSA.Curve
 curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))

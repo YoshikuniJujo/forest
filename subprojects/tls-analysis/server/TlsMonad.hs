@@ -2,7 +2,7 @@
 	FlexibleContexts #-}
 
 module TlsMonad (
-	TlsM, runTlsM,
+	TlsM, run,
 	thlPut, thlGet, thlDebug, thlError, thlClose,
 	getBuf, setBuf, withRandom,
 	getServerSn, getClientSn, succServerSn, succClientSn,
@@ -34,6 +34,15 @@ import Data.HandleLike
 import qualified Data.ByteString as BS
 
 import qualified ClientState as CS
+
+run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
+run = (liftM fst .) . runClient
+
+runClient :: HandleLike h =>
+	TlsM h g a -> g -> HandleMonad h (a, CS.TlsClientState h g)
+runClient s g = do
+	(Right ret, st') <- s `runTlsM` CS.initialTlsState g
+	return (ret, st')
 
 type TlsM h g = ErrorT CS.Alert (StateT (HandshakeState h g) (HandleMonad h))
 

@@ -2,8 +2,7 @@
 	FlexibleContexts, TypeFamilies #-}
 
 module TlsHandle (
-	TlsM, runTlsM,
-	HandshakeState,
+	TlsM, run,
 	read, write, randomByteString, updateHash, handshakeHash,
 	updateSequenceNumber,
 	getContentType, buffered, withRandom, debugCipherSuite,
@@ -129,8 +128,6 @@ debugCipherSuite th a = do
 		. show . kCachedCipherSuite $ keys th
 	where
 	lenSpace n str = str ++ replicate (n - length str) ' '
-
-type HandshakeState h g = TlsClientState h g
 
 data TlsHandle h g = TlsHandle {
 	clientId :: ClientId,
