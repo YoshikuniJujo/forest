@@ -12,8 +12,6 @@ module TlsMonad (
 	CS.Keys(..),
 	CS.TlsClientState, CS.ClientId,
 	CS.initialTlsState,
-	
-	getHash, updateH,
 
 	throwError, runErrorT, catchError, ErrorType, Error, MonadError, lift,
 	modify, StateT(..),
@@ -56,9 +54,6 @@ runTlsM m st = runErrorT m `runStateT` st
 
 data Partner = Server | Client deriving (Show, Eq)
 
-updateH :: HandleLike h => CS.ClientId -> BS.ByteString -> TlsM h gen ()
-updateH cid = modify . CS.updateHandshakeHash cid
-
 getBuf ::  HandleLike h =>
 	CS.ClientId -> TlsM h g (Maybe CS.ContentType, BS.ByteString)
 getBuf = gets . CS.getBuffer
@@ -66,9 +61,6 @@ getBuf = gets . CS.getBuffer
 setBuf :: HandleLike h =>
 	CS.ClientId -> (Maybe CS.ContentType, BS.ByteString) -> TlsM h g ()
 setBuf = (modify .) . CS.setBuffer
-
-getHash :: HandleLike h => CS.ClientId -> TlsM h g BS.ByteString
-getHash = gets . CS.getHandshakeHash
 
 getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64
 getServerSn = gets . CS.getServerSequenceNumber

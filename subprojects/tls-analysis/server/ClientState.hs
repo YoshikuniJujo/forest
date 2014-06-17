@@ -7,7 +7,6 @@ module ClientState (
 	newClientId,
 	setBuffer, getBuffer,
 	setRandomGen, getRandomGen,
-	updateHandshakeHash, getHandshakeHash,
 	succClientSequenceNumber, getClientSequenceNumber,
 	succServerSequenceNumber, getServerSequenceNumber,
 	initialTlsState,
@@ -27,8 +26,6 @@ import Prelude hiding (read)
 import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
-
-import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Codec.Bytable as B
 import CipherSuite
@@ -62,9 +59,7 @@ modifyClientState cid f cs = let
 data TlsClientStateOne gen = TlsClientStateOne {
 	tlsBuffer :: (Maybe ContentType, BS.ByteString),
 	tlsClientSequenceNumber :: Word64,
-	tlsServerSequenceNumber :: Word64,
-	tlsHandshakeHashCtx :: SHA256.Ctx
-	}
+	tlsServerSequenceNumber :: Word64 }
 
 data ClientId = ClientId Int deriving (Show, Eq)
 
@@ -77,9 +72,7 @@ newClientId s = (ClientId cid ,) s {
 	cs = TlsClientStateOne {
 		tlsBuffer = (Nothing, ""),
 		tlsClientSequenceNumber = 0,
-		tlsServerSequenceNumber = 0,
-		tlsHandshakeHashCtx = SHA256.init
-		}
+		tlsServerSequenceNumber = 0 }
 	sl = tlsClientStateList s
 
 setBuffer :: ClientId ->
@@ -95,15 +88,6 @@ setRandomGen rg st = st { tlsRandomGen = rg }
 
 getRandomGen :: TlsClientState h gen -> gen
 getRandomGen = tlsRandomGen
-
-updateHandshakeHash :: ClientId -> BS.ByteString -> Modify (TlsClientState h gen)
-updateHandshakeHash cid = modifyClientState cid . uh
-	where uh bs st@TlsClientStateOne { tlsHandshakeHashCtx = ctx } =
-		st { tlsHandshakeHashCtx = SHA256.update ctx bs }
-
-getHandshakeHash :: ClientId -> TlsClientState h gen -> BS.ByteString
-getHandshakeHash cid = SHA256.finalize .
-	tlsHandshakeHashCtx . fromJust . lookup cid . tlsClientStateList
 
 type Modify s = s -> s
 

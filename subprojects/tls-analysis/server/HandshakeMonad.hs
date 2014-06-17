@@ -14,7 +14,6 @@ module HandshakeMonad (
 	TH.flushCipherSuite,
 	TH.TlsM,
 	TH.newHandle, TH.setCipherSuite,
---	TH.Keys,
 
 	handshakeHash, withRandom, tlsGet, tlsGetContentType, tlsPut,
 	HandshakeM, randomByteString,
@@ -28,9 +27,9 @@ module HandshakeMonad (
 
 import Prelude hiding (read)
 
-import Control.Monad (liftM)
+-- import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (StateT, get)
+import "monads-tf" Control.Monad.State (StateT, get, put)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (listToMaybe)
@@ -64,7 +63,7 @@ type HandshakeM h g = StateT (TH.TlsHandle h g) (TH.TlsM h g)
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
-tlsPut ct bs = get >>= lift . \t -> TH.tlsPut t ct bs
+tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 
 validate' :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
@@ -115,7 +114,11 @@ instance ValidateHandle Handle where
 		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
 tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-tlsGet = (snd `liftM`) . (get >>=) . (.) lift . flip TH.tlsGet
+tlsGet n = do -- (snd `liftM`) . (get >>=) . (.) lift . flip TH.tlsGet
+	t <- get
+	((_, bs), t') <- lift $ TH.tlsGet t n
+	put t'
+	return bs
 
 tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
 tlsGetContentType = get >>= lift . TH.tlsGetContentType
