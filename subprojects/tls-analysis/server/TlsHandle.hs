@@ -9,10 +9,10 @@ module TlsHandle (
 
 	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
 	
-	Keys(..), nullKeys,
+	Keys(..),
 	flushCipherSuite,
 
-	newClient,
+	newHandle,
 
 	ErrorType, Error, MonadError, throwError, lift, catchError,
 
@@ -21,7 +21,7 @@ module TlsHandle (
 	hashSha1, hashSha256, encryptMessage,
 	ContentType(..),
 	TlsHandle(..),
-	finishedHash_, generateKeys_, checkName, clientName,
+	finishedHash_, generateKeys_,
 
 	tlsGetContentType, tlsGet, tlsPut,
 ) where
@@ -131,17 +131,17 @@ debugCipherSuite th a = do
 
 data TlsHandle h g = TlsHandle {
 	clientId :: ClientId,
-	tlsNames :: [String],
+	clientNames :: [String],
 	tlsHandle :: h,
 	keys :: Keys }
 
-newClient :: HandleLike h => h -> TlsM h g (TlsHandle h g)
-newClient h = do
+newHandle :: HandleLike h => h -> TlsM h g (TlsHandle h g)
+newHandle h = do
 	s <- get
 	let (cid, s') = newClientId s
 	put s'
 	return TlsHandle {
-		clientId = cid, tlsNames = [], tlsHandle = h, keys = nullKeys }
+		clientId = cid, clientNames = [], tlsHandle = h, keys = nullKeys }
 
 instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
@@ -152,12 +152,6 @@ instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	hlGetContent = tGetContent
 	hlDebug h l = lift . lift . hlDebug (tlsHandle h) l
 	hlClose = tCloseSt
-
-checkName :: TlsHandle h g -> String -> Bool
-checkName tc n = n `elem` tlsNames tc
-
-clientName :: TlsHandle h g -> Maybe String
-clientName = listToMaybe . tlsNames 
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g ()

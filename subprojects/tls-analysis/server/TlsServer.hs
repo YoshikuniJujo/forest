@@ -13,7 +13,7 @@ import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM)
 import "monads-tf" Control.Monad.Error (throwError, catchError, lift)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, listToMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
@@ -48,18 +48,18 @@ import HandshakeType (
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ClientKeyExchange(..),
 	DigitallySigned(..) )
-
 import TlsHandle (
-	TlsM, run,
-	TlsHandle(..), tlsGetContentType, tlsGet, tlsPut, checkName, clientName,
-	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
+	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
+		run, withRandom, randomByteString,
+	TlsHandle(..), Keys(..), ContentType(..),
+		newHandle, tlsGetContentType, tlsGet, tlsPut,
 
-	finishedHash_, handshakeHash, withRandom, randomByteString,
+	generateKeys_,
 
-	newClient,
+	flushCipherSuite, debugCipherSuite,
+	finishedHash_, handshakeHash,
 
-	Partner(..), ContentType(..),
-	Alert(..), AlertLevel(..), AlertDescription(..),
+	Partner(..),
 	)
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
@@ -99,7 +99,7 @@ openClient :: (SecretKey sk, CPRG g, ValidateHandle h) =>
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
 openClient h css (sk, cc) (pkec, ccec) mcs = do
-	th <- newClient h
+	th <- newHandle h
 	(cv, cs, cr, sr) <- hello th css cc ccec
 	let CipherSuite ke _ = cs
 	case ke of
@@ -136,12 +136,12 @@ handshake isdh th cs cr sr ps cv sks skd mcs = do
 	clientFinished thcc
 	thsc <- serverChangeCipherSuite thcc
 	serverFinished thsc
-	return thsc { tlsNames = maybe [] snd mpn }
+	return thsc { clientNames = maybe [] snd mpn }
 
 clientHello :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (Version, [CipherSuite], BS.ByteString)
 clientHello th = do
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
 			err vsn css cms >> return (vsn, css, rnd)
@@ -235,7 +235,7 @@ validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	TlsHandle h g -> X509.CertificateStore -> TlsM h g (X509.PubKey, [String])
 clientCertificate th cs = do
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
 			case X509.certPubKey $ X509.getCertificate c of
@@ -271,7 +271,7 @@ clientKeyExchange :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> CipherSuite -> BS.ByteString -> BS.ByteString ->
 	RSA.PrivateKey -> Version -> TlsM h g (TlsHandle h g)
 clientKeyExchange th cs cr sr sk (cvmjr, cvmnr) = do
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
 			let epms = BS.drop 2 epms_
@@ -306,7 +306,7 @@ certificateVerify :: (HandleLike h, CPRG g) =>
 certificateVerify th (X509.PubKeyRSA pub) = do
 	debugCipherSuite th "RSA"
 	hash0 <- rsaPadding pub `liftM` handshakeHash th
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
@@ -329,7 +329,7 @@ certificateVerify th (X509.PubKeyRSA pub) = do
 certificateVerify th (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	debugCipherSuite th "ECDSA"
 	hash0 <- handshakeHash th
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeCertificateVerify (DigitallySigned a s) -> do
 			chk a
@@ -399,10 +399,9 @@ serverFinished th =
 	uncurry (tlsPut th) . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash th Server
 
-readHandshake :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> Keys -> TlsM h g Handshake
-readHandshake th ks = do
-	cnt <- readContent th { keys = ks }
+readHandshake :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g Handshake
+readHandshake th = do
+	cnt <- readContent th
 	case cnt of
 		ContentHandshake hs
 			| True -> return hs
@@ -436,7 +435,7 @@ rcvClientKeyExchange ::
 	TlsHandle h g -> CipherSuite -> BS.ByteString -> BS.ByteString ->
 	b -> Secret b -> Version -> TlsM h g (TlsHandle h g)
 rcvClientKeyExchange th cs cr sr dhps dhpn (_cvmjr, _cvmnr) = do
-	hs <- readHandshake th nullKeys
+	hs <- readHandshake th
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
 			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
@@ -604,3 +603,9 @@ finishedHash th partner = do
 	let ms = kMasterSecret $ keys th
 	sha256 <- handshakeHash th
 	return $ finishedHash_ (partner == Client) ms sha256
+
+checkName :: TlsHandle h g -> String -> Bool
+checkName tc n = n `elem` clientNames tc
+
+clientName :: TlsHandle h g -> Maybe String
+clientName = listToMaybe . clientNames
