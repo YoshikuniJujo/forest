@@ -10,7 +10,7 @@ module TlsServer (
 
 import Prelude hiding (read)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, execStateT, get, put, modify)
@@ -121,7 +121,9 @@ keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	RSA.PrivateKey -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
 keyExchange dh cr cv sr bs ssk rsk mcs = do
-	msk <- serverKeyExchange dh cr sr bs ssk mcs
+	msk <- if not dh then return Nothing else generateSecretKey bs >>=
+		(>>) <$> serverKeyExchange cr sr ssk bs <*> return . Just
+	serverToHelloDone mcs
 	mpk <- clientCertificate mcs
 	clientKeyExchange cr cv sr rsk bs msk
 	return mpk
@@ -171,35 +173,30 @@ serverHello csssv css cc ccec = do
 	modify $ setCipherSuite cs
 	return (ke, sr)
 
-serverKeyExchange :: (HandleLike h, CPRG g,
-	Base b, B.Bytable b, B.Bytable (Public b), SecretKey sk) =>
-	Bool -> BS.ByteString -> BS.ByteString -> b -> sk ->
-	Maybe (X509.CertificateStore) -> HandshakeM h g (Maybe (Secret b))
-serverKeyExchange dh cr sr b sks mcs = do
-	t <- get
-	msk <- if dh
-		then lift $ do
-			sk <- withRandom (generateSecret b)
-			serverKeyExchange_ t cr sr sks b sk
-			return $ Just sk
-		else return Nothing
-	lift $ serverToHelloDone t mcs
-	return msk
+serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
+		Base b, B.Bytable b, B.Bytable (Public b)) =>
+	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
+serverKeyExchange cr sr pk ps dhsk = uncurry tlsPut' . contentListToByteString .
+	(: []) . ContentHandshake .  HandshakeServerKeyExchange . B.toByteString .
+		addSign pk cr sr $ ServerKeyExchange
+			(B.toByteString ps)
+			(B.toByteString $ calculatePublic ps dhsk)
+			HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 
-serverKeyExchange_ :: (HandleLike h, SecretKey sk, CPRG g,
-	Base b, B.Bytable b, B.Bytable (Public b)) =>
-	TlsHandle h g -> BS.ByteString -> BS.ByteString ->
-	sk -> b -> Secret b -> TlsM h g ()
-serverKeyExchange_ th cr sr pk ps dhsk = do
-	let	ske = HandshakeServerKeyExchange . serverKeyExchangeToByteString .
-			addSign pk cr sr $
-			ServerKeyExchange
-				(B.toByteString ps)
-				(B.toByteString $ calculatePublic ps dhsk)
-				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
-		cont = [ContentHandshake ske]
-		(ct, bs) = contentListToByteString cont
-	tlsPut th ct bs
+generateSecretKey ::
+	(HandleLike h, CPRG g, Base b) => b -> HandshakeM h g (Secret b)
+generateSecretKey bs = withRandom' $ generateSecret bs
+
+serverToHelloDone :: (HandleLike h, CPRG g) =>
+	Maybe X509.CertificateStore -> HandshakeM h g ()
+serverToHelloDone mcs = uncurry tlsPut' . contentListToByteString .
+	map ContentHandshake . catMaybes . (: [Just HandshakeServerHelloDone]) $
+		mcs >>= return . HandshakeCertificateRequest . CertificateRequest
+				clientCertificateTypes
+				clientCertificateAlgorithms
+			. map (X509.certIssuerDN .
+				X509.signedObject . X509.getSigned)
+			. X509.listCertificates
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
@@ -235,22 +232,6 @@ serverChangeCipherSpec = get >>= lift . serverChangeCipherSuite >>= put
 
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverFinished = get >>= lift . serverFinished_
-
-serverToHelloDone :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> Maybe X509.CertificateStore -> TlsM h g ()
-serverToHelloDone th mcs = do
-	let	cont = map ContentHandshake $ catMaybes [
-			case mcs of
-				Just cs -> Just . HandshakeCertificateRequest
-					. CertificateRequest
-						clientCertificateTypes
-						clientCertificateAlgorithms
-					. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
-					$ X509.listCertificates cs
-				_ -> Nothing,
-			Just HandshakeServerHelloDone]
-		(ct, bs) = contentListToByteString cont
-	tlsPut th ct bs
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -525,6 +506,10 @@ data ServerKeyExchange
 	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
 	deriving Show
 
+instance B.Bytable ServerKeyExchange where
+	fromByteString = undefined
+	toByteString = serverKeyExchangeToByteString
+
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString
 	(ServerKeyExchange params dhYs hashA sigA sn) =
@@ -617,6 +602,9 @@ decryptRSA :: (HandleLike h, CPRG g) =>
 decryptRSA sk e =
 	either (throwError . strMsg . show) return =<<
 	withRandom (\g -> RSA.decryptSafer g sk e)
+
+withRandom' :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
+withRandom' = lift . withRandom
 
 checkName :: TlsHandle h g -> String -> Bool
 checkName tc n = n `elem` clientNames tc
