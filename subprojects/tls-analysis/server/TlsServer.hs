@@ -50,14 +50,16 @@ import HandshakeType (
 	DigitallySigned(..) )
 
 import TlsHandle (
+	TlsHandle(..), tlsGet, tlsPut,
+
 	TlsM, runTlsM,
-	readContentType, readByteString, writeByteString,
+	readContentType,
 	finishedHash_, handshakeHash, withRandom, randomByteString,
 	TlsClientState, initialTlsState,
 
 	checkName, clientName,
 	Keys(..), nullKeys, generateKeys_, flushCipherSuite, debugCipherSuite,
-	TlsHandle(..), newClient,
+	newClient,
 
 	Partner(..), ContentType(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
@@ -192,7 +194,7 @@ serverHello th csssv css cc ccec = do
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th ct bs
+	tlsPut th ct bs
 	return (cs, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
@@ -208,7 +210,7 @@ serverKeyExchange th cr sr pk ps dhsk = do
 				HashAlgorithmSha1 (signatureAlgorithm pk) "hogeru"
 		cont = [ContentHandshake ske]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th ct bs
+	tlsPut th ct bs
 
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Maybe X509.CertificateStore -> TlsM h g ()
@@ -224,7 +226,7 @@ serverToHelloDone th mcs = do
 				_ -> Nothing,
 			Just HandshakeServerHelloDone]
 		(ct, bs) = contentListToByteString cont
-	writeByteString th ct bs
+	tlsPut th ct bs
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -400,13 +402,13 @@ clientFinished th = do
 serverChangeCipherSuite :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (TlsHandle h g)
 serverChangeCipherSuite th = do
-	uncurry (writeByteString th) . contentToByteString $
+	uncurry (tlsPut th) . contentToByteString $
 		ContentChangeCipherSpec ChangeCipherSpec
 	return $ flushCipherSuite Server th
 
 serverFinished :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
 serverFinished th =
-	uncurry (writeByteString th) . contentToByteString .
+	uncurry (tlsPut th) . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash th Server
 
 readHandshake :: (HandleLike h, CPRG g) =>
@@ -425,7 +427,7 @@ readHandshake th ks = do
 			AlertDescriptionUnexpectedMessage "Not Handshake"
 
 readContent :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g Content
-readContent th = getContent (readContentType th) (readByteString th)
+readContent th = getContent (readContentType th) (tlsGet th)
 
 rcvClientKeyExchange ::
 	(HandleLike h, Base b, B.Bytable (Public b), CPRG g) =>

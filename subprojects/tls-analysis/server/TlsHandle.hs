@@ -24,7 +24,8 @@ module TlsHandle (
 	TlsHandle(..),
 	finishedHash_, generateKeys_, checkName, clientName,
 
-	readByteString, readContentType, writeByteString,
+	tlsGet, tlsPut,
+	readContentType,
 ) where
 
 import Prelude hiding (read)
@@ -165,8 +166,9 @@ clientName = listToMaybe . tlsNames
 tPutSt :: (HandleLike h, CPRG g) => TlsHandle h g -> BS.ByteString -> TlsM h g ()
 tPutSt tc = writeByteString tc ContentTypeApplicationData
 
-writeByteString :: (HandleLike h, CPRG g) =>
+writeByteString, tlsPut :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g ()
+tlsPut = writeByteString
 writeByteString th ct bs = do
 	enc <- tlsEncryptMessage th (keys th) ct bs
 	case ct of
@@ -250,8 +252,9 @@ tCloseSt tc = do
 	where
 	h = tlsHandle tc
 
-readByteString :: (HandleLike h, CPRG g) =>
+tlsGet, readByteString :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> Int -> TlsM h g (ContentType, BS.ByteString)
+tlsGet = readByteString
 readByteString th n = do
 	(ct, bs) <- buffered th n $ readFragment th
 	case ct of
