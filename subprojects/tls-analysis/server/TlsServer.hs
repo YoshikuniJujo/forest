@@ -124,7 +124,7 @@ keyExchange dh cr cv sr bs ssk rsk mcs = do
 	msk <- if not dh then return Nothing else generateSecretKey bs >>=
 		(>>) <$> serverKeyExchange cr sr ssk bs <*> return . Just
 	serverToHelloDone mcs
-	mpk <- clientCertificate mcs
+	mpk <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
 	clientKeyExchange cr cv sr rsk bs msk
 	return mpk
 
@@ -199,13 +199,42 @@ serverToHelloDone mcs = uncurry tlsPut' . contentListToByteString .
 			. X509.listCertificates
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>
-	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
-clientCertificate mcs = do
-	t <- get
-	mn <- lift $ maybe (return Nothing)
-		((Just `liftM`) . clientCertificate_ t) mcs
-	put t { clientNames = maybe [] snd mn }
-	return $ fst <$> mn
+	X509.CertificateStore -> HandshakeM h g X509.PubKey
+clientCertificate cs = do
+	th <- get
+	hs <- lift $ readHandshake th
+	(pk, nm) <- case hs of
+		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
+			case X509.certPubKey $ X509.getCertificate c of
+				pub -> lift (chk th cc) >> return (pub, names cc)
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientCertificate_: not certificate"
+	put th { clientNames = nm }
+	return pk
+	where
+	chk th cc = do
+		rs <- lift .lift $ validate (tlsHandle th) cs cc
+		unless (null rs) . throwError $ Alert AlertLevelFatal
+			(selectAlert rs)
+			("TlsServer.clientCertificate_: Validate Failure: "
+				++ show rs)
+		return undefined
+	selectAlert rs
+		| X509.Expired `elem` rs = AlertDescriptionCertificateExpired
+		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
+		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
+		| otherwise = AlertDescriptionCertificateUnknown
+	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>=
+		ASN1.asn1CharacterToString
+	cn = X509.getDnElement X509.DnCommonName . X509.certSubjectDN
+	ans = maybe [] (\(X509.ExtSubjectAltName ns) -> mapMaybe uan ns)
+		. X509.extensionGet . X509.certExtensions
+	crt cc = case cc of
+		X509.CertificateChain (t : _) -> X509.getCertificate t
+		_ -> error "TlsServer.clientCertificate_: empty certificate chain"
+	uan (X509.AltNameDNS s) = Just s
+	uan _ = Nothing
 
 clientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
@@ -248,41 +277,6 @@ validationCache = X509.ValidationCache
 
 validationChecks :: X509.ValidationChecks
 validationChecks = X509.defaultChecks { X509.checkFQHN = False }
-
-clientCertificate_ :: (ValidateHandle h, CPRG g) =>
-	TlsHandle h g -> X509.CertificateStore -> TlsM h g (X509.PubKey, [String])
-clientCertificate_ th cs = do
-	hs <- readHandshake th
-	case hs of
-		HandshakeCertificate cc@(X509.CertificateChain (c : _)) ->
-			case X509.certPubKey $ X509.getCertificate c of
-				pub -> chk cc >> return (pub, names cc)
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientCertificate_: not certificate"
-	where
-	chk cc = do
-		rs <- lift .lift $ validate (tlsHandle th) cs cc
-		unless (null rs) . throwError $ Alert AlertLevelFatal
-			(selectAlert rs)
-			("TlsServer.clientCertificate_: Validate Failure: "
-				++ show rs)
-		return undefined
-	selectAlert rs
-		| X509.Expired `elem` rs = AlertDescriptionCertificateExpired
-		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
-		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
-		| otherwise = AlertDescriptionCertificateUnknown
-	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>=
-		ASN1.asn1CharacterToString
-	cn = X509.getDnElement X509.DnCommonName . X509.certSubjectDN
-	ans = maybe [] (\(X509.ExtSubjectAltName ns) -> mapMaybe uan ns)
-		. X509.extensionGet . X509.certExtensions
-	crt cc = case cc of
-		X509.CertificateChain (t : _) -> X509.getCertificate t
-		_ -> error "TlsServer.clientCertificate_: empty certificate chain"
-	uan (X509.AltNameDNS s) = Just s
-	uan _ = Nothing
 
 clientKeyExchange_ :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> BS.ByteString -> Version -> BS.ByteString ->
@@ -376,7 +370,7 @@ certificateVerify_ th (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 			("Not implement such algorithm: " ++ show a)
 certificateVerify_ _ p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
-	("TlsServer.clientCertificate_: " ++ "not implemented: " ++ show p)
+	("TlsServer.certificateVerify_: " ++ "not implemented: " ++ show p)
 
 clientChangeCipherSuite :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (TlsHandle h g)
