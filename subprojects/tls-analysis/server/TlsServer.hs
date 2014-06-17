@@ -104,7 +104,7 @@ openClient h cssv (sk, cc) (esk, ecc) mcs = (newHandle h >>=) . execStateT $ do
 		DHE_RSA -> keyExchange True cr cv sr dhparams sk undefined mcs
 		ECDHE_RSA -> keyExchange True cr cv sr curve sk undefined mcs
 		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
-		_ -> throwError "TlsServer.helloHandshake"
+		_ -> throwError "TlsServer.openClient"
 	certificateVerify mpk
 	clientChangeCipherSpec
 	clientFinished
@@ -124,7 +124,26 @@ keyExchange dh cr cv sr bs ssk rsk mcs = do
 
 clientHello :: (HandleLike h, CPRG g) =>
 	HandshakeM h g ([CipherSuite], BS.ByteString, Version)
-clientHello = get >>= lift . clientHello_
+clientHello = do
+	hs <- readHandshake'
+	case hs of
+		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
+			err vsn css cms >> return (css, rnd, vsn)
+		_ -> throwError $ Alert AlertLevelFatal
+			AlertDescriptionUnexpectedMessage
+			"TlsServer.clientHello_: not client hello"
+	where
+	err vsn css cms
+		| vsn < version = throwError $ Alert
+			AlertLevelFatal AlertDescriptionProtocolVersion
+			"TlsServer.clientHello_: client version should 3.3 or more"
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
+			AlertLevelFatal AlertDescriptionIllegalParameter
+			"TlsServer.clientHello_: no supported cipher suites"
+		| compressionMethod `notElem` cms = throwError $ Alert
+			AlertLevelFatal AlertDescriptionDecodeError
+			"TlsServer.clientHello_: no supported compression method"
+		| otherwise = return ()
 
 serverHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> [CipherSuite] ->
@@ -135,6 +154,30 @@ serverHello cssv cscl cc ecc = do
 	(cs@(CipherSuite ke _), sr) <- lift $ serverHello_ th cssv cscl cc ecc
 	modify $ setCipherSuite cs
 	return (ke, sr)
+
+serverHello_ :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> [CipherSuite] -> [CipherSuite] ->
+	X509.CertificateChain -> X509.CertificateChain ->
+	TlsM h g (CipherSuite, BS.ByteString)
+serverHello_ th csssv css cc ccec = do
+	sr <- randomByteString 32
+	cs <- case cipherSuiteSel csssv css of
+		Just cs -> return cs
+		_ -> throwError $ Alert
+			AlertLevelFatal AlertDescriptionIllegalParameter
+			"TlsServer.clientHello_: no supported cipher suites"
+	let CipherSuite ke _ = cs
+	let	cccc = case ke of
+			ECDHE_ECDSA -> ccec
+			_ -> cc
+		cont = map ContentHandshake $ catMaybes [
+			Just . HandshakeServerHello $ ServerHello
+				version sr sessionId
+				cs compressionMethod Nothing,
+			Just $ HandshakeCertificate cccc ]
+		(ct, bs) = contentListToByteString cont
+	tlsPut th ct bs
+	return (cs, sr)
 
 serverKeyExchange :: (HandleLike h, CPRG g,
 	Base b, B.Bytable b, B.Bytable (Public b), SecretKey sk) =>
@@ -182,53 +225,6 @@ serverChangeCipherSpec = get >>= lift . serverChangeCipherSuite >>= put
 
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverFinished = get >>= lift . serverFinished_
-
-clientHello_ :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> TlsM h g ([CipherSuite], BS.ByteString, Version)
-clientHello_ th = do
-	hs <- readHandshake th
-	case hs of
-		HandshakeClientHello (ClientHello vsn rnd _ css cms _) ->
-			err vsn css cms >> return (css, rnd, vsn)
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientHello_: not client hello"
-	where
-	err vsn css cms
-		| vsn < version = throwError $ Alert
-			AlertLevelFatal AlertDescriptionProtocolVersion
-			"TlsServer.clientHello_: client version should 3.3 or more"
-		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError $ Alert
-			AlertLevelFatal AlertDescriptionIllegalParameter
-			"TlsServer.clientHello_: no supported cipher suites"
-		| compressionMethod `notElem` cms = throwError $ Alert
-			AlertLevelFatal AlertDescriptionDecodeError
-			"TlsServer.clientHello_: no supported compression method"
-		| otherwise = return ()
-
-serverHello_ :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> [CipherSuite] -> [CipherSuite] ->
-	X509.CertificateChain -> X509.CertificateChain ->
-	TlsM h g (CipherSuite, BS.ByteString)
-serverHello_ th csssv css cc ccec = do
-	sr <- randomByteString 32
-	cs <- case cipherSuiteSel csssv css of
-		Just cs -> return cs
-		_ -> throwError $ Alert
-			AlertLevelFatal AlertDescriptionIllegalParameter
-			"TlsServer.clientHello_: no supported cipher suites"
-	let CipherSuite ke _ = cs
-	let	cccc = case ke of
-			ECDHE_ECDSA -> ccec
-			_ -> cc
-		cont = map ContentHandshake $ catMaybes [
-			Just . HandshakeServerHello $ ServerHello
-				version sr sessionId
-				cs compressionMethod Nothing,
-			Just $ HandshakeCertificate cccc ]
-		(ct, bs) = contentListToByteString cont
-	tlsPut th ct bs
-	return (cs, sr)
 
 serverKeyExchange_ :: (HandleLike h, SecretKey sk, CPRG g,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>
@@ -444,6 +440,9 @@ serverFinished_ :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
 serverFinished_ th =
 	uncurry (tlsPut th) . contentToByteString .
 	ContentHandshake . HandshakeFinished =<< finishedHash th Server
+
+readHandshake' :: (HandleLike h, CPRG g) => HandshakeM h g Handshake
+readHandshake' = get >>= lift . readHandshake
 
 readHandshake :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g Handshake
 readHandshake th = do
