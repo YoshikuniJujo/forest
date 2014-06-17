@@ -26,7 +26,7 @@ class Base b where
 	type Secret b
 	type Public b
 	generateBase :: CPRG g => g -> Param b -> (b, g)
-	generateSecret :: CPRG g => g -> b -> (Secret b, g)
+	generateSecret :: CPRG g => b -> g -> (Secret b, g)
 	calculatePublic :: b -> Secret b -> Public b
 	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
@@ -47,7 +47,7 @@ instance Base Curve where
 	type Secret Curve = Integer
 	type Public Curve = Point
 	generateBase g _ = (secp256r1, g)
-	generateSecret g _ = (0x1234567890, g)
+	generateSecret _ g = (0x1234567890, g)
 	calculatePublic = calculatePublicPoint
 	calculateCommon = calculateShared
 
@@ -113,7 +113,7 @@ instance Base DH.Params where
 	type Secret DH.Params = DH.PrivateNumber
 	type Public DH.Params = DH.PublicNumber
 	generateBase rng (bits, gen) = DH.generateParams rng bits gen
-	generateSecret = DH.generatePrivate
+	generateSecret = flip DH.generatePrivate
 	calculatePublic = DH.calculatePublic
 	calculateCommon ps sn pn = B.toByteString .
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn

@@ -116,14 +116,15 @@ handshake :: (ValidateHandle h, CPRG g, SecretKey sk,
 	Bool -> TlsHandle h g ->
 	BS.ByteString -> BS.ByteString -> b -> Version -> sk ->
 	RSA.PrivateKey -> Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
-handshake isdh th cr sr ps cv sks skd mcs = do
-	pn <- if not isdh then return $ error "bad" else
-		withRandom $ flip generateSecret ps
-	when isdh $ serverKeyExchange th cr sr sks ps pn
+handshake isdh th cr sr b v sks skd mcs = do
+	pn <- if isdh
+		then withRandom $ generateSecret b
+		else return $ error "bad"
+	when isdh $ serverKeyExchange th cr sr sks b pn
 	serverToHelloDone th mcs
 	mpn <- maybe (return Nothing) ((Just `liftM`) . clientCertificate th) mcs
-	thk <- if isdh	then ecClientKeyExchange th cr sr ps pn cv
-			else clientKeyExchange th cr sr skd cv
+	thk <- if isdh	then ecClientKeyExchange th cr sr b pn
+			else clientKeyExchange th cr sr skd v
 	maybe (return ()) (certificateVerify thk . fst) mpn
 	thcc <- clientChangeCipherSuite thk
 	clientFinished thcc
@@ -427,8 +428,8 @@ parseContent _ _ = undefined
 ecClientKeyExchange ::
 	(HandleLike h, Base b, B.Bytable (Public b), CPRG g) =>
 	TlsHandle h g -> BS.ByteString -> BS.ByteString ->
-	b -> Secret b -> Version -> TlsM h g (TlsHandle h g)
-ecClientKeyExchange th cr sr dhps dhpn (_cvmjr, _cvmnr) = do
+	b -> Secret b -> TlsM h g (TlsHandle h g)
+ecClientKeyExchange th cr sr dhps dhpn = do
 	hs <- readHandshake th
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
