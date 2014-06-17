@@ -1,6 +1,6 @@
 mkTestFile.hs                           65
 MyServer.hs                             34
-TlsServer.hs                            514
+TlsServer.hs                            562
 HandshakeType.hs                        104
 Hello.hs                                93
 Extension.hs                            169
@@ -15,11 +15,11 @@ KeyAgreement.hs                         100
 CommandLine.hs                          159
 ReadFile.hs                             80
 Random.hs                               15
-total                                   2179
+total                                   2227
 
 runServer.hs                            18
 MyServer.hs                             34
-TlsServer.hs                            514
+TlsServer.hs                            562
 HandshakeType.hs                        104
 Hello.hs                                93
 Extension.hs                            169
@@ -33,11 +33,11 @@ CryptoTools.hs                          121
 KeyAgreement.hs                         100
 CommandLine.hs                          159
 ReadFile.hs                             80
-total                                   2117
+total                                   2165
 
 serverTest.hs                           39
 MyServer.hs                             34
-TlsServer.hs                            514
+TlsServer.hs                            562
 HandshakeType.hs                        104
 Hello.hs                                93
 Extension.hs                            169
@@ -52,5 +52,5 @@ KeyAgreement.hs                         100
 CommandLine.hs                          159
 ReadFile.hs                             80
 Random.hs                               15
-total                                   2153
+total                                   2201
 
