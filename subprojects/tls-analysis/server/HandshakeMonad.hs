@@ -4,7 +4,7 @@
 
 module HandshakeMonad (
 	ValidateHandle(..),
-	TH.run, checkName, clientName,
+	TH.run, setClientNames, checkName, clientName,
 
 	TH.TlsHandle(..),
 	TH.ContentType(..),
@@ -19,18 +19,19 @@ module HandshakeMonad (
 	HandshakeM, randomByteString,
 	validate', generateKeys, debugCipherSuite, finishedHash,
 
-	EcdsaSign(..), encodeEcdsaSign,
+	EcdsaSign(..),
 
 	rsaPadding,
-	decryptRSA,
+	decryptRsa,
+	execHandshakeM,
 ) where
 
 import Prelude hiding (read)
 
--- import Control.Arrow
--- import Control.Monad (liftM)
+import Control.Arrow
+import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (StateT, get, gets, put) -- , modify)
+import "monads-tf" Control.Monad.State (StateT, execStateT, get, gets, put, modify)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (listToMaybe)
@@ -64,6 +65,18 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 
+setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
+setClientNames nms = do
+	th <- gets fst
+	modify . first $ const th { TH.clientNames = nms }
+
+execHandshakeM :: HandleLike h =>
+	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
+execHandshakeM h = liftM fst . (newState h >>=) . execStateT
+
+newState :: HandleLike h => h -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)
+newState h = (, SHA256.init) `liftM` TH.newHandle h
+
 tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
@@ -83,9 +96,9 @@ generateKeys cr sr pms = do
 randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 randomByteString = lift . TH.randomByteString
 
-decryptRSA :: (HandleLike h, CPRG g) =>
+decryptRsa :: (HandleLike h, CPRG g) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-decryptRSA sk e =
+decryptRsa sk e =
 	either (throwError . strMsg . show) return =<<
 	withRandom (\g -> RSA.decryptSafer g sk e)
 
@@ -171,6 +184,10 @@ decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
 data EcdsaSign
 	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
 	deriving Show
+
+instance B.Bytable EcdsaSign where
+	toByteString = encodeEcdsaSign
+	fromByteString = undefined
 
 encodeEcdsaSign :: EcdsaSign -> BS.ByteString
 encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
