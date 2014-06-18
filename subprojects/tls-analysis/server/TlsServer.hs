@@ -11,8 +11,9 @@ module TlsServer (
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow
 import Control.Monad (unless, liftM)
-import "monads-tf" Control.Monad.State (execStateT, get, put, modify)
+import "monads-tf" Control.Monad.State (execStateT, gets, modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.List (find)
@@ -34,6 +35,7 @@ import qualified Crypto.Types.PubKey.ECC as ECDSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
 
 import HandshakeType (
 	Handshake(..),
@@ -83,20 +85,21 @@ openClient :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
-openClient h cssv (sk, cc) (esk, ecc) mcs = (newHandle h >>=) . execStateT $ do
-	(cscl, cr, cv) <- clientHello
-	(ke, sr) <- serverHello cssv cscl cc ecc
-	mpk <- case ke of
-		RSA -> keyExchange False cr cv sr NoDH sk sk mcs
-		DHE_RSA -> keyExchange True cr cv sr dhparams sk undefined mcs
-		ECDHE_RSA -> keyExchange True cr cv sr curve sk undefined mcs
-		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
-		_ -> throwError "TlsServer.openClient"
-	maybe (return ()) certificateVerify mpk
-	clientChangeCipherSpec
-	clientFinished
-	serverChangeCipherSpec
-	serverFinished
+openClient h cssv (sk, cc) (esk, ecc) mcs =
+	liftM fst . ((, SHA256.init) `liftM` newHandle h >>=) . execStateT $ do
+		(cscl, cr, cv) <- clientHello
+		(ke, sr) <- serverHello cssv cscl cc ecc
+		mpk <- case ke of
+			RSA -> keyExchange False cr cv sr NoDH sk sk mcs
+			DHE_RSA -> keyExchange True cr cv sr dhparams sk undefined mcs
+			ECDHE_RSA -> keyExchange True cr cv sr curve sk undefined mcs
+			ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
+			_ -> throwError "TlsServer.openClient"
+		maybe (return ()) certificateVerify mpk
+		clientChangeCipherSpec
+		clientFinished
+		serverChangeCipherSpec
+		serverFinished
 
 keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>
@@ -153,7 +156,7 @@ serverHello csssv css cc ccec = do
 				cs compressionMethod Nothing,
 			Just $ HandshakeCertificate cccc ]
 	uncurry tlsPut $ contentListToByteString cont
-	modify $ setCipherSuite cs
+	modify . first $ setCipherSuite cs
 	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
@@ -194,8 +197,8 @@ clientCertificate cs = do
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientCertificate_: not certificate"
-	th <- get
-	put th { clientNames = nm }
+	th <- gets fst
+	modify . first $ const th { clientNames = nm }
 	return pk
 	where
 	chk cc = do
@@ -236,8 +239,8 @@ ecClientKeyExchange cr sr dhps dhpn = do
 		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
 			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
 			ks <- generateKeys cr sr pms
-			th <- get
-			put th { keys = ks }
+			th <- gets fst
+			modify . first $ const th { keys = ks }
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
@@ -253,8 +256,8 @@ clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
 			r <- randomByteString 46
 			pms <- mkpms epms `catchError` const (return $ dummy r)
 			ks <- generateKeys cr sr pms
-			th <- get
-			put th { keys = ks }
+			th <- gets fst
+			modify . first $ const th { keys = ks }
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
@@ -333,7 +336,8 @@ clientChangeCipherSpec = do
 	cnt <- readContent
 	case cnt of
 		ContentChangeCipherSpec ChangeCipherSpec ->
-			flushCipherSuite Client `liftM` get >>= put
+			flushCipherSuite Client `liftM` gets fst >>=
+				modify . first . const
 		_ -> throwError $ Alert
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
@@ -358,7 +362,7 @@ serverChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverChangeCipherSpec = do
 	uncurry tlsPut . contentToByteString $
 		ContentChangeCipherSpec ChangeCipherSpec
-	flushCipherSuite Server `liftM` get >>= put
+	flushCipherSuite Server `liftM` gets fst >>= modify . first . const
 
 serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 serverFinished = uncurry tlsPut . contentToByteString .

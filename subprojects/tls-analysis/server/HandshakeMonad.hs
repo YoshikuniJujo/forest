@@ -27,9 +27,10 @@ module HandshakeMonad (
 
 import Prelude hiding (read)
 
+-- import Control.Arrow
 -- import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
-import "monads-tf" Control.Monad.State (StateT, get, put)
+import "monads-tf" Control.Monad.State (StateT, get, gets, put) -- , modify)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (listToMaybe)
@@ -59,7 +60,9 @@ import qualified TlsHandle as TH (
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 	Partner(..), finishedHash, handshakeHash )
 
-type HandshakeM h g = StateT (TH.TlsHandle h g) (TH.TlsM h g)
+import qualified Crypto.Hash.SHA256 as SHA256
+
+type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
@@ -68,12 +71,13 @@ tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 validate' :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
 	HandshakeM h g [X509.FailedReason]
-validate' cs cc = get >>= \t -> lift . lift . lift $ validate (TH.tlsHandle t) cs cc
+validate' cs cc = gets fst >>= \t ->
+	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
 generateKeys :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
 	HandshakeM h g TH.Keys
 generateKeys cr sr pms = do
-	th <- get
+	th <- gets fst
 	lift $ TH.generateKeys (TH.cipherSuite th) cr sr pms
 
 randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
@@ -87,7 +91,7 @@ decryptRSA sk e =
 
 debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite msg = do
-	th <- get
+	th <- gets fst
 	lift $ TH.debugCipherSuite th msg
 
 rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
@@ -121,7 +125,7 @@ tlsGet n = do -- (snd `liftM`) . (get >>=) . (.) lift . flip TH.tlsGet
 	return bs
 
 tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
-tlsGetContentType = get >>= lift . TH.tlsGetContentType
+tlsGetContentType = gets fst >>= lift . TH.tlsGetContentType
 
 data ChangeCipherSpec
 	= ChangeCipherSpec

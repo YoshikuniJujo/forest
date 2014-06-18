@@ -74,13 +74,14 @@ read h n = do
 		else throwError . strToAlert $ "Basic.read: bad reading: " ++
 			show (BS.length r) ++ " " ++ show n
 
-handshakeHash :: HandleLike h => TlsHandle h g -> TlsM h g BS.ByteString
-handshakeHash = return . SHA256.finalize . handshakeHashCtx
+handshakeHash :: HandleLike h =>
+	(TlsHandle h g, SHA256.Ctx) -> TlsM h g BS.ByteString
+handshakeHash = return . SHA256.finalize . snd
 
-updateHash :: HandleLike h =>
-	TlsHandle h g -> BS.ByteString -> TlsM h g (TlsHandle h g)
-updateHash th@TlsHandle { handshakeHashCtx = ctx } bs =
-	return th { handshakeHashCtx = SHA256.update ctx bs }
+updateHash :: HandleLike h => (TlsHandle h g, SHA256.Ctx) ->
+	BS.ByteString -> TlsM h g (TlsHandle h g, SHA256.Ctx)
+updateHash (th@TlsHandle { handshakeHashCtx = ctx }, ctx') bs =
+	return (th { handshakeHashCtx = SHA256.update ctx bs }, SHA256.update ctx' bs)
 
 getContentType :: HandleLike h => TlsHandle h g ->
 	TlsM h g (ContentType, BS.ByteString) -> TlsM h g ContentType
@@ -158,20 +159,20 @@ newHandle h = do
 instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut = ((>> return ()) .) . flip tlsPut ContentTypeApplicationData
-	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet
+	hlPut = ((>> return ()) .) . flip tlsPut ContentTypeApplicationData . (, undefined)
+	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet . (, undefined)
 	hlGetLine = tGetLine
 	hlGetContent = tGetContent
 	hlDebug h l = lift . lift . hlDebug (tlsHandle h) l
 	hlClose = tCloseSt
 
-tlsPut :: (HandleLike h, CPRG g) =>
-	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g (TlsHandle h g)
-tlsPut th ct bs = do
+tlsPut :: (HandleLike h, CPRG g) => (TlsHandle h g, SHA256.Ctx) ->
+	ContentType -> BS.ByteString -> TlsM h g (TlsHandle h g, SHA256.Ctx)
+tlsPut (th, ctx) ct bs = do
 	enc <- tlsEncryptMessage th (keys th) ct bs
 	th' <- case ct of
-		ContentTypeHandshake -> updateHash th bs
-		_ -> return th
+		ContentTypeHandshake -> updateHash (th, ctx) bs
+		_ -> return (th, ctx)
 	write th $ BS.concat [
 		B.toByteString ct,
 		B.toByteString (3 :: Word8),
@@ -212,19 +213,20 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 
 tCloseSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
 tCloseSt tc = do
-	_ <- tlsPut tc ContentTypeAlert "\SOH\NUL"
+	_ <- tlsPut (tc, undefined) ContentTypeAlert "\SOH\NUL"
 	thlClose h
 	where
 	h = tlsHandle tc
 
-tlsGet, readByteString :: (HandleLike h, CPRG g) => TlsHandle h g -> Int ->
-	TlsM h g ((ContentType, BS.ByteString), TlsHandle h g)
+tlsGet, readByteString :: (HandleLike h, CPRG g) =>
+	(TlsHandle h g, SHA256.Ctx) -> Int ->
+	TlsM h g ((ContentType, BS.ByteString), (TlsHandle h g, SHA256.Ctx))
 tlsGet = readByteString
-readByteString th n = do
+readByteString (th, ctx) n = do
 	(ct, bs) <- buffered th n $ tGetWholeWithCt th
 	th' <- case ct of
-		ContentTypeHandshake -> updateHash th bs
-		_ -> return th
+		ContentTypeHandshake -> updateHash (th, ctx) bs
+		_ -> return (th, ctx)
 	return ((ct, bs), th')
 
 tGetWhole :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
@@ -237,9 +239,9 @@ checkAppData th m = do
 	case ctbs of
 		(ContentTypeApplicationData, ad) -> return ad
 		(ContentTypeAlert, "\SOH\NUL") -> do
-			_ <- tlsPut th ContentTypeAlert "\SOH\NUL"
+			_ <- tlsPut (th, undefined) ContentTypeAlert "\SOH\NUL"
 			thlError (tlsHandle th) "tGetWhole: EOF"
-		_ -> do	_ <- tlsPut th ContentTypeAlert "\2\10"
+		_ -> do	_ <- tlsPut (th, undefined) ContentTypeAlert "\2\10"
 			throwError "not application data"
 
 tGetWholeWithCt :: HandleLike h =>
@@ -288,10 +290,11 @@ tlsEncryptMessage th ks ct msg = do
 		(B.toByteString ct `BS.append` "\x03\x03") msg
 	withRandom enc
 
-finishedHash :: HandleLike h => TlsHandle h g -> Partner -> TlsM h g BS.ByteString
-finishedHash th partner = do
+finishedHash :: HandleLike h =>
+	(TlsHandle h g, SHA256.Ctx) -> Partner -> TlsM h g BS.ByteString
+finishedHash (th, ctx) partner = do
 	let ms = kMasterSecret $ keys th
-	sha256 <- handshakeHash th
+	sha256 <- handshakeHash (th, ctx)
 	return $ finishedHash_ (partner == Client) ms sha256
 
 generateKeys :: HandleLike h => CipherSuite ->
