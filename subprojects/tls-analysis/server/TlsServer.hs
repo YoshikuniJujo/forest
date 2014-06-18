@@ -15,7 +15,8 @@ import Control.Arrow (first)
 import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.State (gets, modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
-import Data.Maybe (catMaybes, mapMaybe, maybeToList, fromMaybe)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Data.Maybe (catMaybes)
 import Data.List (find)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
@@ -123,7 +124,9 @@ keyExchange dh cr cv sr bs ssk rsk mcs = do
 			(>>) <$> serverKeyExchange cr sr ssk bs <*> return . Just
 	serverToHelloDone mcs
 	mpk <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
-	clientKeyExchange cr cv sr rsk bs msk
+	case msk of
+		Just sk -> dhClientKeyExchange cr sr bs sk
+		_ -> rsaClientKeyExchange cr cv sr rsk
 	return mpk
 
 clientHello :: (HandleLike h, CPRG g) =>
@@ -223,40 +226,35 @@ clientCertificate cs = do
 		X509.CertificateChain (t : _) -> X509.getCertificate t
 		_ -> error "TlsServer.clientCertificate: empty certificate chain"
 
-clientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
-	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
-	b -> Maybe (Secret b) -> HandshakeM h g ()
-clientKeyExchange cr cv sr rsk bs msk = case msk of
-	Just sk -> ecClientKeyExchange cr sr bs sk
-	_ -> clientKeyExchange_ cr cv sr rsk
-
-ecClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
+dhClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> Secret b -> HandshakeM h g ()
-ecClientKeyExchange cr sr dhps dhpn = do
+dhClientKeyExchange cr sr bs sv = do
 	hs <- readHandshake
 	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange epms) -> do
-			let Right pms = calculateCommon dhps dhpn <$> B.fromByteString epms
-			ks <- generateKeys cr sr pms
-			th <- gets fst
-			modify . first $ const th { keys = ks }
+		HandshakeClientKeyExchange (ClientKeyExchange cke) -> do
+			generateKeys cr sr =<< case calculateCommon bs sv <$>
+					B.fromByteString cke of
+				Left em -> throwError . strMsg $
+					"TlsServer.dhClientKeyExchange: " ++ em
+				Right p -> return p
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
+			"TlsServer.dhClientKeyExchange: not client key exchange"
 
-clientKeyExchange_ :: (HandleLike h, CPRG g) =>
+rsaClientKeyExchange :: (HandleLike h, CPRG g) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	HandshakeM h g ()
-clientKeyExchange_ cr (cvmjr, cvmnr) sr sk = do
+rsaClientKeyExchange cr (cvmjr, cvmnr) sr sk = do
 	hs <- readHandshake
 	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange epms_) -> do
-			let epms = BS.drop 2 epms_
-			r <- randomByteString 46
-			pms <- mkpms epms `catchError` const (return $ dummy r)
-			ks <- generateKeys cr sr pms
-			th <- gets fst
-			modify . first $ const th { keys = ks }
+		HandshakeClientKeyExchange (ClientKeyExchange cke) -> do
+			epms <- case B.runBytableM (B.take =<< B.take 2) cke of
+				Left em -> throwError . strMsg $
+					"TlsServer.clientKeyExchange: " ++ em
+				Right (e, "") -> return e
+				_ -> throwError "TlsServer.clientKeyExchange"
+			generateKeys cr sr =<< mkpms epms `catchError`
+				const (dummy `liftM` randomByteString 46)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"

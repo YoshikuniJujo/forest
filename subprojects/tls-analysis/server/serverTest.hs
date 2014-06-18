@@ -25,6 +25,7 @@ main = do
 	nms <- map (td </>) . tail . nub . sort .
 		map dropExtensions <$> getDirectoryContents td
 	forM_ nms $ \n -> do
+--		print n
 		css <- readIO =<< readFile (n <.> "css")
 		cl <- openFile (n <.> "clt") ReadMode
 		sv <- openFile (n <.> "srv") ReadMode

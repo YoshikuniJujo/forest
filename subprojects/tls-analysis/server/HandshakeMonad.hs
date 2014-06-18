@@ -65,6 +65,13 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 
+generateKeys :: HandleLike h =>
+	BS.ByteString -> BS.ByteString -> BS.ByteString -> HandshakeM h g ()
+generateKeys cr sr pms = do
+	ks <- generateKeys_ cr sr pms
+	th <- gets fst
+	modify . first $ const th { TH.keys = ks }
+
 setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
 setClientNames nms = do
 	th <- gets fst
@@ -87,9 +94,9 @@ validate' :: ValidateHandle h =>
 validate' cs cc = gets fst >>= \t ->
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
-generateKeys :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
+generateKeys_ :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
 	HandshakeM h g TH.Keys
-generateKeys cr sr pms = do
+generateKeys_ cr sr pms = do
 	th <- gets fst
 	lift $ TH.generateKeys (TH.cipherSuite th) cr sr pms
 
