@@ -244,7 +244,7 @@ dhClientKeyExchange cr sr bs sv = do
 rsaClientKeyExchange :: (HandleLike h, CPRG g) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	HandshakeM h g ()
-rsaClientKeyExchange cr (cvmjr, cvmnr) sr sk = do
+rsaClientKeyExchange cr (cvmj, cvmn) sr sk = do
 	hs <- readHandshake
 	case hs of
 		HandshakeClientKeyExchange (ClientKeyExchange cke) -> do
@@ -253,21 +253,20 @@ rsaClientKeyExchange cr (cvmjr, cvmnr) sr sk = do
 					"TlsServer.clientKeyExchange: " ++ em
 				Right (e, "") -> return e
 				_ -> throwError "TlsServer.clientKeyExchange"
-			generateKeys cr sr =<< mkpms epms `catchError`
-				const (dummy `liftM` randomByteString 46)
+			generateKeys cr sr =<< mkpms epms `catchError` const
+				((BS.cons cvmj . BS.cons cvmn)
+					`liftM` randomByteString 46)
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"TlsServer.clientKeyExchange: not client key exchange"
 	where
-	dummy r = cvmjr `BS.cons` cvmnr `BS.cons` r
 	mkpms epms = do
 		pms <- decryptRsa sk epms
-		unless (BS.length pms == 48) $ throwError "bad: length"
+		unless (BS.length pms == 48) $ throwError "length"
 		case BS.unpack $ BS.take 2 pms of
-			[pmsvmjr, pmsvmnr] ->
-				unless (pmsvmjr == cvmjr && pmsvmnr == cvmnr) $
-					throwError "bad: version"
-			_ -> throwError "bad: never occur"
+			[pvmj, pvmn] -> unless (pvmj == cvmj && pvmn == cvmn) $
+					throwError "version"
+			_ -> throwError "never occur"
 		return pms
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
