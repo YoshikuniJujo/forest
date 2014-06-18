@@ -15,7 +15,7 @@ import Control.Arrow (first)
 import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.State (gets, modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, maybeToList, fromMaybe)
 import Data.List (find)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
@@ -200,29 +200,28 @@ clientCertificate cs = do
 			return . X509.certPubKey $ X509.getCertificate c
 		_ -> throwError $ Alert AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientCertificate_: not certificate"
+			"TlsServer.clientCertificate: not certificate"
 	where
 	chk cc = do
 		rs <- validate' cs cc
 		unless (null rs) . throwError $ Alert AlertLevelFatal
 			(selectAlert rs)
-			("TlsServer.clientCertificate_: Validate Failure: "
+			("TlsServer.clientCertificate: Validate Failure: "
 				++ show rs)
 	selectAlert rs
 		| X509.Expired `elem` rs = AlertDescriptionCertificateExpired
 		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
 		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
 		| otherwise = AlertDescriptionCertificateUnknown
-	names cc = maybe [] (: ans (crt cc)) $ cn (crt cc) >>=
-		ASN1.asn1CharacterToString
-	cn = X509.getDnElement X509.DnCommonName . X509.certSubjectDN
-	ans = maybe [] (\(X509.ExtSubjectAltName ns) -> mapMaybe uan ns)
-		. X509.extensionGet . X509.certExtensions
+	names cc = maybe id (:) <$> nms <*> ans $ crt cc
+	nms = (ASN1.asn1CharacterToString =<<) .
+		X509.getDnElement X509.DnCommonName . X509.certSubjectDN
+	ans = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
+				. \(X509.ExtSubjectAltName ns) -> ns)
+			. X509.extensionGet . X509.certExtensions
 	crt cc = case cc of
 		X509.CertificateChain (t : _) -> X509.getCertificate t
-		_ -> error "TlsServer.clientCertificate_: empty certificate chain"
-	uan (X509.AltNameDNS s) = Just s
-	uan _ = Nothing
+		_ -> error "TlsServer.clientCertificate: empty certificate chain"
 
 clientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
