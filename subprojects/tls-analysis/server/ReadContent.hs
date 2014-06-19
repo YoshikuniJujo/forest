@@ -18,7 +18,7 @@ module ReadContent (
 	HM.randomByteString,
 	HM.generateKeys, ClientKeyExchange(..), HM.validate', HM.setClientNames,
 	CertificateRequest(..), ClientHello(..), ServerHello(..), HM.withRandom,
-	HM.execHandshakeM, HM.setCipherSuite,
+	HM.execHandshakeM, setCipherSuite,
 
 	readHandshake, Finished(..),
 	getChangeCipherSpec,
@@ -70,6 +70,9 @@ import qualified HandshakeMonad as HM (
 	ContentType(..), EcdsaSign(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
+
+setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
+setCipherSuite = modify . first . HM.setCipherSuite
 
 isFinished :: Handshake -> Bool
 isFinished (HandshakeFinished _) = True

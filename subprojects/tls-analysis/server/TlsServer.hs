@@ -3,17 +3,15 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsServer (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	run, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
-	run, openClient, checkName, clientName
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..)
 ) where
 
 import Prelude hiding (read)
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Arrow (first)
 import Control.Monad (unless, liftM)
-import "monads-tf" Control.Monad.State (modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (catMaybes)
@@ -36,10 +34,8 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
 import ReadContent (
-	HandshakeM, TlsM, run, execHandshakeM, withRandom, randomByteString,
-	TlsHandle,
-		setClientNames, checkName, clientName,
-		setCipherSuite, flushCipherSuite, debugCipherSuite,
+	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
+	TlsHandle, setClientNames, checkName, clientName,
 	ValidateHandle(..), validate',
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Handshake(..), Finished(..),
@@ -48,10 +44,12 @@ import ReadContent (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		setCipherSuite,
 	CertificateRequest(..),
 		ClientCertificateType(..), NamedCurve(..), SecretKey(..),
-	ClientKeyExchange(..), generateKeys, decryptRsa, rsaPadding,
-	DigitallySigned(..), handshakeHash,
+	ClientKeyExchange(..),
+		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
+	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
@@ -63,12 +61,10 @@ version = (3, 3)
 sessionId :: SessionId
 sessionId = SessionId ""
 
-cipherSuiteSel :: [CipherSuite] -> [CipherSuite] -> Maybe CipherSuite
-cipherSuiteSel sv cl = case find (`elem` cl) sv of
-	Just cs -> Just cs
-	_ -> if CipherSuite RSA AES_128_CBC_SHA `elem` cl
-		then Just $ CipherSuite RSA AES_128_CBC_SHA
-		else Nothing
+mergeCipherSuite :: [CipherSuite] -> [CipherSuite] -> CipherSuite
+mergeCipherSuite sv cl = case find (`elem` cl) sv of
+	Just cs -> cs
+	_ -> CipherSuite RSA AES_128_CBC_SHA
 
 compressionMethod :: CompressionMethod
 compressionMethod = CompressionMethodNull
@@ -85,8 +81,7 @@ clientCertificateAlgorithms = [
 curve :: ECC.Curve
 curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
 
-openClient :: (ValidateHandle h, CPRG g, SecretKey sk) =>
-	h -> [CipherSuite] ->
+openClient :: (ValidateHandle h, CPRG g, SecretKey sk) => h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
 openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
@@ -97,13 +92,13 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 		DHE_RSA -> keyExchange True cr cv sr dhparams rsk undefined mcs
 		ECDHE_RSA -> keyExchange True cr cv sr curve rsk undefined mcs
 		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
-		_ -> throwError "TlsServer.openClient"
+		_ -> throwError "TlsServer.openClient: not implemented"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
-	fhc <- finishedHash Client
+	f0 <- finishedHash Client
 	Finished f <- readHandshake
-	unless (f == fhc) . throwError $
-		Alert AlertLevelFatal AlertDescriptionDecryptError "Finished error"
+	unless (f == f0) . throwError $ Alert AlertLevelFatal
+		AlertDescriptionDecryptError "TlsServer.openClient: bad Finished"
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake . HandshakeFinished =<< finishedHash Server
 
@@ -113,12 +108,11 @@ keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	RSA.PrivateKey -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
 keyExchange dh cr cv sr bs ssk rsk mcs = do
-	msk <- if not dh
-		then return Nothing
-		else withRandom (generateSecret bs) >>=
+	msk <- if not dh then return Nothing else
+		withRandom (generateSecret bs) >>=
 			(>>) <$> serverKeyExchange cr sr ssk bs <*> return . Just
 	serverToHelloDone mcs
-	mpk <- maybe (return Nothing) ((Just `liftM`) . clientCertificate) mcs
+	mpk <- maybe (return Nothing) (liftM Just . clientCertificate) mcs
 	case msk of
 		Just sk -> dhClientKeyExchange cr sr bs sk
 		_ -> rsaClientKeyExchange cr cv sr rsk
@@ -146,18 +140,14 @@ serverHello :: (HandleLike h, CPRG g) => [CipherSuite] -> [CipherSuite] ->
 	X509.CertificateChain -> X509.CertificateChain ->
 	HandshakeM h g (KeyExchange, BS.ByteString)
 serverHello cssv cscl rcc ecc = do
+	let	cs@(CipherSuite ke _) = mergeCipherSuite cssv cscl
+		cc = case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	sr <- randomByteString 32
-	cs@(CipherSuite ke _) <- case cipherSuiteSel cssv cscl of
-		Just cs -> return cs
-		_ -> throwError $ Alert
-			AlertLevelFatal AlertDescriptionIllegalParameter
-			"TlsServer.serverHello: no supported cipher suites"
-	let	cc = case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	writeHandshakeList [
 		HandshakeServerHello $ ServerHello version sr sessionId
 			cs compressionMethod Nothing,
 		HandshakeCertificate cc ]
-	modify . first $ setCipherSuite cs
+	setCipherSuite cs
 	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
@@ -250,76 +240,71 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> Secret b -> HandshakeM h g ()
 dhClientKeyExchange cr sr bs sv = do
 	ClientKeyExchange cke <- readHandshake
-	generateKeys cr sr =<< case calculateCommon bs sv <$>
-			B.fromByteString cke of
-		Left em -> throwError . strMsg $
-			"TlsServer.dhClientKeyExchange: " ++ em
-		Right p -> return p
+	generateKeys cr sr =<<
+		case calculateCommon bs sv <$> B.fromByteString cke of
+			Left em -> throwError . strMsg $
+				"TlsServer.dhClientKeyExchange: " ++ em
+			Right p -> return p
 
-rsaClientKeyExchange :: (HandleLike h, CPRG g) =>
-	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
-	HandshakeM h g ()
-rsaClientKeyExchange cr (cvmj, cvmn) sr sk = do
+rsaClientKeyExchange :: (HandleLike h, CPRG g) => BS.ByteString ->
+	Version -> BS.ByteString -> RSA.PrivateKey -> HandshakeM h g ()
+rsaClientKeyExchange cr (cvj, cvn) sr sk = do
 	ClientKeyExchange cke <- readHandshake
 	epms <- case B.runBytableM (B.take =<< B.take 2) cke of
 		Left em -> throwError . strMsg $
 			"TlsServer.clientKeyExchange: " ++ em
 		Right (e, "") -> return e
-		_ -> throwError "TlsServer.clientKeyExchange"
+		_ -> throwError "TlsServer.clientKeyExchange: more data"
 	generateKeys cr sr =<< mkpms epms `catchError` const
-		((BS.cons cvmj . BS.cons cvmn) `liftM` randomByteString 46)
+		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
 		pms <- decryptRsa sk epms
 		unless (BS.length pms == 48) $ throwError "length"
 		case BS.unpack $ BS.take 2 pms of
-			[pvmj, pvmn] -> unless (pvmj == cvmj && pvmn == cvmn) $
-					throwError "version"
+			[pvj, pvn] -> unless
+				(pvj == cvj && pvn == cvn) $ throwError "version"
 			_ -> throwError "never occur"
 		return pms
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	debugCipherSuite "RSA"
-	hash0 <- rsaPadding pub `liftM` handshakeHash
+	hs0 <- rsaPadding pub `liftM` handshakeHash
 	DigitallySigned a s <- readHandshake
 	chk a
-	let hash1 = RSA.ep pub s
-	unless (hash1 == hash0) . throwError $ Alert
+	let hs = RSA.ep pub s
+	unless (hs == hs0) . throwError $ Alert
 		AlertLevelFatal
 		AlertDescriptionDecryptError
-		"client authentification failed "
+		"TlsServer.certificateVerify: client auth failed "
 	where
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionDecodeError
-			("Not implement such algorithm: " ++ show a)
-certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 pnt) = do
+		_ -> throwError . Alert AlertLevelFatal
+			AlertDescriptionDecodeError $
+			"TlsServer.certificateVEerify: not implement algorithm: "
+				++ show a
+certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	debugCipherSuite "ECDSA"
-	hash0 <- handshakeHash
+	hs0 <- handshakeHash
 	DigitallySigned a s <- readHandshake
 	chk a
-	unless (ECDSA.verify id (pub pnt)
-		(either error id $ B.fromByteString s) hash0) .
-			throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"ECDSA: client authentification failed"
+	unless (ECDSA.verify id (ECDSA.PublicKey secp256r1 $ pnt xy)
+		(either error id $ B.fromByteString s) hs0) .  throwError $ Alert
+			AlertLevelFatal AlertDescriptionDecryptError
+			"TlsServer.certificateverify: client auth failed"
 	where
-	point s = let 
+	chk a = case a of
+		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
+		_ -> throwError . Alert
+			AlertLevelFatal AlertDescriptionDecodeError $
+			"Not implement such algorithm: " ++ show a
+	pnt s = let
 		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
 		ECC.Point
 			(either error id $ B.fromByteString x)
 			(either error id $ B.fromByteString y)
-	pub = ECDSA.PublicKey secp256r1 . point
-	chk a = case a of
-		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionDecodeError
-			("Not implement such algorithm: " ++ show a)
-certificateVerify p = throwError $ Alert AlertLevelFatal
-	AlertDescriptionUnsupportedCertificate
-	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
+certificateVerify p = throwError $ Alert
+	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
+	"TlsServer.certificateVerify: not implemented " ++ show p
