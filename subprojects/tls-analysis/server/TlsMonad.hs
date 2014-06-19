@@ -55,11 +55,11 @@ runTlsM m st = runErrorT m `runStateT` st
 data Partner = Server | Client deriving (Show, Eq)
 
 getBuf ::  HandleLike h =>
-	CS.ClientId -> TlsM h g (Maybe CS.ContentType, BS.ByteString)
+	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
 getBuf = gets . CS.getBuffer
 
 setBuf :: HandleLike h =>
-	CS.ClientId -> (Maybe CS.ContentType, BS.ByteString) -> TlsM h g ()
+	CS.ClientId -> (CS.ContentType, BS.ByteString) -> TlsM h g ()
 setBuf = (modify .) . CS.setBuffer
 
 getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64

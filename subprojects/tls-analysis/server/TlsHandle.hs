@@ -29,7 +29,6 @@ import Prelude hiding (read)
 
 import Control.Applicative
 import Control.Monad
-import Data.Maybe
 import Data.Word
 import Data.HandleLike
 import "crypto-random" Crypto.Random
@@ -87,9 +86,9 @@ getContentType :: HandleLike h => TlsHandle h g ->
 	TlsM h g (ContentType, BS.ByteString) -> TlsM h g ContentType
 getContentType th rd = do
 	mct <- fst `liftM` getBuf (clientId th)
-	(\gt -> maybe gt return mct) $ do
+	(\gt -> case mct of ContentTypeNull -> gt; _ -> return mct) $ do
 		(ct, bf) <- rd
-		setBuf (clientId th) (Just ct, bf)
+		setBuf (clientId th) (ct, bf)
 		return ct
 
 buffered :: HandleLike h =>
@@ -100,16 +99,16 @@ buffered th n rd = do
 	if BS.length bf >= n
 	then do	let (ret, bf') = BS.splitAt n bf
 		setBuf (clientId th) $
-			if BS.null bf' then (Nothing, "") else (mct, bf')
-		return (fromJust mct, ret)
+			if BS.null bf' then (ContentTypeNull, "") else (mct, bf')
+		return (mct, ret)
 	else do	(ct', bf') <- rd
-		unless (maybe True (== ct') mct) .
+		unless (ct' == mct) .
 			throwError . strToAlert $ "Content Type confliction\n" ++
 				"\tExpected: " ++ show mct ++ "\n" ++
 				"\tActual  : " ++ show ct' ++ "\n" ++
 				"\tData    : " ++ show bf'
 		when (BS.null bf') $ throwError "buffered: No data available"
-		setBuf (clientId th) (Just ct', bf')
+		setBuf (clientId th) (ct', bf')
 		((ct' ,) . (bf `BS.append`) . snd) `liftM` buffered th (n - BS.length bf) rd
 
 updateSequenceNumber :: HandleLike h =>
@@ -188,14 +187,14 @@ tGetLine tc = do
 			setBuf (clientId tc) (mct, ls)
 			return l
 		_ -> do	msg <- tGetWhole tc
-			setBuf (clientId tc) (Just ContentTypeApplicationData, msg)
+			setBuf (clientId tc) (ContentTypeApplicationData, msg)
 			(bfr `BS.append`) `liftM` tGetLine tc
 
 tGetContent :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
 tGetContent tc = do
 	(_, bfr) <- getBuf $ clientId tc
 	if BS.null bfr then tGetWhole tc else do
-		setBuf (clientId tc) (Nothing, BS.empty)
+		setBuf (clientId tc) (ContentTypeNull, BS.empty)
 		return bfr
 
 splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
