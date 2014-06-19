@@ -45,7 +45,7 @@ class HandshakeItem ht where
 	fromHandshake :: Handshake -> Maybe ht
 	toHandshake :: ht -> Handshake
 
-data Finished = Finished BS.ByteString
+data Finished = Finished BS.ByteString deriving (Show, Eq)
 
 data ServerKeyExchange
 	= ServerKeyExchange BS.ByteString BS.ByteString

@@ -12,7 +12,7 @@ module ReadContent (
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..), HM.Partner(..),
 	putChangeCipherSpec,
 	ClientCertificateType(..), SessionId(..), CompressionMethod(..),
-	HM.TlsM, HM.TlsHandle(..), HM.finishedHash,
+	HM.TlsM, HM.TlsHandle(..), finishedHash,
 	DigitallySigned(..),
 	HM.handshakeHash, HM.rsaPadding, HM.debugCipherSuite, HM.decryptRsa,
 	HM.randomByteString,
@@ -47,6 +47,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+-- import qualified Crypto.Types.PubKey.ECC as ECC
 
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
@@ -72,6 +73,9 @@ import qualified HandshakeMonad as HM (
 	ContentType(..), EcdsaSign(..),
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
+
+finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
+finishedHash = (Finished `liftM`) . HM.finishedHash
 
 setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
 setCipherSuite = modify . first . HM.setCipherSuite
@@ -172,20 +176,6 @@ instance B.Bytable ChangeCipherSpec where
 			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
-
-data EcCurveType
-	= ExplicitPrime
-	| ExplicitChar2
-	| NamedCurve
-	| EcCurveTypeRaw Word8
-	deriving Show
-
-instance B.Bytable EcCurveType where
-	fromByteString = undefined
-	toByteString ExplicitPrime = BS.pack [1]
-	toByteString ExplicitChar2 = BS.pack [2]
-	toByteString NamedCurve = BS.pack [3]
-	toByteString (EcCurveTypeRaw w) = BS.pack [w]
 
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
