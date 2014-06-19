@@ -13,7 +13,7 @@ import Prelude hiding (read)
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
 import Control.Monad (unless, liftM)
-import "monads-tf" Control.Monad.State (gets, modify)
+import "monads-tf" Control.Monad.State (modify)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (catMaybes)
@@ -30,12 +30,29 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
-import qualified Crypto.Types.PubKey.ECC as ECDSA
+import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import ReadContent
+import ReadContent (
+	HandshakeM, TlsM, run, execHandshakeM, withRandom, randomByteString,
+	TlsHandle,
+		setClientNames, checkName, clientName,
+		setCipherSuite, flushCipherSuite, debugCipherSuite,
+	ValidateHandle(..), validate',
+	Alert(..), AlertLevel(..), AlertDescription(..),
+	Handshake(..),
+		readHandshake, getChangeCipherSpec,
+		writeHandshake, writeHandshakeList, putChangeCipherSpec,
+	ClientHello(..), ServerHello(..), SessionId(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+	CertificateRequest(..),
+		ClientCertificateType(..), NamedCurve(..), SecretKey(..),
+	ClientKeyExchange(..), generateKeys, decryptRsa, rsaPadding,
+	DigitallySigned(..), handshakeHash,
+	Partner(..), finishedHash)
 import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
 
 type Version = (Word8, Word8)
@@ -65,8 +82,8 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
-curve :: ECDSA.Curve
-curve = fst (generateBase undefined () :: (ECDSA.Curve, SystemRNG))
+curve :: ECC.Curve
+curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
 
 openClient :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> [CipherSuite] ->
@@ -82,10 +99,10 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
 		_ -> throwError "TlsServer.openClient"
 	maybe (return ()) certificateVerify mpk
-	clientChangeCipherSpec
+	getChangeCipherSpec >> flushCipherSuite Client
 	clientFinished
-	serverChangeCipherSpec
-	serverFinished
+	putChangeCipherSpec >> flushCipherSuite Server
+	writeHandshake . HandshakeFinished =<< finishedHash Server
 
 keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>
@@ -138,9 +155,9 @@ serverHello cssv cscl rcc ecc = do
 			AlertLevelFatal AlertDescriptionIllegalParameter
 			"TlsServer.serverHello: no supported cipher suites"
 	let	cc = case ke of ECDHE_ECDSA -> ecc; _ -> rcc
-	uncurry tlsPut . contentListToByteString $ map ContentHandshake [
-		HandshakeServerHello $ ServerHello
-			version sr sessionId cs compressionMethod Nothing,
+	writeHandshakeList [
+		HandshakeServerHello $ ServerHello version sr sessionId
+			cs compressionMethod Nothing,
 		HandshakeCertificate cc ]
 	modify . first $ setCipherSuite cs
 	return (ke, sr)
@@ -148,8 +165,8 @@ serverHello cssv cscl rcc ecc = do
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 		Base b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
-serverKeyExchange cr sr ssk bs sv = uncurry tlsPut . contentListToByteString .
-	(: []) . ContentHandshake .  HandshakeServerKeyExchange . B.toByteString $
+serverKeyExchange cr sr ssk bs sv = writeHandshake .
+	HandshakeServerKeyExchange . B.toByteString $
 		ServerKeyExchange bs' pv
 			HashAlgorithmSha1 (signatureAlgorithm ssk)
 			(sign ssk SHA1.hash $ BS.concat [cr, sr, bs', pv])
@@ -157,10 +174,45 @@ serverKeyExchange cr sr ssk bs sv = uncurry tlsPut . contentListToByteString .
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv
 
+data ServerKeyExchange
+	= ServerKeyExchange BS.ByteString BS.ByteString
+		HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+
+instance B.Bytable ServerKeyExchange where
+	fromByteString = undefined
+	toByteString = serverKeyExchangeToByteString
+
+serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
+serverKeyExchangeToByteString
+	(ServerKeyExchange params dhYs hashA sigA sn) =
+	BS.concat [
+		params, dhYs, B.toByteString hashA, B.toByteString sigA,
+		B.addLength (undefined :: Word16) sn ]
+
+data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
+	deriving Show
+
+instance B.Bytable EcCurveType where
+	fromByteString = undefined
+	toByteString ExplicitPrime = BS.pack [1]
+	toByteString ExplicitChar2 = BS.pack [2]
+	toByteString NamedCurve = BS.pack [3]
+	toByteString (EcCurveTypeRaw w) = BS.pack [w]
+
+instance B.Bytable ECC.Curve where
+	fromByteString = undefined
+	toByteString = encodeCurve
+
+encodeCurve :: ECC.Curve -> BS.ByteString
+encodeCurve c
+	| c == secp256r1 =
+		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
+	| otherwise = error "TlsServer.encodeCurve: not implemented"
+
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g ()
-serverToHelloDone mcs = uncurry tlsPut . contentListToByteString .
-	map ContentHandshake . catMaybes . (: [Just HandshakeServerHelloDone]) $
+serverToHelloDone mcs = writeHandshakeList . catMaybes .
+	(: [Just HandshakeServerHelloDone]) $
 		HandshakeCertificateRequest . CertificateRequest
 				clientCertificateTypes
 				clientCertificateAlgorithms
@@ -268,7 +320,7 @@ certificateVerify (X509.PubKeyRSA pub) = do
 			AlertLevelFatal
 			AlertDescriptionDecodeError
 			("Not implement such algorithm: " ++ show a)
-certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
+certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 pnt) = do
 	debugCipherSuite "ECDSA"
 	hash0 <- handshakeHash
 	hs <- readHandshake
@@ -288,7 +340,7 @@ certificateVerify (X509.PubKeyECDSA ECDSA.SEC_p256r1 pnt) = do
 	where
 	point s = let 
 		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
-		ECDSA.Point
+		ECC.Point
 			(either error id $ B.fromByteString x)
 			(either error id $ B.fromByteString y)
 	pub = ECDSA.PublicKey secp256r1 . point
@@ -302,24 +354,12 @@ certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
 
-clientChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
-clientChangeCipherSpec = do
-	cnt <- readContent
-	case cnt of
-		ContentChangeCipherSpec ChangeCipherSpec ->
-			flushCipherSuite Client `liftM` gets fst >>=
-				modify . first . const
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Change Cipher Spec"
-
 clientFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
 clientFinished = do
 	fhc <- finishedHash Client
-	cnt <- readContent
+	cnt <- readHandshake
 	case cnt of
-		ContentHandshake (HandshakeFinished f) ->
+		HandshakeFinished f ->
 			unless (f == fhc) . throwError $ Alert
 				AlertLevelFatal
 				AlertDescriptionDecryptError
@@ -328,52 +368,3 @@ clientFinished = do
 			AlertLevelFatal
 			AlertDescriptionUnexpectedMessage
 			"Not Finished"
-
-serverChangeCipherSpec :: (HandleLike h, CPRG g) => HandshakeM h g ()
-serverChangeCipherSpec = do
-	uncurry tlsPut . contentToByteString $
-		ContentChangeCipherSpec ChangeCipherSpec
-	flushCipherSuite Server `liftM` gets fst >>= modify . first . const
-
-serverFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
-serverFinished = uncurry tlsPut . contentToByteString .
-	ContentHandshake . HandshakeFinished =<< finishedHash Server
-
-data ServerKeyExchange
-	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
-	deriving Show
-
-instance B.Bytable ServerKeyExchange where
-	fromByteString = undefined
-	toByteString = serverKeyExchangeToByteString
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyExchange params dhYs hashA sigA sn) =
-	BS.concat [
-		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		B.addLength (undefined :: Word16) sn ]
-
-data EcCurveType
-	= ExplicitPrime
-	| ExplicitChar2
-	| NamedCurve
-	| EcCurveTypeRaw Word8
-	deriving Show
-
-instance B.Bytable EcCurveType where
-	fromByteString = undefined
-	toByteString ExplicitPrime = BS.pack [1]
-	toByteString ExplicitChar2 = BS.pack [2]
-	toByteString NamedCurve = BS.pack [3]
-	toByteString (EcCurveTypeRaw w) = BS.pack [w]
-
-instance B.Bytable ECDSA.Curve where
-	fromByteString = undefined
-	toByteString = encodeCurve
-
-encodeCurve :: ECDSA.Curve -> BS.ByteString
-encodeCurve c
-	| c == secp256r1 =
-		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
-	| otherwise = error "TlsServer.encodeCurve: not implemented"

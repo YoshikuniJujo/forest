@@ -21,6 +21,8 @@ import System.IO.Unsafe
 import Crypto.Types.PubKey.ECC
 import Crypto.PubKey.ECC.Prim
 
+-- import qualified Crypto.Types.PubKey.ECC as ECC
+
 class Base b where
 	type Param b
 	type Secret b

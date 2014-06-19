@@ -4,30 +4,35 @@
 
 module ReadContent (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..),
-	run, checkName, clientName,
+	HM.ValidateHandle(..),
+	HM.run, HM.checkName, HM.clientName,
 
-	ContentType(..), SignatureAlgorithm(..), SecretKey(..),
-	HashAlgorithm(..), HandshakeM, Handshake(..), NamedCurve(..),
-	Alert(..), AlertLevel(..), AlertDescription(..), Partner(..),
-	tlsGet, tlsGetContentType, tlsPut,
+	HM.ContentType(..), SignatureAlgorithm(..), SecretKey(..),
+	HashAlgorithm(..), HM.HandshakeM, Handshake(..), NamedCurve(..),
+	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..), HM.Partner(..),
+	putChangeCipherSpec, writeHandshake, writeHandshakeList,
 	ClientCertificateType(..), SessionId(..), CompressionMethod(..),
-	TlsM, TlsHandle(..), finishedHash, flushCipherSuite, DigitallySigned(..),
-	handshakeHash, rsaPadding, debugCipherSuite, decryptRsa, randomByteString,
-	generateKeys, ClientKeyExchange(..), validate', setClientNames,
-	CertificateRequest(..), ClientHello(..), ServerHello(..), withRandom,
-	execHandshakeM, setCipherSuite,
+	HM.TlsM, HM.TlsHandle(..), HM.finishedHash,
+	DigitallySigned(..),
+	HM.handshakeHash, HM.rsaPadding, HM.debugCipherSuite, HM.decryptRsa,
+	HM.randomByteString,
+	HM.generateKeys, ClientKeyExchange(..), HM.validate', HM.setClientNames,
+	CertificateRequest(..), ClientHello(..), ServerHello(..), HM.withRandom,
+	HM.execHandshakeM, HM.setCipherSuite,
 
 	readHandshake,
-	readContent,
+	getChangeCipherSpec,
 	Content(..), ChangeCipherSpec(..),
-	contentToByteString, contentListToByteString,
+	flushCipherSuite,
+	isFinished,
 ) where
 
 import Prelude hiding (read)
 
+import Control.Arrow
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Error (throwError)
+import "monads-tf" Control.Monad.State (modify, gets)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
@@ -53,7 +58,7 @@ import HandshakeType (
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ClientKeyExchange(..),
 	DigitallySigned(..) )
-import HandshakeMonad (
+import qualified HandshakeMonad as HM (
 	TlsM, run,
 	HandshakeM, execHandshakeM,
 		withRandom, randomByteString, generateKeys, decryptRsa,
@@ -66,46 +71,88 @@ import HandshakeMonad (
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
 
-readHandshake :: (HandleLike h, CPRG g) => HandshakeM h g Handshake
+isFinished :: Handshake -> Bool
+isFinished (HandshakeFinished _) = True
+isFinished _ = False
+
+readHandshake' :: (HandleLike h, CPRG g) =>
+	(Handshake -> Bool) -> HM.HandshakeM h g Handshake
+readHandshake' ck = do
+	hs <- readHandshake
+	if ck hs then return hs else throwError $
+		HM.Alert HM.AlertLevelFatal
+			HM.AlertDescriptionUnexpectedMessage $
+			"ReadContent.readHandshakeWithCheck: " ++ show hs
+
+flushCipherSuite :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g ()
+flushCipherSuite p = HM.flushCipherSuite p `liftM` gets fst >>= modify . first . const
+
+getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+getChangeCipherSpec = do
+	cnt <- readContent
+	case cnt of
+		ContentChangeCipherSpec ChangeCipherSpec ->
+			return ()
+		_ -> throwError $ HM.Alert
+			HM.AlertLevelFatal
+			HM.AlertDescriptionUnexpectedMessage
+			"Not Change Cipher Spec"
+
+putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+putChangeCipherSpec = writeContent $ ContentChangeCipherSpec ChangeCipherSpec
+
+writeContent :: (HandleLike h, CPRG g) => Content -> HM.HandshakeM h g ()
+writeContent = uncurry HM.tlsPut . contentToByteString
+
+writeContentList :: (HandleLike h, CPRG g) => [Content] -> HM.HandshakeM h g ()
+writeContentList = uncurry HM.tlsPut . contentListToByteString
+
+writeHandshake :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
+writeHandshake = writeContent . ContentHandshake
+
+writeHandshakeList :: (HandleLike h, CPRG g) => [Handshake] -> HM.HandshakeM h g ()
+writeHandshakeList = writeContentList . map ContentHandshake
+
+readHandshake :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
 readHandshake = do
 	cnt <- readContent
 	case cnt of
 		ContentHandshake hs
 			| True -> return hs
-			| otherwise -> throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionProtocolVersion
+			| otherwise -> throwError $ HM.Alert
+				HM.AlertLevelFatal
+				HM.AlertDescriptionProtocolVersion
 				"Not supported layer version"
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage "Not Handshake"
+		_ -> throwError $ HM.Alert
+			HM.AlertLevelFatal
+			HM.AlertDescriptionUnexpectedMessage "Not Handshake"
 
-readContent :: (HandleLike h, CPRG g) => HandshakeM h g Content
-readContent = parseContent tlsGet =<< tlsGetContentType
+readContent :: (HandleLike h, CPRG g) => HM.HandshakeM h g Content
+readContent = parseContent HM.tlsGet =<< HM.tlsGetContentType
 
-parseContent :: Monad m => (Int -> m BS.ByteString) -> ContentType -> m Content
-parseContent rd ContentTypeChangeCipherSpec =
+parseContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
+parseContent rd HM.ContentTypeChangeCipherSpec =
 	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
-parseContent rd ContentTypeAlert =
+parseContent rd HM.ContentTypeAlert =
 	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
-parseContent rd ContentTypeHandshake = ContentHandshake `liftM` do
+parseContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 	t <- rd 1
 	len <- rd 3
 	body <- rd . either error id $ B.fromByteString len
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
-parseContent _ ContentTypeApplicationData = undefined
+parseContent _ HM.ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
 
-contentListToByteString :: [Content] -> (ContentType, BS.ByteString)
+contentListToByteString :: [Content] -> (HM.ContentType, BS.ByteString)
 contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
 	(ct, BS.concat $ map snd fs)
 
-contentToByteString :: Content -> (ContentType, BS.ByteString)
+contentToByteString :: Content -> (HM.ContentType, BS.ByteString)
 contentToByteString (ContentChangeCipherSpec ccs) =
-	(ContentTypeChangeCipherSpec, B.toByteString ccs)
-contentToByteString (ContentAlert al ad) = (ContentTypeAlert, BS.pack [al, ad])
+	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
+contentToByteString (ContentAlert al ad) = (HM.ContentTypeAlert, BS.pack [al, ad])
 contentToByteString (ContentHandshake hss) =
-	(ContentTypeHandshake, B.toByteString hss)
+	(HM.ContentTypeHandshake, B.toByteString hss)
 
 data Content
 	= ContentChangeCipherSpec ChangeCipherSpec
@@ -180,5 +227,5 @@ class SecretKey sk where
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
 		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
-		B.toByteString $ EcdsaSign 0x30 (2, r) (2, s)
+		B.toByteString $ HM.EcdsaSign 0x30 (2, r) (2, s)
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
