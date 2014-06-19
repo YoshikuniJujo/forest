@@ -8,9 +8,9 @@ module ReadContent (
 	HM.run, HM.checkName, HM.clientName,
 
 	HM.ContentType(..), SignatureAlgorithm(..), SecretKey(..),
-	HashAlgorithm(..), HM.HandshakeM, Handshake(..), NamedCurve(..),
+	HashAlgorithm(..), HM.HandshakeM, NamedCurve(..),
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..), HM.Partner(..),
-	putChangeCipherSpec, writeHandshake,
+	putChangeCipherSpec,
 	ClientCertificateType(..), SessionId(..), CompressionMethod(..),
 	HM.TlsM, HM.TlsHandle(..), HM.finishedHash,
 	DigitallySigned(..),
@@ -20,12 +20,12 @@ module ReadContent (
 	CertificateRequest(..), ClientHello(..), ServerHello(..), HM.withRandom,
 	HM.execHandshakeM, setCipherSuite,
 
-	readHandshake, Finished(..),
+	readHandshake, ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
 	getChangeCipherSpec,
 	Content(..), ChangeCipherSpec(..),
 	flushCipherSuite,
 	isFinished,
-	writeHandshake',
+	writeHandshake,
 ) where
 
 import Prelude hiding (read)
@@ -34,7 +34,7 @@ import Control.Arrow
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.State (modify, gets)
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -49,7 +49,8 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import HandshakeType (
-	Handshake(..), HandshakeItem(..), Finished(..),
+	Handshake(..), HandshakeItem(..),
+		ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -84,7 +85,7 @@ readHandshake = do
 	hs <- readHandshake_
 	case fromHandshake hs of
 		Just i -> return i
-		_ -> throwError $
+		_ -> throwError .
 			HM.Alert HM.AlertLevelFatal
 				HM.AlertDescriptionUnexpectedMessage $
 				"ReadContent.readHandshake: " ++ show hs
@@ -109,12 +110,12 @@ putChangeCipherSpec = writeContent $ ContentChangeCipherSpec ChangeCipherSpec
 writeContent :: (HandleLike h, CPRG g) => Content -> HM.HandshakeM h g ()
 writeContent = uncurry HM.tlsPut . contentToByteString
 
-writeHandshake' :: (HandleLike h, CPRG g, HandshakeItem hi) =>
+writeHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) =>
 	hi -> HM.HandshakeM h g ()
-writeHandshake' = writeHandshake . toHandshake
+writeHandshake = writeHandshake_ . toHandshake
 
-writeHandshake :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
-writeHandshake = writeContent . ContentHandshake
+writeHandshake_ :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
+writeHandshake_ = writeContent . ContentHandshake
 
 readHandshake_ :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
 readHandshake_ = do
@@ -171,21 +172,6 @@ instance B.Bytable ChangeCipherSpec where
 			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
-
-data ServerKeyExchange
-	= ServerKeyExchange BS.ByteString BS.ByteString HashAlgorithm SignatureAlgorithm BS.ByteString
-	deriving Show
-
-instance B.Bytable ServerKeyExchange where
-	fromByteString = undefined
-	toByteString = serverKeyExchangeToByteString
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyExchange params dhYs hashA sigA sn) =
-	BS.concat [
-		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		B.addLength (undefined :: Word16) sn ]
 
 data EcCurveType
 	= ExplicitPrime

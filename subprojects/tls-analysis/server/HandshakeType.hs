@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module HandshakeType (
-	Handshake(..), Finished(..), HandshakeItem(..),
+	Handshake(..), HandshakeItem(..),
+		ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -18,7 +19,7 @@ import Control.Applicative
 
 import qualified Codec.Bytable as B
 
-import Data.Word (Word8)
+import Data.Word (Word8, Word16)
 import Data.Word.Word24
 import qualified Data.ByteString as BS
 
@@ -46,6 +47,23 @@ class HandshakeItem ht where
 
 data Finished = Finished BS.ByteString
 
+data ServerKeyExchange
+	= ServerKeyExchange BS.ByteString BS.ByteString
+		HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+
+instance B.Bytable ServerKeyExchange where
+	fromByteString = undefined
+	toByteString = serverKeyExchangeToByteString
+
+data ServerHelloDone = ServerHelloDone deriving Show
+
+serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
+serverKeyExchangeToByteString
+	(ServerKeyExchange params dhYs hashA sigA sn) =
+	BS.concat [
+		params, dhYs, B.toByteString hashA, B.toByteString sigA,
+		B.addLength (undefined :: Word16) sn ]
+
 instance HandshakeItem Finished where
 	fromHandshake (HandshakeFinished f) = Just $ Finished f
 	fromHandshake _ = Nothing
@@ -54,22 +72,41 @@ instance HandshakeItem Finished where
 instance HandshakeItem ClientHello where
 	fromHandshake (HandshakeClientHello ch) = Just ch
 	fromHandshake _ = Nothing
-	toHandshake ch = HandshakeClientHello ch
+	toHandshake = HandshakeClientHello
+
+instance HandshakeItem ServerHello where
+	fromHandshake (HandshakeServerHello sh) = Just sh
+	fromHandshake _ = Nothing
+	toHandshake = HandshakeServerHello
 
 instance HandshakeItem X509.CertificateChain where
 	fromHandshake (HandshakeCertificate cc) = Just cc
 	fromHandshake _ = Nothing
-	toHandshake cc = HandshakeCertificate cc
+	toHandshake = HandshakeCertificate
+
+instance HandshakeItem ServerKeyExchange where
+	fromHandshake = undefined
+	toHandshake = HandshakeServerKeyExchange . B.toByteString
+
+instance HandshakeItem CertificateRequest where
+	fromHandshake (HandshakeCertificateRequest cr) = Just cr
+	fromHandshake _ = Nothing
+	toHandshake = HandshakeCertificateRequest
+
+instance HandshakeItem ServerHelloDone where
+	fromHandshake HandshakeServerHelloDone = Just ServerHelloDone
+	fromHandshake _ = Nothing
+	toHandshake _ = HandshakeServerHelloDone
 
 instance HandshakeItem ClientKeyExchange where
 	fromHandshake (HandshakeClientKeyExchange cke) = Just cke
 	fromHandshake _ = Nothing
-	toHandshake cke = HandshakeClientKeyExchange cke
+	toHandshake = HandshakeClientKeyExchange
 
 instance HandshakeItem DigitallySigned where
 	fromHandshake (HandshakeCertificateVerify ds) = Just ds
 	fromHandshake _ = Nothing
-	toHandshake ds = HandshakeCertificateVerify ds
+	toHandshake = HandshakeCertificateVerify
 
 instance B.Bytable Handshake where
 	fromByteString = B.evalBytableM B.parse

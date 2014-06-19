@@ -63,8 +63,7 @@ flushCipherSuite p th@TlsHandle { keys = ks } = case p of
 data Partner = Server | Client deriving (Show, Eq)
 
 write :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-write th = do
-	thlPut $ tlsHandle th
+write th = thlPut $ tlsHandle th
 
 read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
 read h n = do

@@ -15,7 +15,7 @@ import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
@@ -37,9 +37,9 @@ import ReadContent (
 	TlsHandle, setClientNames, checkName, clientName,
 	ValidateHandle(..), validate',
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	Handshake(..), Finished(..),
+	ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
 		readHandshake, getChangeCipherSpec,
-		writeHandshake, writeHandshake', putChangeCipherSpec,
+		writeHandshake, putChangeCipherSpec,
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
@@ -99,7 +99,7 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	unless (f == f0) . throwError $ Alert AlertLevelFatal
 		AlertDescriptionDecryptError "TlsServer.openClient: bad Finished"
 	putChangeCipherSpec >> flushCipherSuite Server
-	writeHandshake' . Finished =<< finishedHash Server
+	writeHandshake . Finished =<< finishedHash Server
 
 keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>
@@ -142,38 +142,21 @@ serverHello cssv cscl rcc ecc = do
 	let	cs@(CipherSuite ke _) = mergeCipherSuite cssv cscl
 		cc = case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	sr <- randomByteString 32
-	writeHandshake . HandshakeServerHello $ ServerHello
-		version sr sessionId cs compressionMethod Nothing
-	writeHandshake $ HandshakeCertificate cc
+	writeHandshake $
+		ServerHello version sr sessionId cs compressionMethod Nothing
+	writeHandshake cc
 	setCipherSuite cs
 	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 		Base b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
-serverKeyExchange cr sr ssk bs sv = writeHandshake .
-	HandshakeServerKeyExchange . B.toByteString $
-		ServerKeyExchange bs' pv
-			HashAlgorithmSha1 (signatureAlgorithm ssk)
-			(sign ssk SHA1.hash $ BS.concat [cr, sr, bs', pv])
+serverKeyExchange cr sr ssk bs sv = writeHandshake . ServerKeyExchange bs' pv
+	HashAlgorithmSha1 (signatureAlgorithm ssk) . sign ssk SHA1.hash $
+		BS.concat [cr, sr, bs', pv]
 	where
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv
-
-data ServerKeyExchange
-	= ServerKeyExchange BS.ByteString BS.ByteString
-		HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
-
-instance B.Bytable ServerKeyExchange where
-	fromByteString = undefined
-	toByteString = serverKeyExchangeToByteString
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyExchange params dhYs hashA sigA sn) =
-	BS.concat [
-		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		B.addLength (undefined :: Word16) sn ]
 
 data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
 	deriving Show
@@ -198,25 +181,11 @@ encodeCurve c
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g ()
 serverToHelloDone mcs = do
-	maybe (return ()) (writeHandshake . HandshakeCertificateRequest
-		. CertificateRequest
-			clientCertificateTypes
-			clientCertificateAlgorithms
+	maybe (return ()) (writeHandshake . CertificateRequest
+			clientCertificateTypes clientCertificateAlgorithms
 		. map (X509.certIssuerDN .  X509.signedObject . X509.getSigned)
 		. X509.listCertificates) mcs
-	writeHandshake HandshakeServerHelloDone
-
-
-{-
-	writeHandshakeList . catMaybes .
-	(: [Just HandshakeServerHelloDone]) $
-		HandshakeCertificateRequest . CertificateRequest
-				clientCertificateTypes
-				clientCertificateAlgorithms
-			. map (X509.certIssuerDN .
-				X509.signedObject . X509.getSigned)
-			. X509.listCertificates <$> mcs
-			-}
+	writeHandshake ServerHelloDone
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
@@ -315,6 +284,6 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 		ECC.Point
 			(either error id $ B.fromByteString x)
 			(either error id $ B.fromByteString y)
-certificateVerify p = throwError $ Alert
+certificateVerify p = throwError . Alert
 	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implemented " ++ show p
