@@ -40,7 +40,7 @@ import ReadContent (
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Handshake(..), Finished(..),
 		readHandshake, getChangeCipherSpec,
-		writeHandshake, writeHandshakeList, putChangeCipherSpec,
+		writeHandshake, writeHandshake', writeHandshakeList, putChangeCipherSpec,
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
@@ -100,7 +100,7 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	unless (f == f0) . throwError $ Alert AlertLevelFatal
 		AlertDescriptionDecryptError "TlsServer.openClient: bad Finished"
 	putChangeCipherSpec >> flushCipherSuite Server
-	writeHandshake . HandshakeFinished =<< finishedHash Server
+	writeHandshake' . Finished =<< finishedHash Server
 
 keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	Base b, B.Bytable b, B.Bytable (Public b)) =>

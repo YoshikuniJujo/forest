@@ -25,6 +25,7 @@ module ReadContent (
 	Content(..), ChangeCipherSpec(..),
 	flushCipherSuite,
 	isFinished,
+	writeHandshake',
 ) where
 
 import Prelude hiding (read)
@@ -110,6 +111,10 @@ writeContent = uncurry HM.tlsPut . contentToByteString
 
 writeContentList :: (HandleLike h, CPRG g) => [Content] -> HM.HandshakeM h g ()
 writeContentList = uncurry HM.tlsPut . contentListToByteString
+
+writeHandshake' :: (HandleLike h, CPRG g, HandshakeItem hi) =>
+	hi -> HM.HandshakeM h g ()
+writeHandshake' = writeHandshake . toHandshake
 
 writeHandshake :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
 writeHandshake = writeContent . ContentHandshake
