@@ -25,12 +25,12 @@ module HandshakeBase (
 
 import Prelude hiding (read)
 
-import Control.Arrow
+import Control.Arrow (first)
 import Control.Monad (liftM)
-import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.State (modify, gets)
-import Data.Word (Word8)
+import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
+import Data.Word (Word8)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
@@ -46,87 +46,45 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
 		ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
-	ClientHello(..), ServerHello(..),
-		SessionId(..),
+	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), NamedCurve(..),
 	CertificateRequest(..),
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
-	ClientKeyExchange(..),
-	DigitallySigned(..) )
+	ClientKeyExchange(..), DigitallySigned(..) )
 import qualified HandshakeMonad as HM (
-	TlsM, run,
-	HandshakeM, execHandshakeM,
-		withRandom, randomByteString, generateKeys, decryptRsa,
+	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), validate',
-	TlsHandle(..),
+	TlsHandle(..), ContentType(..),
 		checkName, clientName, setClientNames,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut,
-	ContentType(..), EcdsaSign(..),
+		tlsGetContentType, tlsGet, tlsPut, generateKeys, decryptRsa,
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	Partner(..), handshakeHash, finishedHash, rsaPadding )
-
-finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
-finishedHash = (Finished `liftM`) . HM.finishedHash
-
-setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
-setCipherSuite = modify . first . HM.setCipherSuite
+	EcdsaSign(..), Partner(..), handshakeHash, finishedHash, rsaPadding )
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
-	hs <- readHandshake_
+	cnt <- parseContent HM.tlsGet =<< HM.tlsGetContentType
+	hs <- case cnt of
+		ContentHandshake hs -> return hs
+		_ -> throwError $ HM.Alert
+			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
+			"HandshakeBase.readHandshake: not handshake"
 	case fromHandshake hs of
 		Just i -> return i
-		_ -> throwError .
-			HM.Alert HM.AlertLevelFatal
-				HM.AlertDescriptionUnexpectedMessage $
-				"ReadContent.readHandshake: " ++ show hs
-
-flushCipherSuite :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g ()
-flushCipherSuite p = HM.flushCipherSuite p `liftM` gets fst >>= modify . first . const
+		_ -> throwError . HM.Alert
+			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage $
+			"HandshakeBase.readHandshake: " ++ show hs
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
-	cnt <- readContent
+	cnt <- parseContent HM.tlsGet =<< HM.tlsGetContentType
 	case cnt of
-		ContentChangeCipherSpec ChangeCipherSpec ->
-			return ()
+		ContentChangeCipherSpec ChangeCipherSpec -> return ()
 		_ -> throwError $ HM.Alert
-			HM.AlertLevelFatal
-			HM.AlertDescriptionUnexpectedMessage
-			"Not Change Cipher Spec"
-
-putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
-putChangeCipherSpec = writeContent $ ContentChangeCipherSpec ChangeCipherSpec
-
-writeContent :: (HandleLike h, CPRG g) => Content -> HM.HandshakeM h g ()
-writeContent = uncurry HM.tlsPut . contentToByteString
-
-writeHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) =>
-	hi -> HM.HandshakeM h g ()
-writeHandshake = writeHandshake_ . toHandshake
-
-writeHandshake_ :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
-writeHandshake_ = writeContent . ContentHandshake
-
-readHandshake_ :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
-readHandshake_ = do
-	cnt <- readContent
-	case cnt of
-		ContentHandshake hs
-			| True -> return hs
-			| otherwise -> throwError $ HM.Alert
-				HM.AlertLevelFatal
-				HM.AlertDescriptionProtocolVersion
-				"Not supported layer version"
-		_ -> throwError $ HM.Alert
-			HM.AlertLevelFatal
-			HM.AlertDescriptionUnexpectedMessage "Not Handshake"
-
-readContent :: (HandleLike h, CPRG g) => HM.HandshakeM h g Content
-readContent = parseContent HM.tlsGet =<< HM.tlsGetContentType
+			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
+			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
 
 parseContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
 parseContent rd HM.ContentTypeChangeCipherSpec =
@@ -141,12 +99,13 @@ parseContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 parseContent _ HM.ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
 
-contentToByteString :: Content -> (HM.ContentType, BS.ByteString)
-contentToByteString (ContentChangeCipherSpec ccs) =
-	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
-contentToByteString (ContentAlert al ad) = (HM.ContentTypeAlert, BS.pack [al, ad])
-contentToByteString (ContentHandshake hss) =
-	(HM.ContentTypeHandshake, B.toByteString hss)
+writeHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) =>
+	hi -> HM.HandshakeM h g ()
+writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandshake
+
+putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+putChangeCipherSpec =
+	uncurry HM.tlsPut . encodeContent $ ContentChangeCipherSpec ChangeCipherSpec
 
 data Content
 	= ContentChangeCipherSpec ChangeCipherSpec
@@ -154,18 +113,27 @@ data Content
 	| ContentHandshake Handshake
 	deriving Show
 
-data ChangeCipherSpec
-	= ChangeCipherSpec
-	| ChangeCipherSpecRaw Word8
-	deriving Show
+encodeContent :: Content -> (HM.ContentType, BS.ByteString)
+encodeContent (ContentChangeCipherSpec ccs) =
+	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
+encodeContent (ContentAlert al ad) = (HM.ContentTypeAlert, BS.pack [al, ad])
+encodeContent (ContentHandshake hss) =
+	(HM.ContentTypeHandshake, B.toByteString hss)
+
+data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
 instance B.Bytable ChangeCipherSpec where
 	fromByteString bs = case BS.unpack bs of
-			[1] -> Right ChangeCipherSpec
-			[ccs] -> Right $ ChangeCipherSpecRaw ccs
-			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
+		[1] -> Right ChangeCipherSpec
+		[ccs] -> Right $ ChangeCipherSpecRaw ccs
+		_ -> Left "HandshakeBase: ChangeCipherSpec.fromByteString"
 	toByteString ChangeCipherSpec = BS.pack [1]
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+
+class SecretKey sk where
+	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
+		BS.ByteString -> BS.ByteString
+	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
@@ -184,13 +152,18 @@ instance SecretKey RSA.PrivateKey where
 		RSA.dp Nothing sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
-class SecretKey sk where
-	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
-		BS.ByteString -> BS.ByteString
-	signatureAlgorithm :: sk -> SignatureAlgorithm
-
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
 		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
 		B.toByteString $ HM.EcdsaSign 0x30 (2, r) (2, s)
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
+
+setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
+setCipherSuite = modify . first . HM.setCipherSuite
+
+flushCipherSuite :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g ()
+flushCipherSuite p =
+	HM.flushCipherSuite p `liftM` gets fst >>= modify . first . const
+
+finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
+finishedHash = (Finished `liftM`) . HM.finishedHash
