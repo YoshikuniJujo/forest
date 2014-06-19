@@ -5,7 +5,8 @@ module ClientState (
 	TlsClientState,
 	ClientId,
 	newClientId,
-	setBuffer, getBuffer,
+	getBuffer, setBuffer,
+	getWriteBuffer, setWriteBuffer,
 	setRandomGen, getRandomGen,
 	succClientSequenceNumber, getClientSequenceNumber,
 	succServerSequenceNumber, getServerSequenceNumber,
@@ -58,6 +59,7 @@ modifyClientState cid f cs = let
 
 data TlsClientStateOne gen = TlsClientStateOne {
 	tlsBuffer :: (ContentType, BS.ByteString),
+	tlsWriteBuffer :: (ContentType, BS.ByteString),
 	tlsClientSequenceNumber :: Word64,
 	tlsServerSequenceNumber :: Word64 }
 
@@ -71,17 +73,27 @@ newClientId s = (ClientId cid ,) s {
 	cid = tlsNextClientId s
 	cs = TlsClientStateOne {
 		tlsBuffer = (ContentTypeNull, ""),
+		tlsWriteBuffer = (ContentTypeNull, ""),
 		tlsClientSequenceNumber = 0,
 		tlsServerSequenceNumber = 0 }
 	sl = tlsClientStateList s
 
-setBuffer :: ClientId ->
-	(ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
+getBuffer :: ClientId -> TlsClientState h gen -> (ContentType, BS.ByteString)
+getBuffer cid = tlsBuffer . fromJust' "getBuffer" . lookup cid . tlsClientStateList
+
+setBuffer ::
+	ClientId -> (ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
 setBuffer cid = modifyClientState cid . sb
 	where sb bs st = st { tlsBuffer = bs }
 
-getBuffer :: ClientId -> TlsClientState h gen -> (ContentType, BS.ByteString)
-getBuffer cid = tlsBuffer . fromJust' "getBuffer" . lookup cid . tlsClientStateList
+getWriteBuffer :: ClientId -> TlsClientState h gen -> (ContentType, BS.ByteString)
+getWriteBuffer cid = tlsWriteBuffer .
+	fromJust' "getWriteBuffer" . lookup cid . tlsClientStateList
+
+setWriteBuffer ::
+	ClientId -> (ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
+setWriteBuffer cid = modifyClientState cid . swb
+	where swb bs st = st { tlsWriteBuffer = bs }
 
 setRandomGen :: gen -> TlsClientState h gen -> TlsClientState h gen
 setRandomGen rg st = st { tlsRandomGen = rg }

@@ -4,7 +4,9 @@
 module TlsMonad (
 	TlsM, run,
 	thlPut, thlGet, thlDebug, thlError, thlClose,
-	getBuf, setBuf, withRandom,
+	getBuf, setBuf,
+	getWBuf, setWBuf,
+	withRandom,
 	getServerSn, getClientSn, succServerSn, succClientSn,
 
 	CS.ContentType(..),
@@ -54,13 +56,15 @@ runTlsM m st = runErrorT m `runStateT` st
 
 data Partner = Server | Client deriving (Show, Eq)
 
-getBuf ::  HandleLike h =>
+getBuf, getWBuf ::  HandleLike h =>
 	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
 getBuf = gets . CS.getBuffer
+getWBuf = gets . CS.getWriteBuffer
 
-setBuf :: HandleLike h =>
+setBuf, setWBuf :: HandleLike h =>
 	CS.ClientId -> (CS.ContentType, BS.ByteString) -> TlsM h g ()
 setBuf = (modify .) . CS.setBuffer
+setWBuf = (modify .) . CS.setWriteBuffer
 
 getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64
 getServerSn = gets . CS.getServerSequenceNumber

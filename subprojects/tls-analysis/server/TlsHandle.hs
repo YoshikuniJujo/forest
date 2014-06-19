@@ -52,9 +52,6 @@ setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
 setCipherSuite cs th@TlsHandle { keys = ks } =
 	th { keys = ks { kCachedCipherSuite = cs } }
 
-write :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-write = thlPut . tlsHandle
-
 randomByteString :: (HandleLike h, CPRG g) => Int -> TlsM h g BS.ByteString
 randomByteString len = withRandom $ cprgGenerate len
 
@@ -65,8 +62,13 @@ flushCipherSuite p th@TlsHandle { keys = ks } = case p of
 
 data Partner = Server | Client deriving (Show, Eq)
 
-read :: HandleLike h => TlsHandle h g -> Int -> TlsM h g BS.ByteString
+write :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
+write th = do
+	thlPut $ tlsHandle th
+
+read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
 read h n = do
+	tlsFlush h
 	r <- flip thlGet n $ tlsHandle h
 	if BS.length r == n
 		then return r
@@ -168,16 +170,34 @@ instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 tlsPut :: (HandleLike h, CPRG g) => (TlsHandle h g, SHA256.Ctx) ->
 	ContentType -> BS.ByteString -> TlsM h g (TlsHandle h g, SHA256.Ctx)
 tlsPut (th, ctx) ct bs = do
-	enc <- tlsEncryptMessage th (keys th) ct bs
-	th' <- case ct of
+	(bct, bbs) <- getWBuf $ clientId th
+	case ct of
+		ContentTypeChangeCipherSpec -> do
+				tlsFlush th
+				setWBuf (clientId th) (ct, bs)
+				tlsFlush th
+				return ()
+		_	| bct /= ContentTypeNull && ct /= bct -> do
+				tlsFlush th
+				setWBuf (clientId th) (ct, bs)
+			| otherwise ->
+				setWBuf (clientId th) (ct, bbs `BS.append` bs)
+	case ct of
 		ContentTypeHandshake -> updateHash (th, ctx) bs
 		_ -> return (th, ctx)
-	write th $ BS.concat [
-		B.toByteString ct,
-		B.toByteString (3 :: Word8),
-		B.toByteString (3 :: Word8),
-		B.toByteString (fromIntegral $ BS.length enc :: Word16), enc ]
-	return th'
+
+tlsFlush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+tlsFlush th = do
+	(ct, bs) <- getWBuf $ clientId th
+	setWBuf (clientId th) (ContentTypeNull, "")
+	unless (ct == ContentTypeNull) $ do
+		enc <- tlsEncryptMessage th (keys th) ct bs
+		write th $ BS.concat [
+			B.toByteString ct,
+			B.toByteString (3 :: Word8),
+			B.toByteString (3 :: Word8),
+			B.toByteString (fromIntegral $ BS.length enc :: Word16),
+			enc ]
 
 tGetLine :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
 tGetLine tc = do
@@ -213,6 +233,7 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 tCloseSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
 tCloseSt tc = do
 	_ <- tlsPut (tc, undefined) ContentTypeAlert "\SOH\NUL"
+	tlsFlush tc
 	thlClose h
 	where
 	h = tlsHandle tc
@@ -243,7 +264,7 @@ checkAppData th m = do
 		_ -> do	_ <- tlsPut (th, undefined) ContentTypeAlert "\2\10"
 			throwError "not application data"
 
-tGetWholeWithCt :: HandleLike h =>
+tGetWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
 tGetWholeWithCt th = do
 	ct <- (either error id . B.fromByteString) `liftM` read th 1
