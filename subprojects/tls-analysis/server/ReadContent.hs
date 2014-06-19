@@ -10,7 +10,7 @@ module ReadContent (
 	HM.ContentType(..), SignatureAlgorithm(..), SecretKey(..),
 	HashAlgorithm(..), HM.HandshakeM, Handshake(..), NamedCurve(..),
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..), HM.Partner(..),
-	putChangeCipherSpec, writeHandshake, writeHandshakeList,
+	putChangeCipherSpec, writeHandshake,
 	ClientCertificateType(..), SessionId(..), CompressionMethod(..),
 	HM.TlsM, HM.TlsHandle(..), HM.finishedHash,
 	DigitallySigned(..),
@@ -109,18 +109,12 @@ putChangeCipherSpec = writeContent $ ContentChangeCipherSpec ChangeCipherSpec
 writeContent :: (HandleLike h, CPRG g) => Content -> HM.HandshakeM h g ()
 writeContent = uncurry HM.tlsPut . contentToByteString
 
-writeContentList :: (HandleLike h, CPRG g) => [Content] -> HM.HandshakeM h g ()
-writeContentList = uncurry HM.tlsPut . contentListToByteString
-
 writeHandshake' :: (HandleLike h, CPRG g, HandshakeItem hi) =>
 	hi -> HM.HandshakeM h g ()
 writeHandshake' = writeHandshake . toHandshake
 
 writeHandshake :: (HandleLike h, CPRG g) => Handshake -> HM.HandshakeM h g ()
 writeHandshake = writeContent . ContentHandshake
-
-writeHandshakeList :: (HandleLike h, CPRG g) => [Handshake] -> HM.HandshakeM h g ()
-writeHandshakeList = writeContentList . map ContentHandshake
 
 readHandshake_ :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
 readHandshake_ = do
@@ -151,10 +145,6 @@ parseContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
 parseContent _ HM.ContentTypeApplicationData = undefined
 parseContent _ _ = undefined
-
-contentListToByteString :: [Content] -> (HM.ContentType, BS.ByteString)
-contentListToByteString cs = let fs@((ct, _) : _) = map contentToByteString cs in
-	(ct, BS.concat $ map snd fs)
 
 contentToByteString :: Content -> (HM.ContentType, BS.ByteString)
 contentToByteString (ContentChangeCipherSpec ccs) =

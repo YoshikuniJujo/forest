@@ -14,7 +14,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM)
 import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Maybe (catMaybes)
 import Data.List (find)
 import Data.Word (Word8, Word16)
 import Data.HandleLike (HandleLike(..))
@@ -40,7 +39,7 @@ import ReadContent (
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Handshake(..), Finished(..),
 		readHandshake, getChangeCipherSpec,
-		writeHandshake, writeHandshake', writeHandshakeList, putChangeCipherSpec,
+		writeHandshake, writeHandshake', putChangeCipherSpec,
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
@@ -143,10 +142,9 @@ serverHello cssv cscl rcc ecc = do
 	let	cs@(CipherSuite ke _) = mergeCipherSuite cssv cscl
 		cc = case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	sr <- randomByteString 32
-	writeHandshakeList [
-		HandshakeServerHello $ ServerHello version sr sessionId
-			cs compressionMethod Nothing,
-		HandshakeCertificate cc ]
+	writeHandshake . HandshakeServerHello $ ServerHello
+		version sr sessionId cs compressionMethod Nothing
+	writeHandshake $ HandshakeCertificate cc
 	setCipherSuite cs
 	return (ke, sr)
 
@@ -199,7 +197,18 @@ encodeCurve c
 
 serverToHelloDone :: (HandleLike h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g ()
-serverToHelloDone mcs = writeHandshakeList . catMaybes .
+serverToHelloDone mcs = do
+	maybe (return ()) (writeHandshake . HandshakeCertificateRequest
+		. CertificateRequest
+			clientCertificateTypes
+			clientCertificateAlgorithms
+		. map (X509.certIssuerDN .  X509.signedObject . X509.getSigned)
+		. X509.listCertificates) mcs
+	writeHandshake HandshakeServerHelloDone
+
+
+{-
+	writeHandshakeList . catMaybes .
 	(: [Just HandshakeServerHelloDone]) $
 		HandshakeCertificateRequest . CertificateRequest
 				clientCertificateTypes
@@ -207,6 +216,7 @@ serverToHelloDone mcs = writeHandshakeList . catMaybes .
 			. map (X509.certIssuerDN .
 				X509.signedObject . X509.getSigned)
 			. X509.listCertificates <$> mcs
+			-}
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
