@@ -32,7 +32,7 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
 
-import ReadContent (
+import HandshakeBase (
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, setClientNames, checkName, clientName,
 	ValidateHandle(..), validate',

@@ -2,30 +2,25 @@
 	TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module ReadContent (
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	HM.ValidateHandle(..),
-	HM.run, HM.checkName, HM.clientName,
-
-	HM.ContentType(..), SignatureAlgorithm(..), SecretKey(..),
-	HashAlgorithm(..), HM.HandshakeM, NamedCurve(..),
-	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..), HM.Partner(..),
-	putChangeCipherSpec,
-	ClientCertificateType(..), SessionId(..), CompressionMethod(..),
-	HM.TlsM, HM.TlsHandle(..), finishedHash,
-	DigitallySigned(..),
-	HM.handshakeHash, HM.rsaPadding, HM.debugCipherSuite, HM.decryptRsa,
-	HM.randomByteString,
-	HM.generateKeys, ClientKeyExchange(..), HM.validate', HM.setClientNames,
-	CertificateRequest(..), ClientHello(..), ServerHello(..), HM.withRandom,
-	HM.execHandshakeM, setCipherSuite,
-
-	readHandshake, ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
-	getChangeCipherSpec,
-	Content(..), ChangeCipherSpec(..),
-	flushCipherSuite,
-	isFinished,
-	writeHandshake,
+module HandshakeBase (
+	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
+	HM.withRandom, HM.randomByteString,
+	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
+	HM.ValidateHandle(..), HM.validate',
+	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..),
+	ServerKeyExchange(..), ServerHelloDone(..),
+		readHandshake, writeHandshake,
+		getChangeCipherSpec, putChangeCipherSpec,
+	ClientHello(..), ServerHello(..), SessionId(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		setCipherSuite,
+	CertificateRequest(..),
+		ClientCertificateType(..), SecretKey(..), NamedCurve(..),
+	ClientKeyExchange(..),
+		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
+	DigitallySigned(..), HM.handshakeHash, flushCipherSuite,
+	HM.Partner(..), finishedHash,
 ) where
 
 import Prelude hiding (read)
@@ -47,7 +42,6 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
--- import qualified Crypto.Types.PubKey.ECC as ECC
 
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
@@ -79,10 +73,6 @@ finishedHash = (Finished `liftM`) . HM.finishedHash
 
 setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
 setCipherSuite = modify . first . HM.setCipherSuite
-
-isFinished :: Handshake -> Bool
-isFinished (HandshakeFinished _) = True
-isFinished _ = False
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
