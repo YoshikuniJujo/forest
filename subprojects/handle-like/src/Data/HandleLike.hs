@@ -17,6 +17,7 @@ class (Monad (HandleMonad h), Num (DebugLevel h)) =>
 	hlGetByte :: h -> HandleMonad h Word8
 	hlGetLine :: h -> HandleMonad h BS.ByteString
 	hlGetContent :: h -> HandleMonad h BS.ByteString
+	hlFlush :: h -> HandleMonad h ()
 	hlClose :: h -> HandleMonad h ()
 	hlDebug :: h -> DebugLevel h -> BS.ByteString -> HandleMonad h ()
 	hlError :: h -> BS.ByteString -> HandleMonad h a
@@ -29,6 +30,7 @@ class (Monad (HandleMonad h), Num (DebugLevel h)) =>
 			10 -> return ""
 			_ -> BS.cons b `liftM` hlGetLine h
 	hlGetContent = flip hlGet 1
+	hlFlush _ = return ()
 	hlDebug _ _ _ = return ()
 	hlError _ msg = error $ BSC.unpack msg
 
@@ -40,6 +42,7 @@ instance HandleLike Handle where
 	hlGetLine = (chopCR `liftM`) . BS.hGetLine
 --	hlGetContent = flip BS.hGet 1
 	hlDebug _ _ = BS.hPutStr stderr
+	hlFlush = hFlush
 	hlClose = hClose
 
 hlPutStrLn :: HandleLike h => h -> BS.ByteString -> HandleMonad h ()

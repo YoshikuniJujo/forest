@@ -2,7 +2,7 @@ cabal-version:	>= 1.6
 build-type:	Simple
 
 name:		handle-like
-version:	0.0.0.9
+version:	0.0.0.10
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -23,6 +23,7 @@ description:
     >     hlGetByte :: h -> HandleMonad h Word8
     >     hlGetLine :: h -> HandleMonad h ByteString
     >     hlGetContent :: h -> HandleMonad h ByteString
+    >     hlFlush :: h -> HandleMonad h ()
     >     hlClose :: h -> HandleMonad h ()
     >     hlDebug :: h -> DebugLevel h -> HandleMonad h ()
     >     hlError :: h -> ByteString -> HandleMonad h a
@@ -37,7 +38,7 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/forest
-    tag:	handle-like-0.0.0.9
+    tag:	handle-like-0.0.0.10
 
 library
     hs-source-dirs:	src
