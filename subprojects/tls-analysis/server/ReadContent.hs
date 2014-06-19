@@ -20,7 +20,7 @@ module ReadContent (
 	CertificateRequest(..), ClientHello(..), ServerHello(..), HM.withRandom,
 	HM.execHandshakeM, HM.setCipherSuite,
 
-	readHandshake,
+	readHandshake, Finished(..),
 	getChangeCipherSpec,
 	Content(..), ChangeCipherSpec(..),
 	flushCipherSuite,
@@ -48,7 +48,7 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import HandshakeType (
-	Handshake(..),
+	Handshake(..), HandshakeItem(..), Finished(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -75,14 +75,15 @@ isFinished :: Handshake -> Bool
 isFinished (HandshakeFinished _) = True
 isFinished _ = False
 
-readHandshake' :: (HandleLike h, CPRG g) =>
-	(Handshake -> Bool) -> HM.HandshakeM h g Handshake
-readHandshake' ck = do
-	hs <- readHandshake
-	if ck hs then return hs else throwError $
-		HM.Alert HM.AlertLevelFatal
-			HM.AlertDescriptionUnexpectedMessage $
-			"ReadContent.readHandshakeWithCheck: " ++ show hs
+readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
+readHandshake = do
+	hs <- readHandshake_
+	case fromHandshake hs of
+		Just i -> return i
+		_ -> throwError $
+			HM.Alert HM.AlertLevelFatal
+				HM.AlertDescriptionUnexpectedMessage $
+				"ReadContent.readHandshake: " ++ show hs
 
 flushCipherSuite :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g ()
 flushCipherSuite p = HM.flushCipherSuite p `liftM` gets fst >>= modify . first . const
@@ -113,8 +114,8 @@ writeHandshake = writeContent . ContentHandshake
 writeHandshakeList :: (HandleLike h, CPRG g) => [Handshake] -> HM.HandshakeM h g ()
 writeHandshakeList = writeContentList . map ContentHandshake
 
-readHandshake :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
-readHandshake = do
+readHandshake_ :: (HandleLike h, CPRG g) => HM.HandshakeM h g Handshake
+readHandshake_ = do
 	cnt <- readContent
 	case cnt of
 		ContentHandshake hs

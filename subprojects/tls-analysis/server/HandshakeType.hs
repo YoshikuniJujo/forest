@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module HandshakeType (
-	Handshake(..),
+	Handshake(..), Finished(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..),
 		SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -39,6 +39,37 @@ data Handshake
 	| HandshakeFinished BS.ByteString
 	| HandshakeRaw HandshakeType BS.ByteString
 	deriving Show
+
+class HandshakeItem ht where
+	fromHandshake :: Handshake -> Maybe ht
+	toHandshake :: ht -> Handshake
+
+data Finished = Finished BS.ByteString
+
+instance HandshakeItem Finished where
+	fromHandshake (HandshakeFinished f) = Just $ Finished f
+	fromHandshake _ = Nothing
+	toHandshake (Finished f) = HandshakeFinished f
+
+instance HandshakeItem ClientHello where
+	fromHandshake (HandshakeClientHello ch) = Just ch
+	fromHandshake _ = Nothing
+	toHandshake ch = HandshakeClientHello ch
+
+instance HandshakeItem X509.CertificateChain where
+	fromHandshake (HandshakeCertificate cc) = Just cc
+	fromHandshake _ = Nothing
+	toHandshake cc = HandshakeCertificate cc
+
+instance HandshakeItem ClientKeyExchange where
+	fromHandshake (HandshakeClientKeyExchange cke) = Just cke
+	fromHandshake _ = Nothing
+	toHandshake cke = HandshakeClientKeyExchange cke
+
+instance HandshakeItem DigitallySigned where
+	fromHandshake (HandshakeCertificateVerify ds) = Just ds
+	fromHandshake _ = Nothing
+	toHandshake ds = HandshakeCertificateVerify ds
 
 instance B.Bytable Handshake where
 	fromByteString = B.evalBytableM B.parse

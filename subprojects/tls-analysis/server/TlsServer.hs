@@ -42,7 +42,7 @@ import ReadContent (
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 	ValidateHandle(..), validate',
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	Handshake(..),
+	Handshake(..), Finished(..),
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, writeHandshakeList, putChangeCipherSpec,
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -100,7 +100,10 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 		_ -> throwError "TlsServer.openClient"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
-	clientFinished
+	fhc <- finishedHash Client
+	Finished f <- readHandshake
+	unless (f == fhc) . throwError $
+		Alert AlertLevelFatal AlertDescriptionDecryptError "Finished error"
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake . HandshakeFinished =<< finishedHash Server
 
@@ -124,13 +127,8 @@ keyExchange dh cr cv sr bs ssk rsk mcs = do
 clientHello :: (HandleLike h, CPRG g) =>
 	HandshakeM h g ([CipherSuite], BS.ByteString, Version)
 clientHello = do
-	hs <- readHandshake
-	case hs of
-		HandshakeClientHello (ClientHello cv cr _sid cscv cms _) ->
-			chk cv cscv cms >> return (cscv, cr, cv)
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientHello: not client hello"
+	ClientHello cv cr _sid cscv cms _ <- readHandshake
+	chk cv cscv cms >> return (cscv, cr, cv)
 	where
 	chk cv css cms
 		| cv < version = throwError $ Alert
@@ -223,14 +221,9 @@ serverToHelloDone mcs = writeHandshakeList . catMaybes .
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
 clientCertificate cs = do
-	hs <- readHandshake
-	case hs of
-		HandshakeCertificate cc@(X509.CertificateChain (c : _)) -> do
-			chk cc >> setClientNames (names cc)
-			return . X509.certPubKey $ X509.getCertificate c
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientCertificate: not certificate"
+	cc@(X509.CertificateChain (c : _)) <- readHandshake
+	chk cc >> setClientNames (names cc)
+	return . X509.certPubKey $ X509.getCertificate c
 	where
 	chk cc = do
 		rs <- validate' cs cc
@@ -256,36 +249,25 @@ clientCertificate cs = do
 dhClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> Secret b -> HandshakeM h g ()
 dhClientKeyExchange cr sr bs sv = do
-	hs <- readHandshake
-	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange cke) -> do
-			generateKeys cr sr =<< case calculateCommon bs sv <$>
-					B.fromByteString cke of
-				Left em -> throwError . strMsg $
-					"TlsServer.dhClientKeyExchange: " ++ em
-				Right p -> return p
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.dhClientKeyExchange: not client key exchange"
+	ClientKeyExchange cke <- readHandshake
+	generateKeys cr sr =<< case calculateCommon bs sv <$>
+			B.fromByteString cke of
+		Left em -> throwError . strMsg $
+			"TlsServer.dhClientKeyExchange: " ++ em
+		Right p -> return p
 
 rsaClientKeyExchange :: (HandleLike h, CPRG g) =>
 	BS.ByteString -> Version -> BS.ByteString -> RSA.PrivateKey ->
 	HandshakeM h g ()
 rsaClientKeyExchange cr (cvmj, cvmn) sr sk = do
-	hs <- readHandshake
-	case hs of
-		HandshakeClientKeyExchange (ClientKeyExchange cke) -> do
-			epms <- case B.runBytableM (B.take =<< B.take 2) cke of
-				Left em -> throwError . strMsg $
-					"TlsServer.clientKeyExchange: " ++ em
-				Right (e, "") -> return e
-				_ -> throwError "TlsServer.clientKeyExchange"
-			generateKeys cr sr =<< mkpms epms `catchError` const
-				((BS.cons cvmj . BS.cons cvmn)
-					`liftM` randomByteString 46)
-		_ -> throwError $ Alert AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"TlsServer.clientKeyExchange: not client key exchange"
+	ClientKeyExchange cke <- readHandshake
+	epms <- case B.runBytableM (B.take =<< B.take 2) cke of
+		Left em -> throwError . strMsg $
+			"TlsServer.clientKeyExchange: " ++ em
+		Right (e, "") -> return e
+		_ -> throwError "TlsServer.clientKeyExchange"
+	generateKeys cr sr =<< mkpms epms `catchError` const
+		((BS.cons cvmj . BS.cons cvmn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
 		pms <- decryptRsa sk epms
@@ -300,19 +282,13 @@ certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pub) = do
 	debugCipherSuite "RSA"
 	hash0 <- rsaPadding pub `liftM` handshakeHash
-	hs <- readHandshake
-	case hs of
-		HandshakeCertificateVerify (DigitallySigned a s) -> do
-			chk a
-			let hash1 = RSA.ep pub s
-			unless (hash1 == hash0) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"client authentification failed "
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Certificate Verify"
+	DigitallySigned a s <- readHandshake
+	chk a
+	let hash1 = RSA.ep pub s
+	unless (hash1 == hash0) . throwError $ Alert
+		AlertLevelFatal
+		AlertDescriptionDecryptError
+		"client authentification failed "
 	where
 	chk a = case a of
 		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
@@ -323,20 +299,14 @@ certificateVerify (X509.PubKeyRSA pub) = do
 certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 pnt) = do
 	debugCipherSuite "ECDSA"
 	hash0 <- handshakeHash
-	hs <- readHandshake
-	case hs of
-		HandshakeCertificateVerify (DigitallySigned a s) -> do
-			chk a
-			unless (ECDSA.verify id (pub pnt)
-				(either error id $ B.fromByteString s) hash0) .
-					throwError $ Alert
-						AlertLevelFatal
-						AlertDescriptionDecryptError
-						"ECDSA: client authentification failed"
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Certificate Verify"
+	DigitallySigned a s <- readHandshake
+	chk a
+	unless (ECDSA.verify id (pub pnt)
+		(either error id $ B.fromByteString s) hash0) .
+			throwError $ Alert
+				AlertLevelFatal
+				AlertDescriptionDecryptError
+				"ECDSA: client authentification failed"
 	where
 	point s = let 
 		(x, y) = BS.splitAt 32 $ BS.drop 1 s in
@@ -353,18 +323,3 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 pnt) = do
 certificateVerify p = throwError $ Alert AlertLevelFatal
 	AlertDescriptionUnsupportedCertificate
 	("TlsServer.certificateVerify: " ++ "not implemented: " ++ show p)
-
-clientFinished :: (HandleLike h, CPRG g) => HandshakeM h g ()
-clientFinished = do
-	fhc <- finishedHash Client
-	cnt <- readHandshake
-	case cnt of
-		HandshakeFinished f ->
-			unless (f == fhc) . throwError $ Alert
-				AlertLevelFatal
-				AlertDescriptionDecryptError
-				"Finished error"
-		_ -> throwError $ Alert
-			AlertLevelFatal
-			AlertDescriptionUnexpectedMessage
-			"Not Finished"
