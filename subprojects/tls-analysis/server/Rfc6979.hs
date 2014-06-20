@@ -3,12 +3,10 @@
 module Rfc6979 (generateK) where
 
 import Data.Bits
-import Numeric
 
 import qualified Codec.Bytable as B
 import qualified Codec.Bytable.BigEndian()
 import qualified Data.ByteString as BS
-import qualified Crypto.Hash.SHA256 as SHA256
 
 qlen :: Integer -> Int
 qlen 0 = 0
@@ -46,6 +44,8 @@ bits2octets q bs = int2octets q z2
 	z1 = bits2int q bs
 	z2 = z1 `mod` q
 
+hmac :: Integral t => (BS.ByteString -> BS.ByteString) -> t ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString
 hmac f bl secret msg =
     f $! BS.append opad (f $! BS.append ipad msg)
   where opad = BS.map (xor 0x5c) k'
@@ -55,27 +55,17 @@ hmac f bl secret msg =
           where kt  = if BS.length secret > fromIntegral bl then f secret else secret
                 pad = BS.replicate (fromIntegral bl - BS.length kt) 0
 
-hmacSha256 = hmac SHA256.hash 64
-
-showH :: (Integral i, Show i) => i -> String
-showH n = replicate (length s `mod` 2) '0' ++ s
-	where
-	s = showHex n ""
-
 initV :: BS.ByteString -> BS.ByteString
 initV h = BS.replicate (BS.length h) 1
 
 initK :: BS.ByteString -> BS.ByteString
 initK h = BS.replicate (BS.length h) 0
 
-bsHex :: BS.ByteString -> String
-bsHex = concatMap showH . BS.unpack
-
 -- calculateK :: Integer -> BS.ByteString -> Integer
 
 initializeKV :: Hash ->
 	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
-initializeKV hsbl@(hs, bl) q x h = (k2, v2)
+initializeKV (hs, bl) q x h = (k2, v2)
 	where
 	v0 = initV h
 	k0 = initK h
