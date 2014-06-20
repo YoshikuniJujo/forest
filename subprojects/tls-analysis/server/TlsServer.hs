@@ -18,7 +18,9 @@ import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
-import "crypto-random" Crypto.Random (CPRG)
+import Data.IORef
+import System.IO.Unsafe
+import "crypto-random" Crypto.Random (CPRG, SystemRNG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -28,6 +30,7 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -51,7 +54,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
-import KeyAgreement (Base(..), dhdebug, dhparams, secp256r1, curve)
+import KeyAgreement (Base(..), secp256r1, curve, dhparams3072)
 
 type Version = (Word8, Word8)
 
@@ -280,3 +283,10 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 certificateVerify p = throwError . Alert
 	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p
+
+dhdebug :: IORef Bool
+dhdebug = unsafePerformIO $ newIORef False
+
+dhparams :: DH.Params
+dhparams = dhparams3072
+-- (dhparams, _) = generateBase undefined Nothing :: (DH.Params, SystemRNG)
