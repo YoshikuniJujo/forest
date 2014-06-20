@@ -43,6 +43,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Crypto.Types.PubKey.ECC as ECC
 
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
@@ -64,6 +65,7 @@ import qualified HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut, generateKeys, decryptRsa,
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
+import Rfc6979
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
@@ -152,8 +154,13 @@ instance SecretKey RSA.PrivateKey where
 
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
-		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
+		Just (ECDSA.Signature r s) =
+			ECDSA.signWith (generateK (hs, 64) q x bs) sk hs bs in
 		B.toByteString $ ECDSA.Signature r s
+		where
+		c = ECDSA.private_curve sk
+		q = ECC.ecc_n $ ECC.common_curve c
+		x = ECDSA.private_d sk
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
 
 setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
