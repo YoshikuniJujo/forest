@@ -166,7 +166,7 @@ serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
 serverKeyExchange cr sr ssk bs sv = writeHandshake
 	. ServerKeyExchange bs' pv HashAlgorithmSha1 (signatureAlgorithm ssk)
-	. sign ssk SHA1.hash $ BS.concat [cr, sr, bs', pv]
+	. sign ssk (SHA1.hash, 64) $ BS.concat [cr, sr, bs', pv]
 	where
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv

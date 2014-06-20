@@ -65,7 +65,7 @@ import qualified HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut, generateKeys, decryptRsa,
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
-import Rfc6979
+import Rfc6979 (generateK)
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
@@ -101,8 +101,8 @@ readContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
 readContent _ _ = undefined
 
-writeHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) =>
-	hi -> HM.HandshakeM h g ()
+writeHandshake ::
+	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
 writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandshake
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
@@ -134,13 +134,13 @@ instance B.Bytable ChangeCipherSpec where
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
 class SecretKey sk where
-	sign :: sk ->
-		(BS.ByteString -> BS.ByteString) -> BS.ByteString -> BS.ByteString
+	sign :: sk -> (BS.ByteString -> BS.ByteString, Int) ->
+		BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
-		h = hs bs
+		h = fst hs bs
 		a = [ASN1.Start ASN1.Sequence,
 				ASN1.Start ASN1.Sequence,
 					ASN1.OID [1, 3, 14, 3, 2, 26],
@@ -155,11 +155,10 @@ instance SecretKey RSA.PrivateKey where
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
 		Just (ECDSA.Signature r s) =
-			ECDSA.signWith (generateK (hs, 64) q x bs) sk hs bs in
+			ECDSA.signWith (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
-		c = ECDSA.private_curve sk
-		q = ECC.ecc_n $ ECC.common_curve c
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
 
