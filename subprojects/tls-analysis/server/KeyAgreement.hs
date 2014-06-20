@@ -75,8 +75,7 @@ instance Base ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
 	generateBase g _ = (secp256r1, g)
-	generateSecret _ g = let
-		(bs, g') = cprgGenerate 32 g in
+	generateSecret _ g = let (bs, g') = cprgGenerate 32 g in
 		(either error id $ B.fromByteString bs, g')
 	calculatePublic c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
 	calculateCommon c sn pp =
@@ -85,9 +84,8 @@ instance Base ECC.Curve where
 instance B.Bytable ECC.Point where
 	fromByteString bs = case BS.uncons $ BS.tail bs of
 		Just (4, rest) -> Right $ let (x, y) = BS.splitAt 32 rest in
-			ECC.Point
-				(either error id $ B.fromByteString x)
-				(either error id $ B.fromByteString y)
+			ECC.Point	(either error id $ B.fromByteString x)
+					(either error id $ B.fromByteString y)
 		_ -> Left "KeyAgreement.hs: ECC.Point.fromByteString"
 	toByteString (ECC.Point x y) = B.addLength (undefined :: Word8) .
 		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
