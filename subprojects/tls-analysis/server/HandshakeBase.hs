@@ -61,7 +61,7 @@ import qualified HandshakeMonad as HM (
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut, generateKeys, decryptRsa,
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	EcdsaSign(..), Partner(..), handshakeHash, finishedHash, rsaPadding )
+	Partner(..), handshakeHash, finishedHash, rsaPadding )
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
@@ -138,23 +138,20 @@ instance SecretKey RSA.PrivateKey where
 	sign sk hs bs = let
 		h = hs bs
 		a = [ASN1.Start ASN1.Sequence,
-			ASN1.Start ASN1.Sequence,
-			ASN1.OID [1, 3, 14, 3, 2, 26],
-			ASN1.Null,
-			ASN1.End ASN1.Sequence,
-			ASN1.OctetString h,
-			ASN1.End ASN1.Sequence]
+				ASN1.Start ASN1.Sequence,
+					ASN1.OID [1, 3, 14, 3, 2, 26],
+					ASN1.Null, ASN1.End ASN1.Sequence,
+				ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a
-		pd = BS.concat [
-			"\x00\x01", BS.replicate (125 - BS.length b) 0xff,
-			"\NUL", b ] in
+		pd = BS.concat [ "\x00\x01",
+			BS.replicate (125 - BS.length b) 0xff, "\NUL", b ] in
 		RSA.dp Nothing sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
 instance SecretKey ECDSA.PrivateKey where
 	sign sk hs bs = let
 		Just (ECDSA.Signature r s) = ECDSA.signWith 4649 sk hs bs in
-		B.toByteString $ HM.EcdsaSign 0x30 (2, r) (2, s)
+		B.toByteString $ ECDSA.Signature r s
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
 
 setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()

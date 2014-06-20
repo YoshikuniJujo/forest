@@ -19,8 +19,6 @@ module HandshakeMonad (
 	HandshakeM, randomByteString,
 	validate', generateKeys, debugCipherSuite, finishedHash,
 
-	EcdsaSign(..),
-
 	rsaPadding,
 	decryptRsa,
 	execHandshakeM,
@@ -176,7 +174,7 @@ instance B.Bytable EcCurveType where
 
 instance B.Bytable ECDSA.Signature where
 	fromByteString = decodeSignature
-	toByteString = undefined
+	toByteString = encodeSignature
 
 decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
 decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
@@ -188,20 +186,10 @@ decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
 	Right _ -> Left "KeyExchange.decodeSignature"
 	Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
 
-data EcdsaSign
-	= EcdsaSign Word8 (Word8, Integer) (Word8, Integer)
-	deriving Show
-
-instance B.Bytable EcdsaSign where
-	toByteString = encodeEcdsaSign
-	fromByteString = undefined
-
-encodeEcdsaSign :: EcdsaSign -> BS.ByteString
-encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = ASN1.encodeASN1' ASN1.DER [
+encodeSignature :: ECDSA.Signature -> BS.ByteString
+encodeSignature (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
 	ASN1.Start ASN1.Sequence,
-	ASN1.IntVal rb,
-	ASN1.IntVal sb,
-	ASN1.End ASN1.Sequence ]
+	ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence ]
 
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = get >>= lift . TH.handshakeHash
