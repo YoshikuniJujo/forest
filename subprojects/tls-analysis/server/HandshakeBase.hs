@@ -26,7 +26,7 @@ module HandshakeBase (
 import Prelude hiding (read)
 
 import Control.Arrow (first)
-import Control.Monad (liftM)
+import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.State (modify, gets)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
@@ -65,7 +65,7 @@ import qualified HandshakeMonad as HM (
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
-	cnt <- parseContent HM.tlsGet =<< HM.tlsGetContentType
+	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
 		ContentHandshake hs -> return hs
 		_ -> throwError $ HM.Alert
@@ -75,29 +75,27 @@ readHandshake = do
 		Just i -> return i
 		_ -> throwError . HM.Alert
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage $
-			"HandshakeBase.readHandshake: " ++ show hs
+			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
-	cnt <- parseContent HM.tlsGet =<< HM.tlsGetContentType
+	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	case cnt of
 		ContentChangeCipherSpec ChangeCipherSpec -> return ()
 		_ -> throwError $ HM.Alert
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
 
-parseContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
-parseContent rd HM.ContentTypeChangeCipherSpec =
+readContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
+readContent rd HM.ContentTypeChangeCipherSpec =
 	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
-parseContent rd HM.ContentTypeAlert =
+readContent rd HM.ContentTypeAlert =
 	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
-parseContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
-	t <- rd 1
-	len <- rd 3
+readContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
+	(t, len) <- (,) `liftM` rd 1 `ap` rd 3
 	body <- rd . either error id $ B.fromByteString len
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
-parseContent _ HM.ContentTypeApplicationData = undefined
-parseContent _ _ = undefined
+readContent _ _ = undefined
 
 writeHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) =>
 	hi -> HM.HandshakeM h g ()
@@ -116,7 +114,8 @@ data Content
 encodeContent :: Content -> (HM.ContentType, BS.ByteString)
 encodeContent (ContentChangeCipherSpec ccs) =
 	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
-encodeContent (ContentAlert al ad) = (HM.ContentTypeAlert, BS.pack [al, ad])
+encodeContent (ContentAlert al ad) =
+	(HM.ContentTypeAlert, BS.pack [al, ad])
 encodeContent (ContentHandshake hss) =
 	(HM.ContentTypeHandshake, B.toByteString hss)
 
@@ -131,8 +130,8 @@ instance B.Bytable ChangeCipherSpec where
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
 class SecretKey sk where
-	sign :: sk -> (BS.ByteString -> BS.ByteString) ->
-		BS.ByteString -> BS.ByteString
+	sign :: sk ->
+		(BS.ByteString -> BS.ByteString) -> BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey RSA.PrivateKey where
