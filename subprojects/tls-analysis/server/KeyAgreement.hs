@@ -17,14 +17,13 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 
-class Base b where
-	type Param b
-	type Secret b
-	type Public b
-	generateBase :: CPRG g => g -> Param b -> (b, g)
-	generateSecret :: CPRG g => b -> g -> (Secret b, g)
-	calculatePublic :: b -> Secret b -> Public b
-	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
+dhparams :: DH.Params
+dhparams = unsafePerformIO $ readIO =<< readFile "dh-params.txt"
+{- do
+	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+	let	(ps, _g') = DH.generateParams g 512 2
+	return ps
+	-}
 
 curve :: ECC.Curve
 curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
@@ -41,72 +40,14 @@ secp256r1 = ECC.CurveFP $ ECC.CurvePrime p (ECC.CurveCommon a b g n h)
 	n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
 	h = 0x01
 
-instance Base ECC.Curve where
-	type Param ECC.Curve = ()
-	type Secret ECC.Curve = Integer
-	type Public ECC.Curve = ECC.Point
-	generateBase g _ = (secp256r1, g)
-	generateSecret _ g = (0x1234567890, g)
-	calculatePublic = calculatePublicPoint
-	calculateCommon = calculateShared
-
-instance B.Bytable ECC.Point where
-	fromByteString = Right . decodePublicPoint undefined
-	toByteString = encodePublicPoint undefined
-
-calculateShared :: ECC.Curve -> Integer -> ECC.Point -> BS.ByteString
-calculateShared c sn pp =
-	let ECC.Point x _ = ECC.pointMul c sn pp in B.toByteString x
-
-encodePublicPoint :: ECC.Curve -> ECC.Point -> BS.ByteString
-encodePublicPoint _ (ECC.Point x y) = B.addLength (undefined :: Word8) .
-	BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
-encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
-
-decodePublicPoint :: ECC.Curve -> BS.ByteString -> ECC.Point
-decodePublicPoint _ bs = case BS.uncons $ BS.tail bs of
-	Just (4, rest) -> let (x, y) = BS.splitAt 32 rest in
-		ECC.Point
-			(either error id $ B.fromByteString x)
-			(either error id $ B.fromByteString y)
-	_ -> error "TlsServer.decodePublicPoint"
-
-calculatePublicPoint :: ECC.Curve -> Integer -> ECC.Point
-calculatePublicPoint c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
-
-dhparams :: DH.Params
-dhparams = unsafePerformIO $ -- do
-	readIO =<< readFile "dh-params.txt"
-{-
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, _g') = DH.generateParams g 512 2
-	return ps
-	-}
-
-{-
-dhprivate :: Base b => b -> IO (Secret b)
-dhprivate b = do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(pr, _g') = generateSecret g b
-	return pr
-	-}
-
-decodeParams :: BS.ByteString -> Either String DH.Params
-decodeParams = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
-
-decodePublicNumber :: BS.ByteString -> Either String DH.PublicNumber
-decodePublicNumber =
-	Right . fromInteger . either error id . B.fromByteString . BS.drop 2
-
-encodeParams :: DH.Params -> BS.ByteString
-encodeParams (DH.Params dhP dhG) = BS.concat [
-	B.addLength (undefined :: Word16) $ B.toByteString dhP,
-	B.addLength (undefined :: Word16) $ B.toByteString dhG
- ]
-
-encodePublicNumber :: DH.PublicNumber -> BS.ByteString
-encodePublicNumber =
-	B.addLength (undefined :: Word16) . B.toByteString . \(DH.PublicNumber pn) -> pn
+class Base b where
+	type Param b
+	type Secret b
+	type Public b
+	generateBase :: CPRG g => g -> Param b -> (b, g)
+	generateSecret :: CPRG g => b -> g -> (Secret b, g)
+	calculatePublic :: b -> Secret b -> Public b
+	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
 instance Base DH.Params where
 	type Param DH.Params = (Int, Integer)
@@ -119,9 +60,33 @@ instance Base DH.Params where
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
 
 instance B.Bytable DH.Params where
-	fromByteString = decodeParams
-	toByteString = encodeParams
+	fromByteString = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
+	toByteString (DH.Params dhP dhG) = BS.concat [
+		B.addLength (undefined :: Word16) $ B.toByteString dhP,
+		B.addLength (undefined :: Word16) $ B.toByteString dhG ]
 
 instance B.Bytable DH.PublicNumber where
-	fromByteString = decodePublicNumber
-	toByteString = encodePublicNumber
+	fromByteString = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
+	toByteString = B.addLength (undefined :: Word16) .
+		B.toByteString . \(DH.PublicNumber pn) -> pn
+
+instance Base ECC.Curve where
+	type Param ECC.Curve = ()
+	type Secret ECC.Curve = Integer
+	type Public ECC.Curve = ECC.Point
+	generateBase g _ = (secp256r1, g)
+	generateSecret _ g = (0x1234567890, g)
+	calculatePublic c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
+	calculateCommon c sn pp =
+		let ECC.Point x _ = ECC.pointMul c sn pp in B.toByteString x
+
+instance B.Bytable ECC.Point where
+	fromByteString bs = case BS.uncons $ BS.tail bs of
+		Just (4, rest) -> Right $ let (x, y) = BS.splitAt 32 rest in
+			ECC.Point
+				(either error id $ B.fromByteString x)
+				(either error id $ B.fromByteString y)
+		_ -> Left "KeyAgreement.hs: ECC.Point.fromByteString"
+	toByteString (ECC.Point x y) = B.addLength (undefined :: Word8) .
+		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
+	toByteString ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
