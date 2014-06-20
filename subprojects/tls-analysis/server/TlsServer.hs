@@ -5,7 +5,8 @@
 module TlsServer (
 	run, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..)
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	dhdebug,
 ) where
 
 import Prelude hiding (read)
@@ -50,7 +51,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
-import KeyAgreement (Base(..), curve, secp256r1, dhparams)
+import KeyAgreement (Base(..), dhdebug, dhparams, secp256r1, curve)
 
 type Version = (Word8, Word8)
 

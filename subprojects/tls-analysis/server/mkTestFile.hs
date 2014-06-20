@@ -9,6 +9,7 @@ import Control.Concurrent (forkIO)
 import Data.Ratio (numerator)
 import Data.HandleLike (HandleLike(..))
 import Data.Time (UTCTime(..), getCurrentTime, toModifiedJulianDay)
+import Data.IORef (writeIORef)
 import System.IO (Handle, IOMode(..), BufferMode(..), openFile, hSetBuffering)
 import System.Environment (getArgs)
 import System.FilePath ((</>), (<.>))
@@ -22,12 +23,13 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as BASE64
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import MyServer (server, ValidateHandle(..))
+import MyServer (server, ValidateHandle(..), dhdebug)
 import CommandLine (readCommandLine)
 import Random (StdGen)
 
 main :: IO ()
 main = do
+	writeIORef dhdebug True
 	(prt, css, td, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	soc <- listenOn prt
 	let g = cprgCreate undefined :: StdGen

@@ -6,6 +6,7 @@ import Control.Applicative((<$>))
 import Control.Monad (unless, forM_)
 import Data.List (sort, nub)
 import Data.HandleLike (HandleLike(..))
+import Data.IORef (writeIORef)
 import System.IO (Handle, IOMode(..), openFile, hClose)
 import System.Directory (getDirectoryContents)
 import System.FilePath (dropExtensions, (</>), (<.>))
@@ -14,12 +15,13 @@ import "crypto-random" Crypto.Random (cprgCreate)
 
 import qualified Data.ByteString as BS
 
-import MyServer (server, ValidateHandle(..))
+import MyServer (server, ValidateHandle(..), dhdebug)
 import CommandLine (readCommandLine)
 import Random (StdGen)
 
 main :: IO ()
 main = do
+	writeIORef dhdebug True
 	(_prt, _css, td, rsa, ec, mcs) <- readCommandLine =<< getArgs
 	let g = cprgCreate undefined :: StdGen
 	nms <- map (td </>) . tail . nub . sort .

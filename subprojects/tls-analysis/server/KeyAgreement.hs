@@ -1,14 +1,14 @@
 {-# LANGUAGE TypeFamilies, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module KeyAgreement (
-	Base(..), DH.Params(..), dhparams, ECC.Curve(..), secp256r1, curve
-) where
+module KeyAgreement (Base(..), dhdebug, dhparams, secp256r1, curve) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Arrow (first)
 import Data.Word (Word8, Word16)
+import Data.IORef (IORef, newIORef, readIORef)
 import System.IO.Unsafe (unsafePerformIO)
-import "crypto-random" Crypto.Random (CPRG(..), SystemRNG)
+import "crypto-random" Crypto.Random (CPRG(..), SystemRNG, createEntropyPool)
 
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
@@ -17,13 +17,25 @@ import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 
+dhdebug :: IORef Bool
+dhdebug = unsafePerformIO $ newIORef False
+
 dhparams :: DH.Params
-dhparams = unsafePerformIO $ readIO =<< readFile "dh-params.txt"
-{- do
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	let	(ps, _g') = DH.generateParams g 512 2
-	return ps
-	-}
+dhparams = unsafePerformIO $ do
+	d <- readIORef dhdebug
+	if d then return debugParams else do
+		g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+		let	(ps, _g') = DH.generateParams g 512 2
+		return ps
+
+debugParams :: DH.Params
+debugParams = DH.Params {
+	DH.params_p = read $
+		"1338867040638478005227332281355557889931" ++
+		"1962650086248796400859707491197838151676" ++
+		"6506863771256718760127048339751075586727" ++
+		"62206289243982143448691649139121243",
+	DH.params_g = 2 }
 
 curve :: ECC.Curve
 curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
@@ -75,8 +87,8 @@ instance Base ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
 	generateBase g _ = (secp256r1, g)
-	generateSecret _ g = let (bs, g') = cprgGenerate 32 g in
-		(either error id $ B.fromByteString bs, g')
+	generateSecret _ g =
+		(either error id . B.fromByteString) `first` cprgGenerate 32 g
 	calculatePublic c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
 	calculateCommon c sn pp =
 		let ECC.Point x _ = ECC.pointMul c sn pp in B.toByteString x
