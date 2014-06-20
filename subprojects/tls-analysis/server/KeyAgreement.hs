@@ -75,7 +75,9 @@ instance Base ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
 	generateBase g _ = (secp256r1, g)
-	generateSecret _ g = (0x1234567890, g)
+	generateSecret _ g = let
+		(bs, g') = cprgGenerate 32 g in
+		(either error id $ B.fromByteString bs, g')
 	calculatePublic c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
 	calculateCommon c sn pp =
 		let ECC.Point x _ = ECC.pointMul c sn pp in B.toByteString x
