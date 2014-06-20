@@ -1,5 +1,4 @@
 {-# LANGUAGE TypeFamilies, PackageImports #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module KeyAgreement (DhParam(..)) where
 

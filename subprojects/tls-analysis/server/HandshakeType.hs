@@ -3,36 +3,36 @@
 
 module HandshakeType (
 	Handshake(..), HandshakeItem(..),
-		ServerKeyExchange(..), ServerHelloDone(..), Finished(..),
-	ClientHello(..), ServerHello(..),
-		SessionId(..),
+	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
+	ServerKeyExchange(..), secp256r1, dhparams3072,
 	CertificateRequest(..),
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
-	ClientKeyExchange(..),
-	DigitallySigned(..),
-	NamedCurve(..), secp256r1, dhparams3072,
+	ServerHelloDone(..), ClientKeyExchange(..),
+	DigitallySigned(..), Finished(..),
 ) where
 
-import Control.Applicative
-
-import qualified Codec.Bytable as B
-
+import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
-import Data.Word.Word24
+import Data.Word.Word24 (Word24)
+import Numeric (readHex)
+
 import qualified Data.ByteString as BS
-
-import Hello
---	(Bytable(..), ClientHello(..), ServerHello(..), takeLen', lenBodyToByteString)
-import Certificate
 import qualified Data.X509 as X509
-
-import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Codec.Bytable as B
 import qualified Crypto.Types.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Numeric
+import Hello (
+	ClientHello(..), ServerHello(..), SessionId(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		NamedCurve(..) )
+import Certificate (
+	CertificateRequest(..), ClientCertificateType(..),
+	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake
 	= HandshakeClientHello ClientHello
