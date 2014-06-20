@@ -1,5 +1,7 @@
-
 import Functions
+
+import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
 
 q1 = 0x996f967f6c8e388d9e28d01e205fba957a5698b1
 x1 = 0x411602cb19a6ccc34494d79d98ef1e7ed5af25f7

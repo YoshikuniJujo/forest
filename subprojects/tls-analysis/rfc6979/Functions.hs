@@ -16,6 +16,7 @@ import Data.Bits
 import Numeric
 
 import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian()
 import qualified Data.ByteString as BS
 import qualified Crypto.Hash.SHA256 as SHA256
 
@@ -82,39 +83,41 @@ bsHex = concatMap showH . BS.unpack
 
 -- calculateK :: Integer -> BS.ByteString -> Integer
 
-initializeKV ::
+initializeKV :: Hash ->
 	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
-initializeKV q x h = (k2, v2)
+initializeKV hsbl@(hs, bl) q x h = (k2, v2)
 	where
 	v0 = initV h
 	k0 = initK h
-	k1 = hmacSha256 k0 $ BS.concat
+	k1 = hmac hs bl k0 $ BS.concat
 		[v0, "\x00", int2octets q x, bits2octets q h]
-	v1 = hmacSha256 k1 v0
-	k2 = hmacSha256 k1 $ BS.concat
+	v1 = hmac hs bl k1 v0
+	k2 = hmac hs bl k1 $ BS.concat
 		[v1, "\x01", int2octets q x, bits2octets q h]
-	v2 = hmacSha256 k2 v1
+	v2 = hmac hs bl k2 v1
 
-createT :: Integer -> BS.ByteString -> BS.ByteString ->
+createT :: Hash -> Integer -> BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> (BS.ByteString, BS.ByteString)
-createT q k v t
-	| blen t < qlen q = createT q k v' $ t `BS.append` v'
+createT hsbl@(hs, bl) q k v t
+	| blen t < qlen q = createT hsbl q k v' $ t `BS.append` v'
 	| otherwise = (t, v)
 	where
-	v' = hmacSha256 k v
+	v' = hmac hs bl k v
 
-createK :: Integer -> BS.ByteString -> BS.ByteString -> Integer
-createK q k v
+createK :: Hash -> Integer -> BS.ByteString -> BS.ByteString -> Integer
+createK hsbl@(hs, bl) q k v
 	| 0 < kk && kk < q = kk
-	| otherwise = createK q k' v''
+	| otherwise = createK hsbl q k' v''
 	where
-	(t, v') = createT q k v ""
+	(t, v') = createT hsbl q k v ""
 	kk = bits2int q t
-	k' = hmacSha256 k $ v' `BS.append` "\x00"
-	v'' = hmacSha256 k' v'
+	k' = hmac hs bl k $ v' `BS.append` "\x00"
+	v'' = hmac hs bl k' v'
 
-generateK :: Integer -> Integer -> BS.ByteString -> Integer
-generateK q x m = createK q k v
+generateK :: Hash -> Integer -> Integer -> BS.ByteString -> Integer
+generateK hsbl@(hs, _) q x m = createK hsbl q k v
 	where
-	h = SHA256.hash m
-	(k, v) = initializeKV q x h
+	h = hs m
+	(k, v) = initializeKV hsbl q x h
+
+type Hash = (BS.ByteString -> BS.ByteString, Int)

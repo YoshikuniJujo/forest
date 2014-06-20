@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Hash.SHA256 as SHA256
