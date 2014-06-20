@@ -45,12 +45,13 @@ import HandshakeBase (
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		setCipherSuite,
 	CertificateRequest(..),
-		ClientCertificateType(..), SecretKey(..), NamedCurve(..),
+		ClientCertificateType(..), SecretKey(..),
+		secp256r1, dhparams3072,
 	ClientKeyExchange(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
-import KeyAgreement (Base(..), secp256r1, dhparams3072)
+import KeyAgreement (DhParam(..))
 
 type Version = (Word8, Word8)
 
@@ -108,7 +109,7 @@ rsaKeyExchange cr cv sr rsk mcs = do
 	return mpk
 
 dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
-	Base b, B.Bytable b, B.Bytable (Public b)) =>
+	DhParam b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> sk ->
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange cr sr bs ssk mcs = do
@@ -159,7 +160,7 @@ serverHello cssv cscl rcc ecc = do
 	return (ke, sr)
 
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
-		Base b, B.Bytable b, B.Bytable (Public b)) =>
+		DhParam b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
 serverKeyExchange cr sr ssk bs sv = writeHandshake
 	. ServerKeyExchange bs' pv HashAlgorithmSha1 (signatureAlgorithm ssk)
@@ -167,26 +168,6 @@ serverKeyExchange cr sr ssk bs sv = writeHandshake
 	where
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv
-
-data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
-	deriving Show
-
-instance B.Bytable EcCurveType where
-	fromByteString = undefined
-	toByteString ExplicitPrime = BS.pack [1]
-	toByteString ExplicitChar2 = BS.pack [2]
-	toByteString NamedCurve = BS.pack [3]
-	toByteString (EcCurveTypeRaw w) = BS.pack [w]
-
-instance B.Bytable ECC.Curve where
-	fromByteString = undefined
-	toByteString = encodeCurve
-
-encodeCurve :: ECC.Curve -> BS.ByteString
-encodeCurve c
-	| c == secp256r1 =
-		B.toByteString NamedCurve `BS.append` B.toByteString Secp256r1
-	| otherwise = error "TlsServer.encodeCurve: not implemented"
 
 clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
@@ -215,12 +196,12 @@ clientCertificate cs = do
 		X509.CertificateChain (t : _) -> X509.getCertificate t
 		_ -> error "TlsServer.clientCertificate: empty certificate chain"
 
-dhClientKeyExchange :: (HandleLike h, CPRG g, Base b, B.Bytable (Public b)) =>
+dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> Secret b -> HandshakeM h g ()
 dhClientKeyExchange cr sr bs sv = do
 	ClientKeyExchange cke <- readHandshake
 	generateKeys cr sr =<<
-		case calculateCommon bs sv <$> B.fromByteString cke of
+		case calculateShared bs sv <$> B.fromByteString cke of
 			Left em -> throwError . strMsg $
 				"TlsServer.dhClientKeyExchange: " ++ em
 			Right p -> return p
