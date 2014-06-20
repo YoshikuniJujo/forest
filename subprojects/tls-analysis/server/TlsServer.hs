@@ -101,25 +101,27 @@ rsaKeyExchange :: (ValidateHandle h, CPRG g) =>
 	BS.ByteString -> Version -> BS.ByteString ->
 	RSA.PrivateKey -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-rsaKeyExchange cr cv sr rsk mcs = do
-	maybe (return ()) certificateRequest mcs
-	writeHandshake ServerHelloDone
-	mpk <- maybe (return Nothing) (liftM Just . clientCertificate) mcs
-	rsaClientKeyExchange cr cv sr rsk
-	return mpk
+rsaKeyExchange cr cv sr rsk mcs = return const
+	`ap` requestToCertificate mcs
+	`ap` rsaClientKeyExchange cr cv sr rsk
 
 dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
 	DhParam b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> b -> sk ->
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange cr sr bs ssk mcs = do
-	sk <- withRandom (generateSecret bs) >>=
-		(>>) <$> serverKeyExchange cr sr ssk bs <*> return
+	sk <- withRandom $ generateSecret bs
+	serverKeyExchange cr sr ssk bs sk
+	return const
+		`ap` requestToCertificate mcs
+		`ap` dhClientKeyExchange cr sr bs sk
+
+requestToCertificate :: (ValidateHandle h, CPRG g) =>
+	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
+requestToCertificate mcs = do
 	maybe (return ()) certificateRequest mcs
 	writeHandshake ServerHelloDone
-	mpk <- maybe (return Nothing) (liftM Just . clientCertificate) mcs
-	dhClientKeyExchange cr sr bs sk
-	return mpk
+	maybe (return Nothing) (liftM Just . clientCertificate) mcs
 
 certificateRequest :: (HandleLike h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g ()
