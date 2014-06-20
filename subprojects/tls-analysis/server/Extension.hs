@@ -1,6 +1,9 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Extension (
 	ExtensionList,
-	SignatureAlgorithm(..), HashAlgorithm(..), NamedCurve(..),
+	SignatureAlgorithm(..), HashAlgorithm(..), -- NamedCurve(..),
 ) where
 
 import Prelude hiding (head, concat)
@@ -8,6 +11,8 @@ import Prelude hiding (head, concat)
 import Control.Applicative
 
 import qualified Data.ByteString as BS
+import qualified Crypto.Types.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.ECC as ECC
 
 import Data.Bits
 import Data.Word
@@ -19,7 +24,7 @@ type ExtensionList = [Extension]
 
 data Extension
 	= ExtensionServerName [ServerName]
-	| ExtensionEllipticCurve [NamedCurve]
+	| ExtensionEllipticCurve [ECC.CurveName]
 	| ExtensionEcPointFormat [EcPointFormat]
 	| ExtensionSessionTicketTls BS.ByteString
 	| ExtensionNextProtocolNegotiation BS.ByteString
@@ -178,6 +183,7 @@ ecPointFormatToByteString :: EcPointFormat -> BS.ByteString
 ecPointFormatToByteString EcPointFormatUncompressed = BS.pack [0]
 ecPointFormatToByteString (EcPointFormatRaw epf) = BS.pack [epf]
 
+{-
 data NamedCurve
 	= Secp256r1
 	| Secp384r1
@@ -203,3 +209,64 @@ namedCurveToByteString (Secp256r1) = B.toByteString (23 :: Word16)
 namedCurveToByteString (Secp384r1) = B.toByteString (24 :: Word16)
 namedCurveToByteString (Secp521r1) = B.toByteString (25 :: Word16)
 namedCurveToByteString (NamedCurveRaw nc) = B.toByteString nc
+-}
+
+instance B.Bytable ECC.CurveName where
+	fromByteString = byteStringToCurveName
+	toByteString = curveNameToByteString
+
+byteStringToCurveName :: BS.ByteString -> Either String ECC.CurveName
+byteStringToCurveName bs = case BS.unpack bs of
+	[w1, w2] -> case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
+		(23 :: Word16) -> Right ECC.SEC_p256r1
+		24 -> Right ECC.SEC_p384r1
+		25 -> Right ECC.SEC_p521r1
+		_ -> Left "Extension.byteStringToCurveName: unknown curve"
+	_ -> Left "Extension.byteStringToCurveName: bad format"
+
+curveNameToByteString :: ECC.CurveName -> BS.ByteString
+curveNameToByteString ECC.SEC_p256r1 = B.toByteString (23 :: Word16)
+curveNameToByteString ECC.SEC_p384r1 = B.toByteString (24 :: Word16)
+curveNameToByteString ECC.SEC_p521r1 = B.toByteString (25 :: Word16)
+curveNameToByteString _ = error "Extension.curveNameToByteString: not implemented"
+
+instance B.Bytable DH.Params where
+	fromByteString = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
+	toByteString (DH.Params dhP dhG) = BS.concat [
+		B.addLength (undefined :: Word16) $ B.toByteString dhP,
+		B.addLength (undefined :: Word16) $ B.toByteString dhG ]
+
+instance B.Bytable DH.PublicNumber where
+	fromByteString = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
+	toByteString = B.addLength (undefined :: Word16) .
+		B.toByteString . \(DH.PublicNumber pn) -> pn
+
+instance B.Bytable ECC.Point where
+	fromByteString bs = case BS.uncons $ BS.tail bs of
+		Just (4, rest) -> Right $ let (x, y) = BS.splitAt 32 rest in
+			ECC.Point	(either error id $ B.fromByteString x)
+					(either error id $ B.fromByteString y)
+		_ -> Left "KeyAgreement.hs: ECC.Point.fromByteString"
+	toByteString (ECC.Point x y) = B.addLength (undefined :: Word8) .
+		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
+	toByteString ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
+
+data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
+	deriving Show
+
+instance B.Bytable EcCurveType where
+	fromByteString = undefined
+	toByteString ExplicitPrime = BS.pack [1]
+	toByteString ExplicitChar2 = BS.pack [2]
+	toByteString NamedCurve = BS.pack [3]
+	toByteString (EcCurveTypeRaw w) = BS.pack [w]
+
+instance B.Bytable ECC.Curve where
+	fromByteString = undefined
+	toByteString = encodeCurve
+
+encodeCurve :: ECC.Curve -> BS.ByteString
+encodeCurve c
+	| c == ECC.getCurveByName ECC.SEC_p256r1 =
+		B.toByteString NamedCurve `BS.append` B.toByteString ECC.SEC_p256r1
+	| otherwise = error "TlsServer.encodeCurve: not implemented"

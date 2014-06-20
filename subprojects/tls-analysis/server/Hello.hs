@@ -7,7 +7,7 @@ module Hello (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 
-	SignatureAlgorithm(..), HashAlgorithm(..), NamedCurve(..),
+	SignatureAlgorithm(..), HashAlgorithm(..), -- NamedCurve(..),
  ) where
 
 import Control.Applicative
