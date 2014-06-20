@@ -9,6 +9,8 @@ import Data.Maybe
 import Data.Bits
 import Crypto.Number.ModArithmetic
 
+import Functions
+
 q = 0x04000000000000000000020108a2e0cc0d99f8a5ef
 
 m = 0x0800000000000000000000000000000000000000c9
@@ -26,19 +28,6 @@ sect163k1 = ECC.CurveF2m $ ECC.CurveBinary m $ ECC.CurveCommon a b g n h
 x :: Integer
 x = 0x09a4d6792295a7f730fc3f2b49cbc0f62e862272f
 
--- hmac :: (BS.ByteString -> BS.ByteString) -> Int -> HMAC
-hmac f bl secret msg =
-    f $! BS.append opad (f $! BS.append ipad msg)
-  where opad = BS.map (xor 0x5c) k'
-        ipad = BS.map (xor 0x36) k'
-
-        k' = BS.append kt pad
-          where kt  = if BS.length secret > fromIntegral bl then f secret else secret
-                pad = BS.replicate (fromIntegral bl - BS.length kt) 0
-
--- hmacSHA256 :: HMAC
-hmacSHA256 = hmac SHA256.hash 64
-
 v0, k0 :: Integer
 v0 = 0x0101010101010101010101010101010101010101010101010101010101010101
 k0 = 0x0000000000000000000000000000000000000000000000000000000000000000
@@ -54,39 +43,39 @@ hh = byteStringToInteger h1 `shiftR` (256 - 163)
 b2oh1 :: BS.ByteString
 b2oh1 = B.toByteString $ byteStringToInteger h1 `shiftR` (256 - 163) `mod` q
 
-k1 = hmacSHA256 (B.toByteString k0) $ BS.concat [
+k1 = hmacSha256 (B.toByteString k0) $ BS.concat [
 	B.toByteString v0,
 	"\x00",
 	"\x00", B.toByteString x,
 	b2oh1 ]
 
-v1 = hmacSHA256 k1 $ B.toByteString v0
+v1 = hmacSha256 k1 $ B.toByteString v0
 
-k2 = hmacSHA256 k1 $ BS.concat [ v1, "\x01", "\x00", B.toByteString x, b2oh1 ]
+k2 = hmacSha256 k1 $ BS.concat [ v1, "\x01", "\x00", B.toByteString x, b2oh1 ]
 
-v2 = hmacSHA256 k2 v1
+v2 = hmacSha256 k2 v1
 
-v3 = hmacSHA256 k2 v2
+v3 = hmacSha256 k2 v2
 
 t1 = byteStringToInteger v3
 
 kk1 = t1 `shiftR` (256 - 163)
 
-k3 = hmacSHA256 k2 $ v3 `BS.append` "\x00"
+k3 = hmacSha256 k2 $ v3 `BS.append` "\x00"
 
-v4 = hmacSHA256 k3 v3
+v4 = hmacSha256 k3 v3
 
-v5 = hmacSHA256 k3 v4
+v5 = hmacSha256 k3 v4
 
 t2 = byteStringToInteger v5
 
 kk2 = t2 `shiftR` (256 - 163)
 
-k4 = hmacSHA256 k3 $ v5 `BS.append` "\x00"
+k4 = hmacSha256 k3 $ v5 `BS.append` "\x00"
 
-v6 = hmacSHA256 k4 v5
+v6 = hmacSha256 k4 v5
 
-v7 = hmacSHA256 k4 v6
+v7 = hmacSha256 k4 v6
 
 t3 = byteStringToInteger v7
 
