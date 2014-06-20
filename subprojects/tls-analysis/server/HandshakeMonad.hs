@@ -197,14 +197,11 @@ instance B.Bytable EcdsaSign where
 	fromByteString = undefined
 
 encodeEcdsaSign :: EcdsaSign -> BS.ByteString
-encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = BS.concat [
-	BS.pack [t, len rbbs + len sbbs + 4],
-	BS.pack [rt, len rbbs], rbbs,
-	BS.pack [st, len sbbs], sbbs ]
-	where
-	len = fromIntegral . BS.length
-	rbbs = B.toByteString rb
-	sbbs = B.toByteString sb
+encodeEcdsaSign (EcdsaSign t (rt, rb) (st, sb)) = ASN1.encodeASN1' ASN1.DER [
+	ASN1.Start ASN1.Sequence,
+	ASN1.IntVal rb,
+	ASN1.IntVal sb,
+	ASN1.End ASN1.Sequence ]
 
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = get >>= lift . TH.handshakeHash
