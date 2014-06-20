@@ -17,7 +17,7 @@ import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
-import "crypto-random" Crypto.Random (CPRG, SystemRNG)
+import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -50,7 +50,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
-import KeyAgreement (Base(..), NoDH(..), secp256r1, dhparams)
+import KeyAgreement (Base(..), curve, secp256r1, dhparams)
 
 type Version = (Word8, Word8)
 
@@ -76,9 +76,6 @@ clientCertificateAlgorithms = [
 	(HashAlgorithmSha256, SignatureAlgorithmRsa),
 	(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
 
-curve :: ECC.Curve
-curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
-
 openClient :: (ValidateHandle h, CPRG g, SecretKey sk) => h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) -> (sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
@@ -86,10 +83,10 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	(cscl, cr, cv) <- clientHello
 	(ke, sr) <- serverHello cssv cscl rcc ecc
 	mpk <- case ke of
-		RSA -> keyExchange False cr cv sr NoDH rsk rsk mcs
-		DHE_RSA -> keyExchange True cr cv sr dhparams rsk undefined mcs
-		ECDHE_RSA -> keyExchange True cr cv sr curve rsk undefined mcs
-		ECDHE_ECDSA -> keyExchange True cr cv sr curve esk undefined mcs
+		RSA -> rsaKeyExchange cr cv sr rsk mcs
+		DHE_RSA -> dhKeyExchange cr sr dhparams rsk mcs
+		ECDHE_RSA -> dhKeyExchange cr sr curve rsk mcs
+		ECDHE_ECDSA -> dhKeyExchange cr sr curve esk mcs
 		_ -> throwError "TlsServer.openClient: not implemented"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
@@ -99,24 +96,36 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake =<< finishedHash Server
 
-keyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
-	Base b, B.Bytable b, B.Bytable (Public b)) =>
-	Bool -> BS.ByteString -> Version -> BS.ByteString -> b -> sk ->
+rsaKeyExchange :: (ValidateHandle h, CPRG g) =>
+	BS.ByteString -> Version -> BS.ByteString ->
 	RSA.PrivateKey -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-keyExchange dh cr cv sr bs ssk rsk mcs = do
-	msk <- if not dh then return Nothing else withRandom (generateSecret bs) >>=
-		(>>) <$> serverKeyExchange cr sr ssk bs <*> return . Just
-	maybe (return ()) (writeHandshake . CertificateRequest
-			clientCertificateTypes clientCertificateAlgorithms
-		. map (X509.certIssuerDN .  X509.signedObject . X509.getSigned)
-		. X509.listCertificates) mcs
+rsaKeyExchange cr cv sr rsk mcs = do
+	maybe (return ()) certificateRequest mcs
 	writeHandshake ServerHelloDone
 	mpk <- maybe (return Nothing) (liftM Just . clientCertificate) mcs
-	case msk of
-		Just sk -> dhClientKeyExchange cr sr bs sk
-		_ -> rsaClientKeyExchange cr cv sr rsk
+	rsaClientKeyExchange cr cv sr rsk
 	return mpk
+
+dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
+	Base b, B.Bytable b, B.Bytable (Public b)) =>
+	BS.ByteString -> BS.ByteString -> b -> sk ->
+	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
+dhKeyExchange cr sr bs ssk mcs = do
+	sk <- withRandom (generateSecret bs) >>=
+		(>>) <$> serverKeyExchange cr sr ssk bs <*> return
+	maybe (return ()) certificateRequest mcs
+	writeHandshake ServerHelloDone
+	mpk <- maybe (return Nothing) (liftM Just . clientCertificate) mcs
+	dhClientKeyExchange cr sr bs sk
+	return mpk
+
+certificateRequest :: (HandleLike h, CPRG g) =>
+	X509.CertificateStore -> HandshakeM h g ()
+certificateRequest = writeHandshake . CertificateRequest
+		clientCertificateTypes clientCertificateAlgorithms
+	. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+	. X509.listCertificates
 
 clientHello :: (HandleLike h, CPRG g) =>
 	HandshakeM h g ([CipherSuite], BS.ByteString, Version)

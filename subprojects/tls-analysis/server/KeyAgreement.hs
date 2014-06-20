@@ -2,26 +2,20 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module KeyAgreement (
-	Base(..), NoDH(..), Curve(..), secp256r1, DH.Params(..), dhparams
+	Base(..), DH.Params(..), dhparams, ECC.Curve(..), secp256r1, curve
 ) where
 
-import "crypto-random" Crypto.Random (CPRG(..))
+import Control.Applicative ((<$>), (<*>))
+import Data.Word (Word8, Word16)
+import System.IO.Unsafe (unsafePerformIO)
+import "crypto-random" Crypto.Random (CPRG(..), SystemRNG)
+
 import qualified Data.ByteString as BS
-
 import qualified Codec.Bytable as B
-
-import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.DH as DH
-
-import Data.Word
-import Control.Applicative
-
-import System.IO.Unsafe
-
-import Crypto.Types.PubKey.ECC
-import Crypto.PubKey.ECC.Prim
-
--- import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.ECC.Prim as ECC
 
 class Base b where
 	type Param b
@@ -32,49 +26,53 @@ class Base b where
 	calculatePublic :: b -> Secret b -> Public b
 	calculateCommon :: b -> Secret b -> Public b -> BS.ByteString
 
-secp256r1 :: Curve
-secp256r1 = CurveFP $ CurvePrime p (CurveCommon a b g n h)
+curve :: ECC.Curve
+curve = fst (generateBase undefined () :: (ECC.Curve, SystemRNG))
+
+secp256r1 :: ECC.Curve
+secp256r1 = ECC.CurveFP $ ECC.CurvePrime p (ECC.CurveCommon a b g n h)
 	where
 	p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
 	a = 0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
 	b = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
-	g = Point gx gy
+	g = ECC.Point gx gy
 	gx = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296
 	gy = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5
 	n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
 	h = 0x01
 
-instance Base Curve where
-	type Param Curve = ()
-	type Secret Curve = Integer
-	type Public Curve = Point
+instance Base ECC.Curve where
+	type Param ECC.Curve = ()
+	type Secret ECC.Curve = Integer
+	type Public ECC.Curve = ECC.Point
 	generateBase g _ = (secp256r1, g)
 	generateSecret _ g = (0x1234567890, g)
 	calculatePublic = calculatePublicPoint
 	calculateCommon = calculateShared
 
-instance B.Bytable Point where
+instance B.Bytable ECC.Point where
 	fromByteString = Right . decodePublicPoint undefined
 	toByteString = encodePublicPoint undefined
 
-calculateShared :: Curve -> Integer -> Point -> BS.ByteString
+calculateShared :: ECC.Curve -> Integer -> ECC.Point -> BS.ByteString
 calculateShared c sn pp =
-	let Point x _ = pointMul c sn pp in B.toByteString x
+	let ECC.Point x _ = ECC.pointMul c sn pp in B.toByteString x
 
-encodePublicPoint :: Curve -> Point -> BS.ByteString
-encodePublicPoint _ (Point x y) = B.addLength (undefined :: Word8) .
+encodePublicPoint :: ECC.Curve -> ECC.Point -> BS.ByteString
+encodePublicPoint _ (ECC.Point x y) = B.addLength (undefined :: Word8) .
 	BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
 encodePublicPoint _ _ = error "TlsServer.encodePublicPoint"
 
-decodePublicPoint :: Curve -> BS.ByteString -> Point
+decodePublicPoint :: ECC.Curve -> BS.ByteString -> ECC.Point
 decodePublicPoint _ bs = case BS.uncons $ BS.tail bs of
 	Just (4, rest) -> let (x, y) = BS.splitAt 32 rest in
-		Point	(either error id $ B.fromByteString x)
+		ECC.Point
+			(either error id $ B.fromByteString x)
 			(either error id $ B.fromByteString y)
 	_ -> error "TlsServer.decodePublicPoint"
 
-calculatePublicPoint :: Curve -> Integer -> Point
-calculatePublicPoint c s = pointMul c s (ecc_g $ common_curve c)
+calculatePublicPoint :: ECC.Curve -> Integer -> ECC.Point
+calculatePublicPoint c s = ECC.pointMul c s (ECC.ecc_g $ ECC.common_curve c)
 
 dhparams :: DH.Params
 dhparams = unsafePerformIO $ -- do
@@ -127,22 +125,3 @@ instance B.Bytable DH.Params where
 instance B.Bytable DH.PublicNumber where
 	fromByteString = decodePublicNumber
 	toByteString = encodePublicNumber
-
-data NoDH = NoDH deriving Show
-
-instance Base NoDH where
-	type Param NoDH = ()
-	type Secret NoDH = ()
-	type Public NoDH = ()
-	generateBase = undefined
-	generateSecret = undefined
-	calculatePublic = undefined
-	calculateCommon = undefined
-
-instance B.Bytable NoDH where
-	fromByteString = undefined
-	toByteString = undefined
-
-instance B.Bytable () where
-	fromByteString = undefined
-	toByteString = undefined
