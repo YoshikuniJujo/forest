@@ -3,8 +3,7 @@
 module MyServer (
 	server,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..),
-	dhdebug,
+	ValidateHandle(..)
 ) where
 
 import Control.Monad (liftM)
@@ -21,7 +20,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import TlsServer (
 	SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..), run, openClient, clientName, dhdebug)
+	ValidateHandle(..), run, openClient, clientName)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
 	h -> g -> [CipherSuite] ->

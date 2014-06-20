@@ -5,8 +5,7 @@
 module TlsServer (
 	run, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	dhdebug,
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..)
 ) where
 
 import Prelude hiding (read)
@@ -18,9 +17,7 @@ import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
-import Data.IORef
-import System.IO.Unsafe
-import "crypto-random" Crypto.Random (CPRG, SystemRNG)
+import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -30,7 +27,6 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
-import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -54,7 +50,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash)
-import KeyAgreement (Base(..), secp256r1, curve, dhparams3072)
+import KeyAgreement (Base(..), secp256r1, dhparams3072)
 
 type Version = (Word8, Word8)
 
@@ -88,9 +84,9 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	(ke, sr) <- serverHello cssv cscl rcc ecc
 	mpk <- case ke of
 		RSA -> rsaKeyExchange cr cv sr rsk mcs
-		DHE_RSA -> dhKeyExchange cr sr dhparams rsk mcs
-		ECDHE_RSA -> dhKeyExchange cr sr curve rsk mcs
-		ECDHE_ECDSA -> dhKeyExchange cr sr curve esk mcs
+		DHE_RSA -> dhKeyExchange cr sr dhparams3072 rsk mcs
+		ECDHE_RSA -> dhKeyExchange cr sr secp256r1 rsk mcs
+		ECDHE_ECDSA -> dhKeyExchange cr sr secp256r1 esk mcs
 		_ -> throwError "TlsServer.openClient: not implemented"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
@@ -283,10 +279,3 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 certificateVerify p = throwError . Alert
 	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p
-
-dhdebug :: IORef Bool
-dhdebug = unsafePerformIO $ newIORef False
-
-dhparams :: DH.Params
-dhparams = dhparams3072
--- (dhparams, _) = generateBase undefined Nothing :: (DH.Params, SystemRNG)
