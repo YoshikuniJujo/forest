@@ -30,9 +30,8 @@ import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.State (modify, gets)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
-import Data.Bits
 import Data.Word (Word8)
-import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
+import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -157,22 +156,10 @@ instance SecretKey RSA.PrivateKey where
 		RSA.dp (Just bl) sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
-randomR :: CPRG g => (Integer, Integer) -> g -> (Integer, g)
-randomR (mn, mx) g
-	| mn <= n && n <= mx = (n, g')
-	| otherwise = randomR (mn, mx) g'
-	where
-	(bs, g') = cprgGenerate (rlen mx `div` 8) g
-	Right n = B.fromByteString bs
-	
-rlen :: Integer -> Int
-rlen 0 = 0
-rlen q = 8 + rlen (q `shiftR` 8)
-
 instance SecretKey ECDSA.PrivateKey where
 	type Blinder ECDSA.PrivateKey = ()
 	generateBlinder _ = (() ,)
-	sign bl sk hs bs = let
+	sign _ sk hs bs = let
 		Just (ECDSA.Signature r s) =
 			blindSign (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
