@@ -170,12 +170,11 @@ rlen 0 = 0
 rlen q = 8 + rlen (q `shiftR` 8)
 
 instance SecretKey ECDSA.PrivateKey where
-	type Blinder ECDSA.PrivateKey = Integer
-	generateBlinder (ECDSA.PrivateKey c _) =
-		randomR (1, ECC.ecc_n $ ECC.common_curve c)
+	type Blinder ECDSA.PrivateKey = ()
+	generateBlinder _ = (() ,)
 	sign bl sk hs bs = let
 		Just (ECDSA.Signature r s) =
-			blindSign bl (generateK hs q x bs) sk (fst hs) bs in
+			blindSign (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk

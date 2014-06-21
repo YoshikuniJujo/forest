@@ -26,9 +26,9 @@ cPointMul c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (adjustLen k n * n + k)
 
 type Hash = BS.ByteString -> BS.ByteString
 
-blindSign :: Integer -> Integer -> PrivateKey -> Hash -> BS.ByteString ->
+blindSign :: Integer -> PrivateKey -> Hash -> BS.ByteString ->
 	Maybe Signature
-blindSign _ k (PrivateKey curve d) hash msg = do
+blindSign k (PrivateKey curve d) hash msg = do
 	let	CurveCommon _ _ g n _ = common_curve curve
 		mul = cPointMul curve
 		add = pointAdd curve
