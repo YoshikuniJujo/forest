@@ -188,9 +188,12 @@ serverHello cssv cscl rcc ecc = do
 serverKeyExchange :: (HandleLike h, SecretKey sk, CPRG g,
 		DhParam b, B.Bytable b, B.Bytable (Public b)) =>
 	BS.ByteString -> BS.ByteString -> sk -> b -> Secret b -> HandshakeM h g ()
-serverKeyExchange cr sr ssk bs sv = writeHandshake
-	. ServerKeyExchange bs' pv HashAlgorithmSha1 (signatureAlgorithm ssk)
-	. sign ssk (SHA1.hash, 64) $ BS.concat [cr, sr, bs', pv]
+serverKeyExchange cr sr ssk bs sv = do
+	bl <- withRandom (generateBlinder ssk)
+	writeHandshake
+		. ServerKeyExchange
+			bs' pv HashAlgorithmSha1 (signatureAlgorithm ssk)
+		. sign bl ssk (SHA1.hash, 64) $ BS.concat [cr, sr, bs', pv]
 	where
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv

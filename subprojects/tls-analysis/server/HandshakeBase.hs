@@ -133,12 +133,17 @@ instance B.Bytable ChangeCipherSpec where
 	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
 class SecretKey sk where
-	sign :: sk -> (BS.ByteString -> BS.ByteString, Int) ->
+	type Blinder sk
+	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
+	sign :: Blinder sk -> sk -> (BS.ByteString -> BS.ByteString, Int) ->
 		BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey RSA.PrivateKey where
-	sign sk hs bs = let
+	type Blinder RSA.PrivateKey = RSA.Blinder
+	generateBlinder sk rng =
+		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
+	sign bl sk hs bs = let
 		h = fst hs bs
 		a = [ASN1.Start ASN1.Sequence,
 				ASN1.Start ASN1.Sequence,
@@ -148,11 +153,13 @@ instance SecretKey RSA.PrivateKey where
 		b = ASN1.encodeASN1' ASN1.DER a
 		pd = BS.concat [ "\x00\x01",
 			BS.replicate (125 - BS.length b) 0xff, "\NUL", b ] in
-		RSA.dp Nothing sk pd
+		RSA.dp (Just bl) sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
 instance SecretKey ECDSA.PrivateKey where
-	sign sk hs bs = let
+	type Blinder ECDSA.PrivateKey = ()
+	generateBlinder _ gen = (undefined, gen)
+	sign bl sk hs bs = let
 		Just (ECDSA.Signature r s) =
 			ECDSA.signWith (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
