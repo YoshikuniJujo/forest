@@ -43,7 +43,6 @@ import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 
 import HandshakeType (
@@ -167,10 +166,7 @@ randomR (mn, mx) g
 	(bs, g') = cprgGenerate (rlen mx `div` 8) g
 	Right n = B.fromByteString bs
 	
-
-qlen, rlen :: Integer -> Int
-qlen 0 = 0
-qlen n = 1 + qlen (n `shiftR` 1)
+rlen :: Integer -> Int
 rlen 0 = 0
 rlen q = 8 + rlen (q `shiftR` 8)
 
