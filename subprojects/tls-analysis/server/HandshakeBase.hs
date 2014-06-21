@@ -32,7 +32,6 @@ import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
 import Data.Bits
 import Data.Word (Word8)
--- import System.Random
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
@@ -177,7 +176,6 @@ instance SecretKey ECDSA.PrivateKey where
 	sign bl sk hs bs = let
 		Just (ECDSA.Signature r s) =
 			blindSign bl (generateK hs q x bs) sk (fst hs) bs in
---			ECDSA.signWith (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk

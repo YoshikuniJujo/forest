@@ -51,3 +51,16 @@ px = p `add` x
 mpx = m `mul` px
 
 mp' = mpx `add` rev mx
+
+constantLen k
+	| qlen k < qlen n = k * 2 ^ (qlen n - qlen k) + 1
+	| otherwise = k
+
+mulG k = (constantLen k * n + k) `mul` g
+
+adjustLen k n = k * 2 ^ (qlen n - qlen k) + 1
+
+cPointMul :: Curve -> Integer -> Point -> Point
+cPointMul c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (adjustLen k n * n + k) p
+	where
+	n = ecc_n cc

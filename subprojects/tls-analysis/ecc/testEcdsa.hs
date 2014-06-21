@@ -69,3 +69,8 @@ myLog2 n = 1 + myLog2 (n `shiftR` 1)
 
 check :: Integer -> Bool
 check n = log2 n == myLog2 n
+
+qlen 0 = 0
+qlen n = 1 + qlen (n `shiftR` 1)
+
+constantLen k = k * 2 ^ (qlen n - qlen k)
