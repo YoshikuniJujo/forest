@@ -30,8 +30,10 @@ import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.State (modify, gets)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
+import Data.Bits
 import Data.Word (Word8)
-import "crypto-random" Crypto.Random (CPRG)
+-- import System.Random
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -65,6 +67,7 @@ import qualified HandshakeMonad as HM (
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash, rsaPadding )
 import Rfc6979 (generateK)
+import Ecdsa (blindSign)
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
@@ -156,12 +159,29 @@ instance SecretKey RSA.PrivateKey where
 		RSA.dp (Just bl) sk pd
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
+randomR :: CPRG g => (Integer, Integer) -> g -> (Integer, g)
+randomR (mn, mx) g
+	| mn <= n && n <= mx = (n, g')
+	| otherwise = randomR (mn, mx) g'
+	where
+	(bs, g') = cprgGenerate (rlen mx `div` 8) g
+	Right n = B.fromByteString bs
+	
+
+qlen, rlen :: Integer -> Int
+qlen 0 = 0
+qlen n = 1 + qlen (n `shiftR` 1)
+rlen 0 = 0
+rlen q = 8 + rlen (q `shiftR` 8)
+
 instance SecretKey ECDSA.PrivateKey where
-	type Blinder ECDSA.PrivateKey = ()
-	generateBlinder _ gen = (undefined, gen)
+	type Blinder ECDSA.PrivateKey = Integer
+	generateBlinder (ECDSA.PrivateKey c _) =
+		randomR (1, ECC.ecc_n $ ECC.common_curve c)
 	sign bl sk hs bs = let
 		Just (ECDSA.Signature r s) =
-			ECDSA.signWith (generateK hs q x bs) sk (fst hs) bs in
+			blindSign bl (generateK hs q x bs) sk (fst hs) bs in
+--			ECDSA.signWith (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
