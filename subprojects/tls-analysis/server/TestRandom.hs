@@ -13,7 +13,7 @@ instance CPRG StdGen where
 	cprgSetReseedThreshold = undefined
 	cprgFork = split
 	cprgGenerate = randomByteString
-	cprgGenerateWithEntropy = cprgGenerate
+	cprgGenerateWithEntropy = randomByteString
 
 randomByteString :: Int -> StdGen -> (BS.ByteString, StdGen)
 randomByteString 0 g = ("", g)
