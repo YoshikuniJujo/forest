@@ -28,7 +28,7 @@ import Random (StdGen)
 
 main :: IO ()
 main = do
-	(prt, css, td, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(prt, css, rsa, ec, mcs, td) <- readCommandLine =<< getArgs
 	soc <- listenOn prt
 	let g = cprgCreate undefined :: StdGen
 	createDirectoryIfMissing False td
@@ -39,7 +39,7 @@ main = do
 		writeFile (fp <.> "css") $ show css ++ "\n"
 		cl <- openFile (fp <.> "clt") WriteMode
 		sv <- openFile (fp <.> "srv") WriteMode
-		liftIO . forkIO $ server (DebugHandle h cl sv) g css rsa ec mcs
+		liftIO . forkIO $ server g (DebugHandle h cl sv) css rsa ec mcs
 
 data DebugHandle = DebugHandle Handle Handle Handle deriving Show
 

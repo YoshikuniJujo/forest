@@ -20,7 +20,7 @@ import Random (StdGen)
 
 main :: IO ()
 main = do
-	(_prt, _css, td, rsa, ec, mcs) <- readCommandLine =<< getArgs
+	(_prt, _css, rsa, ec, mcs, td) <- readCommandLine =<< getArgs
 	let g = cprgCreate undefined :: StdGen
 	nms <- map (td </>) . tail . nub . sort .
 		map dropExtensions <$> getDirectoryContents td
@@ -29,7 +29,7 @@ main = do
 		css <- readIO =<< readFile (n <.> "css")
 		cl <- openFile (n <.> "clt") ReadMode
 		sv <- openFile (n <.> "srv") ReadMode
-		server (TestHandle cl sv) g css rsa ec mcs
+		server g (TestHandle cl sv) css rsa ec mcs
 
 data TestHandle = TestHandle Handle Handle deriving Show
 

@@ -1,9 +1,9 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE PackageImports #-}
 
 module Main (main) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forever, void)
+import Control.Monad (void, forever)
 import "monads-tf" Control.Monad.State (StateT(..), runStateT, liftIO)
 import Control.Concurrent (forkIO)
 import System.Environment (getArgs)
@@ -14,10 +14,10 @@ import CommandLine (readCommandLine)
 
 main :: IO ()
 main = do
-	(prt, css, _td, rsa, ec, mcs) <- readCommandLine =<< getArgs
-	soc <- listenOn prt
+	(prt, cs, rsa, ec, mcs, _td) <- readCommandLine =<< getArgs
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+	soc <- listenOn prt
 	void . (`runStateT` g0) . forever $ do
 		(h, _, _) <- liftIO $ accept soc
 		g <- StateT $ return . cprgFork
-		liftIO . forkIO $ server h g css rsa ec mcs
+		liftIO . forkIO $ server g h cs rsa ec mcs

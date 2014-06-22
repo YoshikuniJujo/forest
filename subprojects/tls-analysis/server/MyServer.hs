@@ -23,11 +23,11 @@ import TlsServer (
 	ValidateHandle(..), run, openClient, clientName)
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
-	h -> g -> [CipherSuite] ->
+	g -> h -> [CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) ->
 	(sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
-server h g css rsa ec mcs = (`run` g) $ do
+server g h css rsa ec mcs = (`run` g) $ do
 	cl <- openClient h css rsa ec mcs
 	const () `liftM` doUntil BS.null (hlGetLine cl)
 	hlPut cl . answer . fromMaybe "Anonym" $ clientName cl

@@ -20,10 +20,10 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 readCommandLine :: [String] -> IO (
-	PortID, [CipherSuite], FilePath,
+	PortID, [CipherSuite],
 	(RSA.PrivateKey, X509.CertificateChain),
 	(ECDSA.PrivateKey, X509.CertificateChain),
-	Maybe X509.CertificateStore )
+	Maybe X509.CertificateStore, FilePath )
 readCommandLine args = do
 	let (os, as, errs) = getOpt Permute options args
 	unless (null errs) $ mapM_ putStr errs >> exitFailure
@@ -40,7 +40,7 @@ readCommandLine args = do
 	ec <- (,) <$> readEcdsaKey ekfp <*> readCertificateChain ecfp
 	mcs <- if optDisableClientCert opts then return Nothing else
 		Just <$> readCertificateStore ["cacert.pem"]
-	return (port, css, td, rsa, ec, mcs)
+	return (port, css, rsa, ec, mcs, td)
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
