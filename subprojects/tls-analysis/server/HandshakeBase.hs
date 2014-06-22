@@ -31,7 +31,7 @@ import "monads-tf" Control.Monad.State (modify, gets)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
 import Data.Word (Word8)
-import "crypto-random" Crypto.Random (CPRG)
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -157,11 +157,13 @@ instance SecretKey RSA.PrivateKey where
 	signatureAlgorithm _ = SignatureAlgorithmRsa
 
 instance SecretKey ECDSA.PrivateKey where
-	type Blinder ECDSA.PrivateKey = ()
-	generateBlinder _ = (() ,)
-	sign _ sk hs bs = let
+	type Blinder ECDSA.PrivateKey = Integer
+	generateBlinder _ rng = let
+		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
+		(bl, rng')
+	sign bl sk hs bs = let
 		Just (ECDSA.Signature r s) =
-			blindSign (generateK hs q x bs) sk (fst hs) bs in
+			blindSign bl (generateK hs q x bs) sk (fst hs) bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk

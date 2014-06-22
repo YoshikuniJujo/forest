@@ -64,3 +64,7 @@ cPointMul :: Curve -> Integer -> Point -> Point
 cPointMul c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (adjustLen k n * n + k) p
 	where
 	n = ecc_n cc
+
+countBit :: Integer -> Int
+countBit 0 = 0
+countBit n = (if testBit n 0 then 1 else 0) + countBit (n `shiftR` 1)

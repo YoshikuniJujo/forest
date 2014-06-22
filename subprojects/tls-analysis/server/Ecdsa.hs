@@ -23,13 +23,18 @@ cPointMul c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (adjustLen k n * n + k)
 	n = ecc_n cc
 cPointMul _ _ _ = error "Ecdsa.cPointMul: not implemented binary-field yet"
 
+bPointMul :: Integer -> Curve -> Integer -> Point -> Point
+bPointMul bl c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (bl * n + k) p
+	where
+	n = ecc_n cc
+
 type Hash = BS.ByteString -> BS.ByteString
 
-blindSign :: Integer -> PrivateKey -> Hash -> BS.ByteString ->
+blindSign :: Integer -> Integer -> PrivateKey -> Hash -> BS.ByteString ->
 	Maybe Signature
-blindSign k (PrivateKey curve d) hash msg = do
+blindSign bl k (PrivateKey curve d) hash msg = do
 	let	CurveCommon _ _ g n _ = common_curve curve
-		mul = cPointMul curve
+		mul = bPointMul bl curve
 		z = tHash hash msg n
 		point = k `mul` g
 	r <- case point of
