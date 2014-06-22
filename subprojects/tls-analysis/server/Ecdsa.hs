@@ -10,23 +10,11 @@ import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 import qualified Data.ByteString as BS
 
-qlen :: Integer -> Int
-qlen 0 = 0
-qlen n = 1 + qlen (n `shiftR` 1)
-
-adjustLen :: Integer -> Integer -> Integer
-adjustLen k n = k * 2 ^ (qlen n - qlen k) + 1
-
-cPointMul :: Curve -> Integer -> Point -> Point
-cPointMul c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (adjustLen k n * n + k) p
-	where
-	n = ecc_n cc
-cPointMul _ _ _ = error "Ecdsa.cPointMul: not implemented binary-field yet"
-
 bPointMul :: Integer -> Curve -> Integer -> Point -> Point
 bPointMul bl c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (bl * n + k) p
 	where
 	n = ecc_n cc
+bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 type Hash = BS.ByteString -> BS.ByteString
 
