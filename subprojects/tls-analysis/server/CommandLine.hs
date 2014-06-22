@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module CommandLine (readCommandLine) where
+module CommandLine (readCommandLine, readOptions) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (first)
@@ -19,11 +19,12 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-readCommandLine :: [String] -> IO (
+readOptions, readCommandLine :: [String] -> IO (
 	PortID, [CipherSuite],
 	(RSA.PrivateKey, X509.CertificateChain),
 	(ECDSA.PrivateKey, X509.CertificateChain),
 	Maybe X509.CertificateStore, FilePath )
+readOptions = readCommandLine
 readCommandLine args = do
 	let (os, as, errs) = getOpt Permute options args
 	unless (null errs) $ mapM_ putStr errs >> exitFailure

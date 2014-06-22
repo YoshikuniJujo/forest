@@ -10,11 +10,11 @@ import System.Environment (getArgs)
 import Network (listenOn, accept)
 import "crypto-random" Crypto.Random (CPRG(..), SystemRNG, createEntropyPool)
 import MyServer (server)
-import CommandLine (readCommandLine)
+import CommandLine (readOptions)
 
 main :: IO ()
 main = do
-	(prt, cs, rsa, ec, mcs, _td) <- readCommandLine =<< getArgs
+	(prt, cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn prt
 	void . (`runStateT` g0) . forever $ do

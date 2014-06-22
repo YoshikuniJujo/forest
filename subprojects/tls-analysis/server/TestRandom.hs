@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Random (StdGen) where
+module TestRandom (StdGen) where
 
 import System.Random (RandomGen(..), random, StdGen, mkStdGen)
 import "crypto-random" Crypto.Random (CPRG(..))

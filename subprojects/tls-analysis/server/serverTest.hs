@@ -16,20 +16,20 @@ import qualified Data.ByteString as BS
 
 import MyServer (server, ValidateHandle(..))
 import CommandLine (readCommandLine)
-import Random (StdGen)
+import TestRandom (StdGen)
 
 main :: IO ()
 main = do
-	(_prt, _css, rsa, ec, mcs, td) <- readCommandLine =<< getArgs
+	(_prt, _cs, rsa, ec, mcs, td) <- readCommandLine =<< getArgs
 	let g = cprgCreate undefined :: StdGen
 	nms <- map (td </>) . tail . nub . sort .
 		map dropExtensions <$> getDirectoryContents td
 	forM_ nms $ \n -> do
 --		print n
-		css <- readIO =<< readFile (n <.> "css")
+		cs <- readIO =<< readFile (n <.> "cs")
 		cl <- openFile (n <.> "clt") ReadMode
 		sv <- openFile (n <.> "srv") ReadMode
-		server g (TestHandle cl sv) css rsa ec mcs
+		server g (TestHandle cl sv) cs rsa ec mcs
 
 data TestHandle = TestHandle Handle Handle deriving Show
 
