@@ -41,15 +41,15 @@ main = do
 
 data DebugHandle = DebugHandle Handle Handle Handle deriving Show
 
+instance ValidateHandle DebugHandle where
+	validate (DebugHandle h _ _) = validate h
+
 instance HandleLike DebugHandle where
 	type HandleMonad DebugHandle = IO
 	hlPut (DebugHandle h _ sv) = (>>) <$> BS.hPut sv <*> hlPut h
 	hlGet (DebugHandle h cl _) n = hlGet h n >>= (>>) <$> BS.hPut cl <*> return
 	hlClose (DebugHandle h cl sv) = hlClose `mapM_` [h, cl, sv]
 	hlDebug (DebugHandle h _ _) = hlDebug h
-
-instance ValidateHandle DebugHandle where
-	validate (DebugHandle h _ _) = validate h
 
 createName :: IO FilePath
 createName = do

@@ -7,23 +7,23 @@ import Control.Monad (unless, forM_)
 import Data.List (sort, nub)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle, IOMode(..), openFile, hClose)
-import System.Directory (getDirectoryContents)
-import System.FilePath (dropExtensions, (</>), (<.>))
 import System.Environment (getArgs)
+import System.Directory (getDirectoryContents)
+import System.FilePath ((</>), (<.>), dropExtensions)
 import "crypto-random" Crypto.Random (cprgCreate)
 
 import qualified Data.ByteString as BS
 
 import MyServer (server, ValidateHandle(..))
-import CommandLine (readCommandLine)
+import CommandLine (readOptions)
 import TestRandom (StdGen)
 
 main :: IO ()
 main = do
-	(_prt, _cs, rsa, ec, mcs, td) <- readCommandLine =<< getArgs
+	(_prt, _cs, rsa, ec, mcs, td) <- readOptions =<< getArgs
 	let g = cprgCreate undefined :: StdGen
-	nms <- map (td </>) . tail . nub . sort .
-		map dropExtensions <$> getDirectoryContents td
+	nms <- map (td </>) . tail . nub . sort . map dropExtensions
+		<$> getDirectoryContents td
 	forM_ nms $ \n -> do
 --		print n
 		cs <- readIO =<< readFile (n <.> "cs")
@@ -33,6 +33,9 @@ main = do
 
 data TestHandle = TestHandle Handle Handle deriving Show
 
+instance ValidateHandle TestHandle where
+	validate (TestHandle _ _) = validate (undefined :: Handle)
+
 instance HandleLike TestHandle where
 	type HandleMonad TestHandle = IO
 	hlPut (TestHandle _ sv) bs = do
@@ -41,10 +44,5 @@ instance HandleLike TestHandle where
 			"\n\tEXPECTED: " ++ show bs0 ++
 			"\n\tACTUAL  : " ++ show bs ++ "\n"
 	hlGet (TestHandle cl _) = BS.hGet cl
-	hlClose (TestHandle cl sv) = hClose cl >> hClose sv
-	hlDebug _ n
-		| n > 3 = BS.putStr
-		| otherwise = const $ return ()
-
-instance ValidateHandle TestHandle where
-	validate (TestHandle _ _) = validate (undefined :: Handle)
+	hlClose (TestHandle cl sv) = hClose `mapM_` [cl, sv]
+	hlDebug _ n | n > 3 = BS.putStr | otherwise = const $ return ()
