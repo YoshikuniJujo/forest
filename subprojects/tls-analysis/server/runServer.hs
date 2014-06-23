@@ -9,7 +9,7 @@ import Control.Concurrent (forkIO)
 import System.Environment (getArgs)
 import Network (listenOn, accept)
 import "crypto-random" Crypto.Random (CPRG(..), SystemRNG, createEntropyPool)
-import MyServer (server)
+import TestServer (server)
 import CommandLine (readOptions)
 
 main :: IO ()

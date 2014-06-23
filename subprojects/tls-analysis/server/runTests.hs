@@ -14,7 +14,7 @@ import "crypto-random" Crypto.Random (cprgCreate)
 
 import qualified Data.ByteString as BS
 
-import MyServer (server, ValidateHandle(..))
+import TestServer (server, ValidateHandle(..))
 import CommandLine (readOptions)
 import TestRandom (StdGen)
 

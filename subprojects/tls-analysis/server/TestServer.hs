@@ -1,10 +1,6 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, PackageImports #-}
 
-module MyServer (
-	server,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..)
-) where
+module TestServer (server, ValidateHandle(..)) where
 
 import Control.Monad (liftM)
 import Data.Maybe (fromMaybe)
@@ -18,12 +14,11 @@ import qualified Data.X509.CertificateStore as X509
 import qualified Crypto.PubKey.RSA as RSA
 
 import TlsServer (
-	SecretKey,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ValidateHandle(..), run, openClient, clientName)
+	run, openClient, clientName,
+	ValidateHandle(..), CipherSuite, SecretKey )
 
-server :: (ValidateHandle h, CPRG g, SecretKey sk) =>
-	g -> h -> [CipherSuite] ->
+server :: (ValidateHandle h, CPRG g, SecretKey sk) => g -> h ->
+	[CipherSuite] ->
 	(RSA.PrivateKey, X509.CertificateChain) ->
 	(sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
@@ -37,11 +32,10 @@ answer :: String -> BS.ByteString
 answer name = BS.concat [
 	"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n",
 	"Date: Wed, 07 May 2014 02:27:34 GMT\r\nServer: Warp/2.1.4\r\n",
-	"Content-Type: text/plain\r\n\r\n",
-	"007\r\nHello, \r\n",
+	"Content-Type: text/plain\r\n\r\n007\r\nHello, \r\n",
 	BSC.pack . show $ length name, "\r\n", BSC.pack name, "\r\n",
 	"001\r\n!\r\n0\r\n\r\n" ]
 
 doUntil :: Monad m => (a -> Bool) -> m a -> m [a]
-doUntil p rd =
-	(\x -> if p x then return [x] else (x :) `liftM` doUntil p rd) =<< rd
+doUntil p rd = rd >>= \x ->
+	(if p x then return . (: []) else (`liftM` doUntil p rd) . (:)) x

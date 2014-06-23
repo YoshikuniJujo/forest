@@ -21,7 +21,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as BASE64
 import qualified Crypto.Hash.SHA256 as SHA256
 
-import MyServer (server, ValidateHandle(..))
+import TestServer (server, ValidateHandle(..))
 import CommandLine (readOptions)
 import TestRandom (StdGen)
 
