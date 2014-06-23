@@ -8,7 +8,7 @@ module HandshakeBase (
 	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
 		readHandshake, writeHandshake,
 		getChangeCipherSpec, putChangeCipherSpec,
-	HM.ValidateHandle(..), HM.validate',
+	HM.ValidateHandle(..), HM.handshakeValidate,
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..),
 	ServerKeyExchange(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -22,6 +22,7 @@ module HandshakeBase (
 	DigitallySigned(..), HM.handshakeHash, flushCipherSuite,
 	HM.Partner(..), finishedHash,
 	DhParam(..),
+	secp256r1, dhparams3072,
 ) where
 
 import Prelude hiding (read)
@@ -33,6 +34,7 @@ import "monads-tf" Control.Monad.Error (throwError)
 import Data.HandleLike (HandleLike(..))
 import Data.Word (Word8)
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
+import Numeric
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -61,7 +63,7 @@ import HandshakeType (
 	DigitallySigned(..), Finished(..) )
 import qualified HandshakeMonad as HM (
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
-	ValidateHandle(..), validate',
+	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
 		checkName, clientName, setClientNames,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
@@ -209,3 +211,26 @@ instance DhParam ECC.Curve where
 		ECC.pointMul cv sn (ECC.ecc_g $ ECC.common_curve cv)
 	calculateShared cv sn pp =
 		let ECC.Point x _ = ECC.pointMul cv sn pp in B.toByteString x
+
+secp256r1 :: ECC.Curve
+secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
+
+dhparams3072 :: DH.Params
+dhparams3072 = DH.Params p 2
+	where [(p, "")] = readHex $
+		"ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd1" ++
+		"29024e088a67cc74020bbea63b139b22514a08798e3404dd" ++
+		"ef9519b3cd3a431b302b0a6df25f14374fe1356d6d51c245" ++
+		"e485b576625e7ec6f44c42e9a637ed6b0bff5cb6f406b7ed" ++
+		"ee386bfb5a899fa5ae9f24117c4b1fe649286651ece45b3d" ++
+		"c2007cb8a163bf0598da48361c55d39a69163fa8fd24cf5f" ++
+		"83655d23dca3ad961c62f356208552bb9ed529077096966d" ++
+		"670c354e4abc9804f1746c08ca18217c32905e462e36ce3b" ++
+		"e39e772c180e86039b2783a2ec07a28fb5c55df06f4c52c9" ++
+		"de2bcbf6955817183995497cea956ae515d2261898fa0510" ++
+		"15728e5a8aaac42dad33170d04507a33a85521abdf1cba64" ++
+		"ecfb850458dbef0a8aea71575d060c7db3970f85a6e1e4c7" ++
+		"abf5ae8cdb0933d71e8c94e04a25619dcee3d2261ad2ee6b" ++
+		"f12ffa06d98a0864d87602733ec86a64521f2b18177b200c" ++
+		"bbe117577a615d6c770988c0bad946e208e24fa074e5ab31" ++
+		"43db5bfce0fd108e4b82d120a93ad2caffffffffffffffff"

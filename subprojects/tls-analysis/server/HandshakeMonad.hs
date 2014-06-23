@@ -17,7 +17,7 @@ module HandshakeMonad (
 
 	handshakeHash, withRandom, tlsGet, tlsGetContentType, tlsPut,
 	HandshakeM, randomByteString,
-	validate', generateKeys, debugCipherSuite, finishedHash,
+	handshakeValidate, generateKeys, debugCipherSuite, finishedHash,
 
 	rsaPadding,
 	decryptRsa,
@@ -86,10 +86,10 @@ tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 
-validate' :: ValidateHandle h =>
+handshakeValidate :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
 	HandshakeM h g [X509.FailedReason]
-validate' cs cc = gets fst >>= \t ->
+handshakeValidate cs cc = gets fst >>= \t ->
 	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
 generateKeys_ :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->

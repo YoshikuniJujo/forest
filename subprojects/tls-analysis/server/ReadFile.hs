@@ -1,8 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections #-}
 
 module ReadFile (
-	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore
-) where
+	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((***))
