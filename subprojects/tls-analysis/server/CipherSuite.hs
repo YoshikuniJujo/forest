@@ -4,21 +4,15 @@ module CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
 
 import Data.Word (Word8)
 
-import qualified Codec.Bytable as B
 import qualified Data.ByteString as BS
+import qualified Codec.Bytable as B
 
 data CipherSuite
 	= CipherSuite KeyExchange BulkEncryption
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Read, Eq)
 
-data KeyExchange
-	= RSA
-	| DHE_RSA
-	| ECDHE_RSA
-	| ECDHE_ECDSA
-	| ECDHE_PSK
-	| KE_NULL
+data KeyExchange = RSA | DHE_RSA | ECDHE_RSA | ECDHE_ECDSA | ECDHE_PSK | KE_NULL
 	deriving (Show, Read, Eq)
 
 data BulkEncryption
