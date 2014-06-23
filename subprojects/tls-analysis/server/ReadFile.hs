@@ -5,10 +5,9 @@ module ReadFile (
 ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Arrow
+import Control.Arrow ((***))
 import Control.Monad (unless)
 
-import qualified Codec.Bytable as B
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
@@ -18,6 +17,8 @@ import qualified Data.PEM as PEM
 import qualified Data.X509 as X509
 import qualified Data.X509.File as X509
 import qualified Data.X509.CertificateStore as X509
+import qualified Codec.Bytable as B
+import Codec.Bytable.BigEndian ()
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC
@@ -28,10 +29,10 @@ readRsaKey fp = do
 	ks <- X509.readKeyFile fp
 	case ks of
 		[X509.PrivKeyRSA sk] -> return sk
-		_ -> error "ReadFile.readRsaKey: Not single RSA key"
+		_ -> error "ReadFile.readRsaKey: not single RSA key"
 
 readEcdsaKey :: FilePath -> IO ECDSA.PrivateKey
-readEcdsaKey = (either error id . parseEcdsaKey <$>) . BS.readFile
+readEcdsaKey = (either error id . decodeEcdsaKey <$>) . BS.readFile
 
 readCertificateChain :: FilePath -> IO X509.CertificateChain
 readCertificateChain = (X509.CertificateChain <$>) . X509.readSignedObject
@@ -40,55 +41,39 @@ readCertificateStore :: [FilePath] -> IO X509.CertificateStore
 readCertificateStore =
 	(X509.makeCertificateStore . concat <$>) . mapM X509.readSignedObject
 
-parseEcdsaKey :: BS.ByteString -> Either String ECDSA.PrivateKey
-parseEcdsaKey bs = do
-	pems <- either (Left . show) return $ PEM.pemParseBS bs
-	pem <- fromSingle (msgp ++ "not single pem") pems
-	pemc <- case pem of
-		PEM.PEM {
-			PEM.pemName = "EC PRIVATE KEY",
-			PEM.pemHeader = [],
+decodeEcdsaKey :: BS.ByteString -> Either String ECDSA.PrivateKey
+decodeEcdsaKey bs = do
+	pms <- either (Left . show) return $ PEM.pemParseBS bs
+	pm <- fromSinglePem pms
+	pmc <- case pm of
+		PEM.PEM { PEM.pemName = "EC PRIVATE KEY", PEM.pemHeader = [],
 			PEM.pemContent = c } -> return c
 		_ -> Left $ msgp ++ "bad PEM structure"
-	asn <- either (Left . show) return $ ASN1.decodeASN1' ASN1.DER pemc
+	asn <- either (Left . show) return $ ASN1.decodeASN1' ASN1.DER pmc
 	(sk, oid, pk) <- case asn of
 		[ASN1.Start ASN1.Sequence,
 			ASN1.IntVal 1,
 			ASN1.OctetString s,
 			ASN1.Start (ASN1.Container ASN1.Context 0),
-				o,
-				ASN1.End (ASN1.Container ASN1.Context 0),
+				o, ASN1.End (ASN1.Container ASN1.Context 0),
 			ASN1.Start (ASN1.Container ASN1.Context 1),
-				ASN1.BitString (ASN1.BitArray _pbkl p),
+				ASN1.BitString (ASN1.BitArray _pl p),
 				ASN1.End (ASN1.Container ASN1.Context 1),
 			ASN1.End ASN1.Sequence] -> (, o, p) <$> B.fromByteString s
 		_ -> Left $ msgp ++ "bad ASN.1 structure"
-	unless (oid == prime256v1) . Left $ msgp ++ "not implemented curve"
+	unless (oid == oidSecp256r1) . Left $ msgp ++ "not implemented curve"
 	tpk <- case BS.uncons pk of
 		Just (4, t) -> return t
 		_ -> Left $ msgp ++ "not implemented point format"
-	(x, y) <- (\(mx, my) -> (,) <$> mx <*> my) .
+	(x, y) <- (\(ex, ey) -> (,) <$> ex <*> ey) .
 			(B.fromByteString *** B.fromByteString) $ BS.splitAt 32 tpk
 	unless (ECC.Point x y == ECC.pointMul secp256r1 sk g) .
-		Left $ msgp ++ "bad public key"
+		Left $ msgp ++ "the public key not match"
 	return $ ECDSA.PrivateKey secp256r1 sk
 	where
-	msgp = "ReadFile.parseEcdsaKey: "
+	msgp = "ReadFile.decodeEcdsaKey: "
+	fromSinglePem [x] = return x
+	fromSinglePem _ = Left $ msgp ++ "not single PEM"
 	g = ECC.ecc_g $ ECC.common_curve secp256r1
-	fromSingle _ [x] = return x
-	fromSingle msg _ = Left msg
-
-prime256v1 :: ASN1.ASN1
-prime256v1 = ASN1.OID [1, 2, 840, 10045, 3, 1, 7]
-
-secp256r1 :: ECC.Curve
-secp256r1 = ECC.CurveFP $ ECC.CurvePrime p (ECC.CurveCommon a b g n h)
-	where
-	p = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
-	a = 0xffffffff00000001000000000000000000000000fffffffffffffffffffffffc
-	b = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
-	g = ECC.Point x y
-	x = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296
-	y = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5
-	n = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
-	h = 0x01
+	secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
+	oidSecp256r1 = ASN1.OID [1, 2, 840, 10045, 3, 1, 7]
