@@ -11,9 +11,9 @@ module HandshakeMonad (
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDescription(..),
 	TH.Partner(..),
 	TH.cipherSuite,
-	TH.flushCipherSuite,
+	flushCipherSuite,
 	TH.TlsM,
-	TH.newHandle, TH.setCipherSuite,
+	TH.newHandle, setCipherSuite,
 
 	handshakeHash, withRandom, tlsGet, tlsGetContentType, tlsPut,
 	HandshakeM, randomByteString,
@@ -57,7 +57,7 @@ import qualified TlsHandle as TH (
 	TlsHandle(..), Keys, ContentType(..),
 		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-	Partner(..), finishedHash, handshakeHash )
+	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
 
 import qualified Crypto.Hash.SHA256 as SHA256
 
@@ -202,3 +202,10 @@ checkName tc n = n `elem` TH.clientNames tc
 
 clientName :: TH.TlsHandle h g -> Maybe String
 clientName = listToMaybe . TH.clientNames
+
+setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
+setCipherSuite = modify . first . TH.setCipherSuite
+
+flushCipherSuite :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g ()
+flushCipherSuite p =
+	TH.flushCipherSuite p `liftM` gets fst >>= modify . first . const

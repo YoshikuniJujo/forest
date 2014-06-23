@@ -2,7 +2,7 @@
 	FlexibleContexts, TypeFamilies #-}
 
 module TlsHandle (
-	TlsM, run, cipherSuite, setCipherSuite,
+	TlsM, run, cipherSuite, setCipherSuite, CipherSuite(..),
 	read, write, randomByteString, updateHash, handshakeHash,
 	updateSequenceNumber,
 	getContentType, buffered, withRandom, debugCipherSuite,

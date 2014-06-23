@@ -12,17 +12,16 @@ module HandshakeBase (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
-		setCipherSuite,
+		HM.setCipherSuite,
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..),
 		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
-	DigitallySigned(..), HM.handshakeHash, flushCipherSuite,
+	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
 	HM.Partner(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1 ) where
 
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
-import "monads-tf" Control.Monad.State (gets, modify)
 import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
@@ -81,6 +80,20 @@ readHandshake = do
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage $
 			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
+writeHandshake ::
+	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
+writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandshake
+
+data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
+
+instance B.Bytable ChangeCipherSpec where
+	fromByteString bs = case BS.unpack bs of
+		[1] -> Right ChangeCipherSpec
+		[w] -> Right $ ChangeCipherSpecRaw w
+		_ -> Left "HandshakeBase: ChangeCipherSpec.fromByteString"
+	toByteString ChangeCipherSpec = BS.pack [1]
+	toByteString (ChangeCipherSpecRaw w) = BS.pack [w]
+
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
@@ -89,6 +102,16 @@ getChangeCipherSpec = do
 		_ -> throwError $ HM.Alert
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
+
+putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
+putChangeCipherSpec =
+	uncurry HM.tlsPut . encodeContent $ ContentChangeCipherSpec ChangeCipherSpec
+
+data Content
+	= ContentChangeCipherSpec ChangeCipherSpec
+	| ContentAlert Word8 Word8
+	| ContentHandshake Handshake
+	deriving Show
 
 readContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
 readContent rd HM.ContentTypeChangeCipherSpec =
@@ -101,20 +124,6 @@ readContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 	return . either error id . B.fromByteString $ BS.concat [t, len, body]
 readContent _ _ = undefined
 
-writeHandshake ::
-	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
-writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandshake
-
-putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
-putChangeCipherSpec =
-	uncurry HM.tlsPut . encodeContent $ ContentChangeCipherSpec ChangeCipherSpec
-
-data Content
-	= ContentChangeCipherSpec ChangeCipherSpec
-	| ContentAlert Word8 Word8
-	| ContentHandshake Handshake
-	deriving Show
-
 encodeContent :: Content -> (HM.ContentType, BS.ByteString)
 encodeContent (ContentChangeCipherSpec ccs) =
 	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
@@ -122,16 +131,6 @@ encodeContent (ContentAlert al ad) =
 	(HM.ContentTypeAlert, BS.pack [al, ad])
 encodeContent (ContentHandshake hss) =
 	(HM.ContentTypeHandshake, B.toByteString hss)
-
-data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
-
-instance B.Bytable ChangeCipherSpec where
-	fromByteString bs = case BS.unpack bs of
-		[1] -> Right ChangeCipherSpec
-		[ccs] -> Right $ ChangeCipherSpecRaw ccs
-		_ -> Left "HandshakeBase: ChangeCipherSpec.fromByteString"
-	toByteString ChangeCipherSpec = BS.pack [1]
-	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
 class SecretKey sk where
 	type Blinder sk
@@ -149,11 +148,12 @@ instance SecretKey RSA.PrivateKey where
 				ASN1.OID [1, 3, 14, 3, 2, 26])
 			HashAlgorithmSha256 -> (SHA256.hash,
 				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
-			_ -> error "not implemented bulk encryption type"
+			_ -> error $ "HandshakeBase: " ++
+				"not implemented bulk encryption type"
 		a = [ASN1.Start ASN1.Sequence,
-				ASN1.Start ASN1.Sequence, oid,
-					ASN1.Null, ASN1.End ASN1.Sequence,
-				ASN1.OctetString h, ASN1.End ASN1.Sequence]
+			ASN1.Start ASN1.Sequence,
+				oid, ASN1.Null, ASN1.End ASN1.Sequence,
+			ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a
 		pd = BS.concat [ "\x00\x01",
 			BS.replicate (125 - BS.length b) 0xff, "\NUL", b ] in
@@ -166,27 +166,18 @@ instance SecretKey ECDSA.PrivateKey where
 		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
 		(bl, rng')
 	sign ha bl sk bs = let
-		(hs, b) = case ha of
+		(hs, bls) = case ha of
 			HashAlgorithmSha1 -> (SHA1.hash, 64)
 			HashAlgorithmSha256 -> (SHA256.hash, 64)
-			_ -> error "not implemented bulk encryption type"
+			_ -> error $ "HandshakeBase: " ++
+				"not implemented bulk encryption type"
 		Just (ECDSA.Signature r s) =
-			blindSign bl (generateK (hs, b) q x bs) sk hs bs in
+			blindSign bl (generateK (hs, bls) q x bs) sk hs bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
-
-setCipherSuite :: HandleLike h => CipherSuite -> HM.HandshakeM h g ()
-setCipherSuite = modify . first . HM.setCipherSuite
-
-flushCipherSuite :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g ()
-flushCipherSuite p =
-	HM.flushCipherSuite p `liftM` gets fst >>= modify . first . const
-
-finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
-finishedHash = (Finished `liftM`) . HM.finishedHash
 
 class DhParam b where
 	type Secret b
@@ -229,9 +220,12 @@ instance DhParam ECC.Curve where
 	generateSecret _ =
 		first (either error id . B.fromByteString) . cprgGenerate 32
 	calculatePublic cv sn =
-		ECC.pointMul cv sn (ECC.ecc_g $ ECC.common_curve cv)
+		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =
 		let ECC.Point x _ = ECC.pointMul cv sn pp in B.toByteString x
 
 secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
+
+finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
+finishedHash = (Finished `liftM`) . HM.finishedHash
