@@ -145,24 +145,22 @@ instance B.Bytable ChangeCipherSpec where
 class SecretKey sk where
 	type Blinder sk
 	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
-	sign :: Blinder sk -> sk -> (HashAlgorithm, Int) ->
-		BS.ByteString -> BS.ByteString
+	sign :: HashAlgorithm -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignatureAlgorithm
 
 instance SecretKey RSA.PrivateKey where
 	type Blinder RSA.PrivateKey = RSA.Blinder
 	generateBlinder sk rng =
 		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
-	sign bl sk (hs, _) bs = let
+	sign hs bl sk bs = let
 		(h, oid) = first ($ bs) $ case hs of
 			HashAlgorithmSha1 -> (SHA1.hash,
 				ASN1.OID [1, 3, 14, 3, 2, 26])
 			HashAlgorithmSha256 -> (SHA256.hash,
 				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
+			_ -> error "not implemented bulk encryption type"
 		a = [ASN1.Start ASN1.Sequence,
 				ASN1.Start ASN1.Sequence, oid,
---					ASN1.OID [1, 3, 14, 3, 2, 26],
---					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1],
 					ASN1.Null, ASN1.End ASN1.Sequence,
 				ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a
@@ -176,10 +174,11 @@ instance SecretKey ECDSA.PrivateKey where
 	generateBlinder _ rng = let
 		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
 		(bl, rng')
-	sign bl sk (ha, b) bs = let
-		hs = case ha of
-			HashAlgorithmSha1 -> SHA1.hash
-			HashAlgorithmSha256 -> SHA256.hash
+	sign ha bl sk bs = let
+		(hs, b) = case ha of
+			HashAlgorithmSha1 -> (SHA1.hash, 64)
+			HashAlgorithmSha256 -> (SHA256.hash, 64)
+			_ -> error "not implemented bulk encryption type"
 		Just (ECDSA.Signature r s) =
 			blindSign bl (generateK (hs, b) q x bs) sk hs bs in
 		B.toByteString $ ECDSA.Signature r s

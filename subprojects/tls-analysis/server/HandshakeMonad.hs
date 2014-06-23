@@ -64,8 +64,8 @@ import qualified Crypto.Hash.SHA256 as SHA256
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 
 generateKeys :: HandleLike h =>
-	BS.ByteString -> BS.ByteString -> BS.ByteString -> HandshakeM h g ()
-generateKeys cr sr pms = do
+	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
+generateKeys (cr, sr) pms = do
 	ks <- generateKeys_ cr sr pms
 	th <- gets fst
 	modify . first $ const th { TH.keys = ks }
