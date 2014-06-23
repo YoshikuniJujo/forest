@@ -1,13 +1,11 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports,
-	TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module HandshakeBase (
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
-		readHandshake, writeHandshake,
-		getChangeCipherSpec, putChangeCipherSpec,
+		readHandshake, getChangeCipherSpec,
+		writeHandshake, putChangeCipherSpec,
 	HM.ValidateHandle(..), HM.handshakeValidate,
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..),
 	ServerKeyExchange(..), ServerHelloDone(..),
@@ -15,43 +13,36 @@ module HandshakeBase (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		setCipherSuite,
-	CertificateRequest(..), certificateRequest,
-		ClientCertificateType(..), SecretKey(..),
+	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..),
 		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, flushCipherSuite,
 	HM.Partner(..), finishedHash,
-	DhParam(..),
-	secp256r1, dhparams3072,
-) where
-
-import Prelude hiding (read)
+	DhParam(..), dh3072Modp, secp256r1 ) where
 
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
-import "monads-tf" Control.Monad.State (modify, gets)
+import "monads-tf" Control.Monad.State (gets, modify)
 import "monads-tf" Control.Monad.Error (throwError)
-import Data.HandleLike (HandleLike(..))
 import Data.Word (Word8)
+import Data.HandleLike (HandleLike(..))
+import Numeric (readHex)
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
-import Numeric
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Codec.Bytable as B
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.RSA.Prim as RSA
-import qualified Crypto.Types.PubKey.ECDSA as ECDSA
-import qualified Crypto.Types.PubKey.ECC as ECC
-
-import qualified Crypto.Types.PubKey.DH as DH
-import qualified Crypto.PubKey.DH as DH
-import qualified Crypto.PubKey.ECC.Prim as ECC
-
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.Types.PubKey.DH as DH
+import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.ECC.Prim as ECC
+import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
@@ -59,8 +50,7 @@ import HandshakeType (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	ServerKeyExchange(..),
-	CertificateRequest(..), certificateRequest,
-		ClientCertificateType(..),
+	certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..),
 	DigitallySigned(..), Finished(..) )
@@ -68,11 +58,12 @@ import qualified HandshakeMonad as HM (
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
-		checkName, clientName, setClientNames,
+		setClientNames, checkName, clientName,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
-		tlsGetContentType, tlsGet, tlsPut, generateKeys, decryptRsa,
+		tlsGetContentType, tlsGet, tlsPut,
+		generateKeys, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	Partner(..), handshakeHash, finishedHash, rsaPadding )
+	Partner(..), handshakeHash, finishedHash )
 import Rfc6979 (generateK)
 import Ecdsa (blindSign)
 
@@ -212,21 +203,8 @@ instance DhParam DH.Params where
 	calculateShared ps sn pn = B.toByteString .
 		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
 
-instance DhParam ECC.Curve where
-	type Secret ECC.Curve = Integer
-	type Public ECC.Curve = ECC.Point
-	generateSecret _ =
-		first (either error id . B.fromByteString) . cprgGenerate 32
-	calculatePublic cv sn =
-		ECC.pointMul cv sn (ECC.ecc_g $ ECC.common_curve cv)
-	calculateShared cv sn pp =
-		let ECC.Point x _ = ECC.pointMul cv sn pp in B.toByteString x
-
-secp256r1 :: ECC.Curve
-secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
-
-dhparams3072 :: DH.Params
-dhparams3072 = DH.Params p 2
+dh3072Modp :: DH.Params
+dh3072Modp = DH.Params p 2
 	where [(p, "")] = readHex $
 		"ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd1" ++
 		"29024e088a67cc74020bbea63b139b22514a08798e3404dd" ++
@@ -244,3 +222,16 @@ dhparams3072 = DH.Params p 2
 		"f12ffa06d98a0864d87602733ec86a64521f2b18177b200c" ++
 		"bbe117577a615d6c770988c0bad946e208e24fa074e5ab31" ++
 		"43db5bfce0fd108e4b82d120a93ad2caffffffffffffffff"
+
+instance DhParam ECC.Curve where
+	type Secret ECC.Curve = Integer
+	type Public ECC.Curve = ECC.Point
+	generateSecret _ =
+		first (either error id . B.fromByteString) . cprgGenerate 32
+	calculatePublic cv sn =
+		ECC.pointMul cv sn (ECC.ecc_g $ ECC.common_curve cv)
+	calculateShared cv sn pp =
+		let ECC.Point x _ = ECC.pointMul cv sn pp in B.toByteString x
+
+secp256r1 :: ECC.Curve
+secp256r1 = ECC.getCurveByName ECC.SEC_p256r1

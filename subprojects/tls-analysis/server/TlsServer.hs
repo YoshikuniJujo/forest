@@ -45,7 +45,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash,
-	DhParam(..), dhparams3072, secp256r1)
+	DhParam(..), dh3072Modp, secp256r1)
 
 type Version = (Word8, Word8)
 
@@ -68,7 +68,7 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 			"TlsServer.openClient: not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
-		DHE_RSA -> dhKeyExchange ha dhparams3072 rsk
+		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
 		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
 		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> throwError
@@ -164,7 +164,7 @@ clientCertificate cs = do
 	where
 	chk cc = do
 		rs <- handshakeValidate cs cc
-		unless (null rs) . throwError $ Alert AlertLevelFatal
+		unless (null rs) . throwError . Alert AlertLevelFatal
 			(selectAlert rs) $
 			"TlsServer.clientCertificate: " ++ show rs
 	selectAlert rs
