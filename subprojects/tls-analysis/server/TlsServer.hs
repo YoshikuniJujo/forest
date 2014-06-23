@@ -90,16 +90,16 @@ rsaKeyExchange rsk cv rs mcs = return const
 	`ap` rsaClientKeyExchange rsk cv rs
 
 dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
-		DhParam b, B.Bytable b, B.Bytable (Public b)) =>
-	HashAlgorithm -> b -> sk ->
+		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
+	HashAlgorithm -> dp -> sk ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-dhKeyExchange ha bs ssk rs mcs = do
-	sv <- withRandom $ generateSecret bs
-	serverKeyExchange ha bs sv ssk rs
+dhKeyExchange ha dp ssk rs mcs = do
+	sv <- withRandom $ generateSecret dp
+	serverKeyExchange ha dp sv ssk rs
 	return const
 		`ap` requestAndCertificate mcs
-		`ap` dhClientKeyExchange bs sv rs
+		`ap` dhClientKeyExchange dp sv rs
 
 clientHello :: (HandleLike h, CPRG g) =>
 	[CipherSuite] -> HandshakeM h g (CipherSuite, BS.ByteString, Version)
@@ -134,16 +134,17 @@ serverHello cs@(CipherSuite ke _) rcc ecc = do
 serverHello _ _ _ = throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
-		DhParam b, B.Bytable b, B.Bytable (Public b)) => HashAlgorithm ->
-	b -> Secret b -> sk -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-serverKeyExchange ha bs sv ssk (cr, sr) = do
+		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
+	HashAlgorithm -> dp -> Secret dp -> sk ->
+	(BS.ByteString, BS.ByteString) -> HandshakeM h g ()
+serverKeyExchange ha dp sv ssk (cr, sr) = do
 	bl <- withRandom $ generateBlinder ssk
 	writeHandshake
-		. ServerKeyExchange ebs pv ha (signatureAlgorithm ssk)
-		. sign ha bl ssk $ BS.concat [cr, sr, ebs, pv]
+		. ServerKeyExchange edp pv ha (signatureAlgorithm ssk)
+		. sign ha bl ssk $ BS.concat [cr, sr, edp, pv]
 	where
-	ebs = B.toByteString bs
-	pv = B.toByteString $ calculatePublic bs sv
+	edp = B.toByteString dp
+	pv = B.toByteString $ calculatePublic dp sv
 
 requestAndCertificate :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
@@ -203,11 +204,11 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 			_ -> throwError "mkpms: never occur"
 		return pms
 
-dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam b, B.Bytable (Public b)) =>
-	b -> Secret b -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-dhClientKeyExchange bs sv rs = do
+dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp)) =>
+	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
+dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
-	generateKeys rs =<< case calculateShared bs sv <$> B.fromByteString cke of
+	generateKeys rs =<< case calculateShared dp sv <$> B.fromByteString cke of
 		Left em -> throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
 		Right pv -> return pv
