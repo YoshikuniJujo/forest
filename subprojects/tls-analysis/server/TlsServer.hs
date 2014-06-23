@@ -51,8 +51,8 @@ import HandshakeBase (
 	ClientKeyExchange(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
-	Partner(..), finishedHash)
-import KeyAgreement (DhParam(..))
+	Partner(..), finishedHash, DhParam(..))
+-- import KeyAgreement (DhParam(..))
 
 type Version = (Word8, Word8)
 
