@@ -8,6 +8,7 @@ module HandshakeType (
 		CompressionMethod(..),
 	ServerKeyExchange(..),
 	CertificateRequest(..),
+		certificateRequest,
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..),
@@ -21,6 +22,7 @@ import Data.Word.Word24 (Word24)
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 -- import qualified Crypto.Types.PubKey.DH as DH
 -- import qualified Crypto.Types.PubKey.ECC as ECC
@@ -205,3 +207,11 @@ handshakeTypeToByteString HandshakeTypeCertificateVerify = BS.pack [15]
 handshakeTypeToByteString HandshakeTypeClientKeyExchange = BS.pack [16]
 handshakeTypeToByteString HandshakeTypeFinished = BS.pack [20]
 handshakeTypeToByteString (HandshakeTypeRaw w) = BS.pack [w]
+
+certificateRequest ::
+	[ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
+	X509.CertificateStore -> CertificateRequest
+certificateRequest cct cca =
+	CertificateRequest cct cca
+		. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+		. X509.listCertificates

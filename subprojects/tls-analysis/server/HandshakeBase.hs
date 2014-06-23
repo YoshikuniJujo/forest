@@ -15,7 +15,7 @@ module HandshakeBase (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		setCipherSuite,
-	CertificateRequest(..),
+	CertificateRequest(..), certificateRequest,
 		ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..),
 		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
@@ -56,7 +56,7 @@ import HandshakeType (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	ServerKeyExchange(..),
-	CertificateRequest(..),
+	CertificateRequest(..), certificateRequest,
 		ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..),
@@ -154,7 +154,8 @@ instance SecretKey RSA.PrivateKey where
 		h = fst hs bs
 		a = [ASN1.Start ASN1.Sequence,
 				ASN1.Start ASN1.Sequence,
-					ASN1.OID [1, 3, 14, 3, 2, 26],
+--					ASN1.OID [1, 3, 14, 3, 2, 26],
+					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1],
 					ASN1.Null, ASN1.End ASN1.Sequence,
 				ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a

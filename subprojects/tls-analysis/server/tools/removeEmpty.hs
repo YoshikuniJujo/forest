@@ -13,4 +13,4 @@ main = do
 		cltSz <- openFile (nm <.> "clt") ReadMode >>= hFileSize
 		srvSz <- openFile (nm <.> "srv") ReadMode >>= hFileSize
 		when (cltSz == 0 && srvSz == 0) $
-			mapM_ (removeFile . (nm <.>)) ["css", "clt", "srv"]
+			mapM_ (removeFile . (nm <.>)) ["cs", "clt", "srv"]

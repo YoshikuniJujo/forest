@@ -21,6 +21,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
 
 import Data.ASN1.Encoding
 import Data.ASN1.BinaryEncoding
@@ -31,10 +32,14 @@ import Base
 
 import Control.Arrow
 
-fromASN :: [ASN1] -> Either String BS.ByteString
+fromASN :: [ASN1] -> Either String (Bool, BS.ByteString)
 fromASN a = case a of
 	[Start Sequence, Start Sequence, OID [1, 3, 14, 3, 2, 26],
-		Null, End Sequence, OctetString o, End Sequence] -> Right o
+		Null, End Sequence, OctetString o, End Sequence] ->
+		Right (False, o)
+	[Start Sequence, Start Sequence, OID [2, 16, 840, 1, 101, 3, 4, 2, 1],
+		Null, End Sequence, OctetString o, End Sequence] ->
+		Right (True, o)
 	_ -> Left "KeyExchange.fromASN"
 
 class PublicKey pk where
@@ -49,7 +54,8 @@ instance PublicKey ECDSA.PublicKey where
 verifyEcdsa :: ECDSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
 verifyEcdsa pk bd sn = let
 	s = decodeSignature sn in
-	ECDSA.verify SHA1.hash pk s bd
+--	ECDSA.verify SHA1.hash pk s bd
+	ECDSA.verify SHA256.hash pk s bd
 
 decodeSignature :: BS.ByteString -> ECDSA.Signature
 decodeSignature bs = let EcdsaSign _ (_, r) (_, s) = decodeEcdsaSign bs in
@@ -78,8 +84,11 @@ verifyRsa :: RSA.PublicKey -> BS.ByteString -> BS.ByteString -> Bool
 verifyRsa pk bd sn = const False ||| id $ do
 	let	cHash = SHA1.hash bd
 		unsign = BS.tail . BS.dropWhile (/= 0) . BS.drop 2 $ RSA.ep pk sn
-	sHash <- fromASN =<< left show (decodeASN1' BER unsign)
-	return $ cHash == sHash
+		cHash256 = SHA256.hash bd
+	(is256, sHash) <- fromASN =<< left show (decodeASN1' BER unsign)
+	return $ if is256
+		then cHash256 == sHash
+		else cHash == sHash
 
 verifyServerKeyExchange :: (Base b, PublicKey pk) => pk ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString ->
