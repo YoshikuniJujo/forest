@@ -20,76 +20,116 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 readOptions :: [String] -> IO (
-	PortID, [CipherSuite],
+	PortID,
+	[CipherSuite],
 	(RSA.PrivateKey, X509.CertificateChain),
 	(ECDSA.PrivateKey, X509.CertificateChain),
-	Maybe X509.CertificateStore, FilePath )
+	Maybe X509.CertificateStore,
+	FilePath )
 readOptions args = do
-	let (os, as, errs) = getOpt Permute options args
-	unless (null errs) $ mapM_ putStr errs >> exitFailure
+	let (os, as, es) = getOpt Permute options args
+	unless (null es) $ mapM_ putStr es >> exitFailure
 	unless (null as) $ putStrLn ("naked args: " ++ show as) >> exitFailure
-	opts <- either (\msg -> putStr msg >> exitFailure) return $ classify os
-	let	port = PortNumber 443 `fromMaybe` optPort opts
+	opts <- either ((>> exitFailure) . putStr) return $ construct os
+	let	prt = PortNumber 443 `fromMaybe` optPort opts
 		css = maybe id (drop . fromEnum) (optLevel opts) cipherSuites
 		td = "test" `fromMaybe` optTestDirectory opts
-		kfp = "localhost.key" `fromMaybe` optKeyFile opts
-		cfp = "localhost.crt" `fromMaybe` optCertFile opts
-		ekfp = "localhost_ecdsa.key" `fromMaybe` optEcKeyFile opts
-		ecfp = "localhost_ecdsa.cert" `fromMaybe` optEcCertFile opts
-	rsa <- (,) <$> readRsaKey kfp <*> readCertificateChain cfp
-	ec <- (,) <$> readEcdsaKey ekfp <*> readCertificateChain ecfp
-	mcs <- if optDisableClientCert opts then return Nothing else
-		Just <$> readCertificateStore ["cacert.pem"]
-	return (port, css, rsa, ec, mcs, td)
-
-cipherSuites :: [CipherSuite]
-cipherSuites = [
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
-	CipherSuite DHE_RSA AES_128_CBC_SHA256,
-	CipherSuite DHE_RSA AES_128_CBC_SHA,
-	CipherSuite RSA AES_128_CBC_SHA256,
-	CipherSuite RSA AES_128_CBC_SHA ]
-
-data Option
-	= OptPort PortID
-	| OptDisableClientCert
-	| OptLevel CipherSuiteLevel
-	| OptTestDirectory FilePath
-	| OptKeyFile FilePath
-	| OptCertFile FilePath
-	| OptEcKeyFile FilePath
-	| OptEcCertFile FilePath
-	deriving (Show, Eq)
+		rkf = "localhost.key" `fromMaybe` optRsaKeyFile opts
+		rcf = "localhost.crt" `fromMaybe` optRsaCertFile opts
+		ekf = "localhost_ecdsa.key" `fromMaybe` optEcKeyFile opts
+		ecf = "localhost_ecdsa.cert" `fromMaybe` optEcCertFile opts
+	rsa <- (,) <$> readRsaKey rkf <*> readCertificateChain rcf
+	ec <- (,) <$> readEcdsaKey ekf <*> readCertificateChain ecf
+	mcs <- if optDisableClientCert opts then return Nothing else Just <$>
+		readCertificateStore ["cacert.pem"]
+	return (prt, css, rsa, ec, mcs, td)
 
 data Options = Options {
 	optPort :: Maybe PortID,
-	optDisableClientCert :: Bool,
 	optLevel :: Maybe CipherSuiteLevel,
-	optTestDirectory :: Maybe FilePath,
-	optKeyFile :: Maybe FilePath,
-	optCertFile :: Maybe FilePath,
+	optRsaKeyFile :: Maybe FilePath,
+	optRsaCertFile :: Maybe FilePath,
 	optEcKeyFile :: Maybe FilePath,
-	optEcCertFile :: Maybe FilePath }
+	optEcCertFile :: Maybe FilePath,
+	optDisableClientCert :: Bool,
+	optTestDirectory :: Maybe FilePath }
 	deriving Show
 
-initialOptions :: Options
-initialOptions = Options {
+nullOptions :: Options
+nullOptions = Options {
 	optPort = Nothing,
-	optDisableClientCert = False,
 	optLevel = Nothing,
-	optTestDirectory = Nothing,
-	optKeyFile = Nothing,
-	optCertFile = Nothing,
+	optRsaKeyFile = Nothing,
+	optRsaCertFile = Nothing,
 	optEcKeyFile = Nothing,
-	optEcCertFile = Nothing }
+	optEcCertFile = Nothing,
+	optDisableClientCert = False,
+	optTestDirectory = Nothing }
+
+construct :: [Option] -> Either String Options
+construct [] = return nullOptions
+construct (o : os) = do
+	c <- construct os
+	case o of
+		OptPort p -> ck (optPort c) >> return c { optPort = Just p }
+		OptDisableClientCert -> if optDisableClientCert c
+			then Left "CommandLine.construct: duplicated -d options\n"
+			else return c { optDisableClientCert = True }
+		OptLevel (NoLevel l) -> Left $
+			"CommandLine.construct: no such level " ++ show l ++ "\n"
+		OptLevel csl -> ck (optLevel c) >> return c { optLevel = Just csl }
+		OptTestDirectory td -> ck (optTestDirectory c) >>
+			return c { optTestDirectory = Just td }
+		OptRsaKeyFile kf -> ck (optRsaKeyFile c) >>
+			return c { optRsaKeyFile = Just kf }
+		OptRsaCertFile cf -> ck (optRsaCertFile c) >>
+			return c { optRsaCertFile = Just cf }
+		OptEcKeyFile ekf -> ck (optEcKeyFile c) >>
+			return c { optEcKeyFile = Just ekf }
+		OptEcCertFile ecf -> ck (optEcCertFile c) >>
+			return c { optEcCertFile = Just ecf }
+	where
+	ck :: Show a => Maybe a -> Either String ()
+	ck = maybe (Right ()) (Left . ("Can't set: already " ++) . (++ "\n") . show)
+
+data Option
+	= OptPort PortID
+	| OptLevel CipherSuiteLevel
+	| OptRsaKeyFile FilePath
+	| OptRsaCertFile FilePath
+	| OptEcKeyFile FilePath
+	| OptEcCertFile FilePath
+	| OptDisableClientCert
+	| OptTestDirectory FilePath
+	deriving (Show, Eq)
+
+options :: [OptDescr Option]
+options = [
+	Option "p" ["port"]
+		(ReqArg (OptPort . PortNumber . read) "port number")
+		"set port number",
+	Option "l" ["level"]
+		(ReqArg (OptLevel . readCipherSuiteLevel) "cipher suite level")
+		"set cipher suite level",
+	Option "k" ["rsa-key-file"]
+		(ReqArg OptRsaKeyFile "RSA key file") "set RSA key file",
+	Option "c" ["rsa-cert-file"]
+		(ReqArg OptRsaCertFile "RSA cert file") "set RSA cert file",
+	Option "K" ["ecdsa-key-file"]
+		(ReqArg OptEcKeyFile "ECDSA key file") "set ECDSA key file",
+	Option "C" ["ecdsa-cert-file"]
+		(ReqArg OptEcCertFile "ECDSA cert file") "set ECDSA cert file",
+	Option "d" ["disable-client-cert"]
+		(NoArg OptDisableClientCert) "disable client certification",
+	Option "t" ["test-directory"]
+		(ReqArg OptTestDirectory "test directory") "set test directory" ]
+
+instance Read PortNumber where
+	readsPrec n = map (first (fromIntegral :: Int -> PortNumber)) . readsPrec n
 
 data CipherSuiteLevel
 	= ToEcdsa256 | ToEcdsa | ToEcdhe256 | ToEcdhe
-	| ToDhe256   | ToDhe   | ToRsa256   | ToRsa
-	| NoLevel String
+	| ToDhe256   | ToDhe   | ToRsa256   | ToRsa   | NoLevel String
 	deriving (Show, Eq)
 
 instance Enum CipherSuiteLevel where
@@ -123,54 +163,13 @@ readCipherSuiteLevel "rsa256" = ToRsa256
 readCipherSuiteLevel "rsa" = ToRsa
 readCipherSuiteLevel l = NoLevel l
 
-options :: [OptDescr Option]
-options = [
-	Option "p" ["port"]
-		(ReqArg (OptPort . PortNumber . read) "port number")
-		"set port number",
-	Option "k" ["key-file"]
-		(ReqArg OptKeyFile "key file") "set key file",
-	Option "c" ["cert-file"]
-		(ReqArg OptCertFile "cert file") "set cert file",
-	Option "K" ["ec-key-file"]
-		(ReqArg OptEcKeyFile "EC key file") "set EC key file",
-	Option "C" ["ec-cert-file"]
-		(ReqArg OptEcCertFile "EC cert file") "set EC cert file",
-	Option "d" ["disable-client-cert"]
-		(NoArg OptDisableClientCert) "disable client certification",
-	Option "l" ["level"]
-		(ReqArg (OptLevel . readCipherSuiteLevel) "cipher suite level")
-		"set cipher suite level",
-	Option "t" ["test-directory"]
-		(ReqArg OptTestDirectory "test directory") "set test directory" ]
-
-classify :: [Option] -> Either String Options
-classify [] = return initialOptions
-classify (o : os) = do
-	c <- classify os
-	case o of
-		OptPort p -> ck (optPort c) >> return c { optPort = Just p }
-		OptDisableClientCert -> if optDisableClientCert c
-			then Left "duplicated -d options\n"
-			else return c { optDisableClientCert = True }
-		OptLevel (NoLevel l) -> Left $ "no such level " ++ show l ++ "\n"
-		OptLevel csl ->
-			ck (optLevel c) >> return c { optLevel = Just csl }
-		OptTestDirectory td -> 
-			ck (optTestDirectory c) >>
-				return c { optTestDirectory = Just td }
-		OptKeyFile kf ->
-			ck (optKeyFile c) >> return c { optKeyFile = Just kf }
-		OptCertFile cf ->
-			ck (optCertFile c) >> return c { optCertFile = Just cf }
-		OptEcKeyFile ekf ->
-			ck (optEcKeyFile c) >> return c { optEcKeyFile = Just ekf }
-		OptEcCertFile ecf ->
-			ck (optEcCertFile c) >>
-				return c { optEcCertFile = Just ecf }
-	where
-	ck (Just x) = Left $ "Can't set: already " ++ show x ++ "\n"
-	ck _ = Right ()
-
-instance Read PortNumber where
-	readsPrec n = map (first (fromIntegral :: Int -> PortNumber)) . readsPrec n
+cipherSuites :: [CipherSuite]
+cipherSuites = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+	CipherSuite DHE_RSA AES_128_CBC_SHA256,
+	CipherSuite DHE_RSA AES_128_CBC_SHA,
+	CipherSuite RSA AES_128_CBC_SHA256,
+	CipherSuite RSA AES_128_CBC_SHA ]
