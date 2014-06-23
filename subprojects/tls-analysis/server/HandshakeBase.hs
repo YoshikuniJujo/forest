@@ -50,6 +50,9 @@ import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.PubKey.DH as DH
 import qualified Crypto.PubKey.ECC.Prim as ECC
 
+import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
+
 import HandshakeType (
 	Handshake(..), HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -142,7 +145,7 @@ instance B.Bytable ChangeCipherSpec where
 class SecretKey sk where
 	type Blinder sk
 	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
-	sign :: Blinder sk -> sk -> (BS.ByteString -> BS.ByteString, Int) ->
+	sign :: Blinder sk -> sk -> (HashAlgorithm, Int) ->
 		BS.ByteString -> BS.ByteString
 	signatureAlgorithm :: sk -> SignatureAlgorithm
 
@@ -150,12 +153,16 @@ instance SecretKey RSA.PrivateKey where
 	type Blinder RSA.PrivateKey = RSA.Blinder
 	generateBlinder sk rng =
 		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
-	sign bl sk hs bs = let
-		h = fst hs bs
+	sign bl sk (hs, _) bs = let
+		(h, oid) = first ($ bs) $ case hs of
+			HashAlgorithmSha1 -> (SHA1.hash,
+				ASN1.OID [1, 3, 14, 3, 2, 26])
+			HashAlgorithmSha256 -> (SHA256.hash,
+				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
 		a = [ASN1.Start ASN1.Sequence,
-				ASN1.Start ASN1.Sequence,
+				ASN1.Start ASN1.Sequence, oid,
 --					ASN1.OID [1, 3, 14, 3, 2, 26],
-					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1],
+--					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1],
 					ASN1.Null, ASN1.End ASN1.Sequence,
 				ASN1.OctetString h, ASN1.End ASN1.Sequence]
 		b = ASN1.encodeASN1' ASN1.DER a
@@ -169,9 +176,12 @@ instance SecretKey ECDSA.PrivateKey where
 	generateBlinder _ rng = let
 		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
 		(bl, rng')
-	sign bl sk hs bs = let
+	sign bl sk (ha, b) bs = let
+		hs = case ha of
+			HashAlgorithmSha1 -> SHA1.hash
+			HashAlgorithmSha256 -> SHA256.hash
 		Just (ECDSA.Signature r s) =
-			blindSign bl (generateK hs q x bs) sk (fst hs) bs in
+			blindSign bl (generateK (hs, b) q x bs) sk hs bs in
 		B.toByteString $ ECDSA.Signature r s
 		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk

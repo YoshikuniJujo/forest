@@ -64,14 +64,18 @@ openClient :: (ValidateHandle h, CPRG g, SecretKey sk) => h ->
 	(sk, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
 openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
-	(cs@(CipherSuite ke _), cr, cv) <- clientHello cssv
+	(cs@(CipherSuite ke be), cr, cv) <- clientHello cssv
 	setCipherSuite cs
+	let ha = case be of
+		AES_128_CBC_SHA -> HashAlgorithmSha1
+		AES_128_CBC_SHA256 -> HashAlgorithmSha256
+		_ -> error "bad"
 	sr <- serverHello cs rcc ecc
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
-		DHE_RSA -> dhKeyExchange dhparams3072 rsk
-		ECDHE_RSA -> dhKeyExchange secp256r1 rsk
-		ECDHE_ECDSA -> dhKeyExchange secp256r1 esk
+		DHE_RSA -> dhKeyExchange ha dhparams3072 rsk
+		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
+		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> throwError
 			"TlsServer.openClient: not implemented cipher suite"
 	maybe (return ()) certificateVerify mpk
@@ -91,12 +95,13 @@ rsaKeyExchange rsk cv rs mcs = return const
 	`ap` rsaClientKeyExchange rsk rs cv
 
 dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
-		DhParam b, B.Bytable b, B.Bytable (Public b)) => b -> sk ->
+		DhParam b, B.Bytable b, B.Bytable (Public b)) =>
+	HashAlgorithm -> b -> sk ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
-dhKeyExchange bs ssk rs mcs = do
+dhKeyExchange ha bs ssk rs mcs = do
 	sv <- withRandom $ generateSecret bs
-	serverKeyExchange bs sv ssk rs
+	serverKeyExchange ha bs sv ssk rs
 	return const
 		`ap` requestAndCertificate mcs
 		`ap` dhClientKeyExchange bs sv rs
@@ -143,13 +148,14 @@ serverHello _ _ _ = throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 		DhParam b, B.Bytable b, B.Bytable (Public b)) =>
+	HashAlgorithm ->
 	b -> Secret b -> sk -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
-serverKeyExchange bs sv ssk (cr, sr) = do
+serverKeyExchange ha bs sv ssk (cr, sr) = do
 	bl <- withRandom $ generateBlinder ssk
 	writeHandshake
 		. ServerKeyExchange
-			bs' pv HashAlgorithmSha256 (signatureAlgorithm ssk)
-		. sign bl ssk (SHA256.hash, 64) $ BS.concat [cr, sr, bs', pv]
+			bs' pv ha (signatureAlgorithm ssk)
+		. sign bl ssk (ha, 64) $ BS.concat [cr, sr, bs', pv]
 	where
 	bs' = B.toByteString bs
 	pv = B.toByteString $ calculatePublic bs sv
