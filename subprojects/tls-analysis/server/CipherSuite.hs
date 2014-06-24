@@ -25,8 +25,8 @@ data BulkEncryption
 
 
 instance B.Bytable CipherSuite where
-	fromByteString = decodeCipherSuite
-	toByteString = encodeCipherSuite
+	decode = decodeCipherSuite
+	encode = encodeCipherSuite
 
 decodeCipherSuite :: BS.ByteString -> Either String CipherSuite
 decodeCipherSuite bs = case BS.unpack bs of

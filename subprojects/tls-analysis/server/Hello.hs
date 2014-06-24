@@ -27,8 +27,8 @@ data ClientHello
 	deriving Show
 
 instance B.Bytable ClientHello where
-	fromByteString = B.evalBytableM parseClientHello
-	toByteString = clientHelloToByteString
+	decode = B.evalBytableM parseClientHello
+	encode = clientHelloToByteString
 
 parseClientHello :: B.BytableM ClientHello
 parseClientHello = do
@@ -45,13 +45,13 @@ parseClientHello = do
 
 clientHelloToByteString :: ClientHello -> BS.ByteString
 clientHelloToByteString (ClientHello (vmjr, vmnr) r sid css cms mel) = BS.concat [
-	B.toByteString vmjr,
-	B.toByteString vmnr,
-	B.toByteString r,
-	B.addLen (undefined :: Word8) $ B.toByteString sid,
-	B.addLen (undefined :: Word16) . BS.concat $ map B.toByteString css,
-	B.addLen (undefined :: Word8) . BS.concat $ map B.toByteString cms,
-	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.toByteString) mel ]
+	B.encode vmjr,
+	B.encode vmnr,
+	B.encode r,
+	B.addLen (undefined :: Word8) $ B.encode sid,
+	B.addLen (undefined :: Word16) . BS.concat $ map B.encode css,
+	B.addLen (undefined :: Word8) . BS.concat $ map B.encode cms,
+	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.encode) mel ]
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello
@@ -61,8 +61,8 @@ data ServerHello
 	deriving Show
 
 instance B.Bytable ServerHello where
-	fromByteString = B.evalBytableM parseServerHello
-	toByteString = serverHelloToByteString
+	decode = B.evalBytableM parseServerHello
+	encode = serverHelloToByteString
 
 parseServerHello :: B.BytableM ServerHello
 parseServerHello = do
@@ -83,13 +83,13 @@ pvrsid = (,,)
 
 serverHelloToByteString :: ServerHello -> BS.ByteString
 serverHelloToByteString (ServerHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
-	B.toByteString vmjr,
-	B.toByteString vmnr,
-	B.toByteString r,
-	B.addLen (undefined :: Word8) $ B.toByteString sid,
-	B.toByteString cs,
+	B.encode vmjr,
+	B.encode vmnr,
+	B.encode r,
+	B.addLen (undefined :: Word8) $ B.encode sid,
+	B.encode cs,
 	compressionMethodToByteString cm,
-	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.toByteString) mes ]
+	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.encode) mes ]
 serverHelloToByteString (ServerHelloRaw sh) = sh
 
 data CompressionMethod
@@ -98,8 +98,8 @@ data CompressionMethod
 	deriving (Show, Eq)
 
 instance B.Bytable CompressionMethod where
-	fromByteString = byteStringToCompressionMethod
-	toByteString = compressionMethodToByteString
+	decode = byteStringToCompressionMethod
+	encode = compressionMethodToByteString
 
 byteStringToCompressionMethod :: BS.ByteString -> Either String CompressionMethod
 byteStringToCompressionMethod bs = case BS.unpack bs of
@@ -119,5 +119,5 @@ instance Show SessionId where
 		"(SessionID " ++ concatMap (`showHex` "") (BS.unpack sid) ++ ")"
 
 instance B.Bytable SessionId where
-	fromByteString = Right . SessionId
-	toByteString (SessionId bs) = bs
+	decode = Right . SessionId
+	encode (SessionId bs) = bs

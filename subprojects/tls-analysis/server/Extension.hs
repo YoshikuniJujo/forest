@@ -33,8 +33,8 @@ data Extension
 	deriving Show
 
 instance B.Bytable Extension where
-	fromByteString = B.evalBytableM B.parse
-	toByteString = extensionToByteString
+	decode = B.evalBytableM B.parse
+	encode = extensionToByteString
 
 instance B.Parsable Extension where
 	parse = parseExtension
@@ -92,8 +92,8 @@ data ExtensionType
 	deriving Show
 
 instance B.Bytable ExtensionType where
-	fromByteString = byteStringToExtensionType
-	toByteString = extensionTypeToByteString
+	decode = byteStringToExtensionType
+	encode = extensionTypeToByteString
 
 byteStringToExtensionType :: BS.ByteString -> Either String ExtensionType
 byteStringToExtensionType bs = case BS.unpack bs of
@@ -125,8 +125,8 @@ instance B.Parsable ServerName where
 	parse = parseServerName
 
 instance B.Bytable ServerName where
-	fromByteString = B.evalBytableM parseServerName
-	toByteString = serverNameToByteString
+	decode = B.evalBytableM parseServerName
+	encode = serverNameToByteString
 
 parseServerName :: B.BytableM ServerName
 parseServerName = do
@@ -149,8 +149,8 @@ data NameType
 	deriving Show
 
 instance B.Bytable NameType where
-	fromByteString = byteStringToNameType
-	toByteString = nameTypeToByteString
+	decode = byteStringToNameType
+	encode = nameTypeToByteString
 
 byteStringToNameType :: BS.ByteString -> Either String NameType
 byteStringToNameType bs = case BS.unpack bs of
@@ -169,8 +169,8 @@ data EcPointFormat
 	deriving Show
 
 instance B.Bytable EcPointFormat where
-	fromByteString = byteStringToEcPointFormat
-	toByteString = ecPointFormatToByteString
+	decode = byteStringToEcPointFormat
+	encode = ecPointFormatToByteString
 
 byteStringToEcPointFormat :: BS.ByteString -> Either String EcPointFormat
 byteStringToEcPointFormat bs = case BS.unpack bs of
@@ -192,7 +192,7 @@ data NamedCurve
 	deriving Show
 
 instance B.Bytable NamedCurve where
-	fromByteString = byteStringToNamedCurve
+	decode = byteStringToNamedCurve
 	toByteString = namedCurveToByteString
 
 byteStringToNamedCurve :: BS.ByteString -> Either String NamedCurve
@@ -212,8 +212,8 @@ namedCurveToByteString (NamedCurveRaw nc) = B.toByteString nc
 -}
 
 instance B.Bytable ECC.CurveName where
-	fromByteString = byteStringToCurveName
-	toByteString = curveNameToByteString
+	decode = byteStringToCurveName
+	encode = curveNameToByteString
 
 byteStringToCurveName :: BS.ByteString -> Either String ECC.CurveName
 byteStringToCurveName bs = case BS.unpack bs of
@@ -231,39 +231,39 @@ curveNameToByteString ECC.SEC_p521r1 = B.toByteString (25 :: Word16)
 curveNameToByteString _ = error "Extension.curveNameToByteString: not implemented"
 
 instance B.Bytable DH.Params where
-	fromByteString = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
-	toByteString (DH.Params dhP dhG) = BS.concat [
+	decode = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
+	encode (DH.Params dhP dhG) = BS.concat [
 		B.addLen (undefined :: Word16) $ B.toByteString dhP,
 		B.addLen (undefined :: Word16) $ B.toByteString dhG ]
 
 instance B.Bytable DH.PublicNumber where
-	fromByteString = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
-	toByteString = B.addLen (undefined :: Word16) .
+	decode = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
+	encode = B.addLen (undefined :: Word16) .
 		B.toByteString . \(DH.PublicNumber pn) -> pn
 
 instance B.Bytable ECC.Point where
-	fromByteString bs = case BS.uncons $ BS.tail bs of
+	decode bs = case BS.uncons $ BS.tail bs of
 		Just (4, rest) -> Right $ let (x, y) = BS.splitAt 32 rest in
-			ECC.Point	(either error id $ B.fromByteString x)
-					(either error id $ B.fromByteString y)
-		_ -> Left "KeyAgreement.hs: ECC.Point.fromByteString"
-	toByteString (ECC.Point x y) = B.addLen (undefined :: Word8) .
+			ECC.Point	(either error id $ B.decode x)
+					(either error id $ B.decode y)
+		_ -> Left "KeyAgreement.hs: ECC.Point.decode"
+	encode (ECC.Point x y) = B.addLen (undefined :: Word8) .
 		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
-	toByteString ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
+	encode ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
 
 data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
 	deriving Show
 
 instance B.Bytable EcCurveType where
-	fromByteString = undefined
-	toByteString ExplicitPrime = BS.pack [1]
-	toByteString ExplicitChar2 = BS.pack [2]
-	toByteString NamedCurve = BS.pack [3]
-	toByteString (EcCurveTypeRaw w) = BS.pack [w]
+	decode = undefined
+	encode ExplicitPrime = BS.pack [1]
+	encode ExplicitChar2 = BS.pack [2]
+	encode NamedCurve = BS.pack [3]
+	encode (EcCurveTypeRaw w) = BS.pack [w]
 
 instance B.Bytable ECC.Curve where
-	fromByteString = undefined
-	toByteString = encodeCurve
+	decode = undefined
+	encode = encodeCurve
 
 encodeCurve :: ECC.Curve -> BS.ByteString
 encodeCurve c

@@ -87,12 +87,12 @@ writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandsh
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
 instance B.Bytable ChangeCipherSpec where
-	fromByteString bs = case BS.unpack bs of
+	decode bs = case BS.unpack bs of
 		[1] -> Right ChangeCipherSpec
 		[w] -> Right $ ChangeCipherSpecRaw w
-		_ -> Left "HandshakeBase: ChangeCipherSpec.fromByteString"
-	toByteString ChangeCipherSpec = BS.pack [1]
-	toByteString (ChangeCipherSpecRaw w) = BS.pack [w]
+		_ -> Left "HandshakeBase: ChangeCipherSpec.decode"
+	encode ChangeCipherSpec = BS.pack [1]
+	encode (ChangeCipherSpecRaw w) = BS.pack [w]
 
 getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
@@ -115,22 +115,22 @@ data Content
 
 readContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
 readContent rd HM.ContentTypeChangeCipherSpec =
-	(ContentChangeCipherSpec . either error id . B.fromByteString) `liftM` rd 1
+	(ContentChangeCipherSpec . either error id . B.decode) `liftM` rd 1
 readContent rd HM.ContentTypeAlert =
 	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
 readContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
 	(t, len) <- (,) `liftM` rd 1 `ap` rd 3
-	body <- rd . either error id $ B.fromByteString len
-	return . either error id . B.fromByteString $ BS.concat [t, len, body]
+	body <- rd . either error id $ B.decode len
+	return . either error id . B.decode $ BS.concat [t, len, body]
 readContent _ _ = undefined
 
 encodeContent :: Content -> (HM.ContentType, BS.ByteString)
 encodeContent (ContentChangeCipherSpec ccs) =
-	(HM.ContentTypeChangeCipherSpec, B.toByteString ccs)
+	(HM.ContentTypeChangeCipherSpec, B.encode ccs)
 encodeContent (ContentAlert al ad) =
 	(HM.ContentTypeAlert, BS.pack [al, ad])
 encodeContent (ContentHandshake hss) =
-	(HM.ContentTypeHandshake, B.toByteString hss)
+	(HM.ContentTypeHandshake, B.encode hss)
 
 class SecretKey sk where
 	type Blinder sk
@@ -163,9 +163,9 @@ instance SecretKey RSA.PrivateKey where
 instance SecretKey ECDSA.PrivateKey where
 	type Blinder ECDSA.PrivateKey = Integer
 	generateBlinder _ rng = let
-		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
+		(Right bl, rng') = first B.decode $ cprgGenerate 32 rng in
 		(bl, rng')
-	sign ha bl sk = B.toByteString .
+	sign ha bl sk = B.encode .
 		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
 		where
 		(hs, bls) = case ha of
@@ -189,7 +189,7 @@ instance DhParam DH.Params where
 	type Public DH.Params = DH.PublicNumber
 	generateSecret = flip DH.generatePrivate
 	calculatePublic = DH.calculatePublic
-	calculateShared ps sn pn = B.toByteString .
+	calculateShared ps sn pn = B.encode .
 		(\(DH.SharedKey s) -> s) $ DH.getShared ps sn pn
 
 dh3072Modp :: DH.Params
@@ -216,11 +216,11 @@ instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
 	generateSecret _ =
-		first (either error id . B.fromByteString) . cprgGenerate 32
+		first (either error id . B.decode) . cprgGenerate 32
 	calculatePublic cv sn =
 		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =
-		let ECC.Point x _ = ECC.pointMul cv sn pp in B.toByteString x
+		let ECC.Point x _ = ECC.pointMul cv sn pp in B.encode x
 
 secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1

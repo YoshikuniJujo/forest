@@ -151,12 +151,12 @@ data ChangeCipherSpec
 	deriving Show
 
 instance B.Bytable ChangeCipherSpec where
-	fromByteString bs = case BS.unpack bs of
+	decode bs = case BS.unpack bs of
 			[1] -> Right ChangeCipherSpec
 			[ccs] -> Right $ ChangeCipherSpecRaw ccs
 			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
-	toByteString ChangeCipherSpec = BS.pack [1]
-	toByteString (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
+	encode ChangeCipherSpec = BS.pack [1]
+	encode (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
 
 data EcCurveType
 	= ExplicitPrime
@@ -166,15 +166,15 @@ data EcCurveType
 	deriving Show
 
 instance B.Bytable EcCurveType where
-	fromByteString = undefined
-	toByteString ExplicitPrime = BS.pack [1]
-	toByteString ExplicitChar2 = BS.pack [2]
-	toByteString NamedCurve = BS.pack [3]
-	toByteString (EcCurveTypeRaw w) = BS.pack [w]
+	decode = undefined
+	encode ExplicitPrime = BS.pack [1]
+	encode ExplicitChar2 = BS.pack [2]
+	encode NamedCurve = BS.pack [3]
+	encode (EcCurveTypeRaw w) = BS.pack [w]
 
 instance B.Bytable ECDSA.Signature where
-	fromByteString = decodeSignature
-	toByteString = encodeSignature
+	decode = decodeSignature
+	encode = encodeSignature
 
 decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
 decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of

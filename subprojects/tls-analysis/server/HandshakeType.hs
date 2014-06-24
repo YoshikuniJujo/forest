@@ -42,8 +42,8 @@ data Handshake
 	deriving Show
 
 instance B.Bytable Handshake where
-	fromByteString = B.evalBytableM B.parse
-	toByteString = encodeH
+	decode = B.evalBytableM B.parse
+	encode = encodeH
 
 instance B.Parsable Handshake where
 	parse = parseHandshake
@@ -65,16 +65,16 @@ parseHandshake = do
 		_ -> HRaw t <$> B.take len
 
 encodeH :: Handshake -> BS.ByteString
-encodeH (HClientHello ch) = encodeH .  HRaw TClientHello $ B.toByteString ch
-encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.toByteString sh
-encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.toByteString crts
+encodeH (HClientHello ch) = encodeH .  HRaw TClientHello $ B.encode ch
+encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.encode sh
+encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.encode crts
 encodeH (HServerKeyEx ske) = encodeH $ HRaw TServerKeyEx ske
-encodeH (HCertificateReq cr) = encodeH . HRaw TCertificateReq $ B.toByteString cr
+encodeH (HCertificateReq cr) = encodeH . HRaw TCertificateReq $ B.encode cr
 encodeH HServerHelloDone = encodeH $ HRaw TServerHelloDone ""
-encodeH (HCertVerify ds) = encodeH . HRaw TCertVerify $ B.toByteString ds
-encodeH (HClientKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.toByteString epms
+encodeH (HCertVerify ds) = encodeH . HRaw TCertVerify $ B.encode ds
+encodeH (HClientKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.encode epms
 encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
-encodeH (HRaw t bs) = B.toByteString t `BS.append` B.addLen (undefined :: Word24) bs
+encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen (undefined :: Word24) bs
 
 class HandshakeItem hi where
 	fromHandshake :: Handshake -> Maybe hi
@@ -100,17 +100,17 @@ data ServerKeyExchange = ServerKeyEx BS.ByteString BS.ByteString
 
 instance HandshakeItem ServerKeyExchange where
 	fromHandshake = undefined
-	toHandshake = HServerKeyEx . B.toByteString
+	toHandshake = HServerKeyEx . B.encode
 
 instance B.Bytable ServerKeyExchange where
-	fromByteString = undefined
-	toByteString = serverKeyExchangeToByteString
+	decode = undefined
+	encode = serverKeyExchangeToByteString
 
 serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
 serverKeyExchangeToByteString
 	(ServerKeyEx params dhYs hashA sigA sn) =
 	BS.concat [
-		params, dhYs, B.toByteString hashA, B.toByteString sigA,
+		params, dhYs, B.encode hashA, B.encode sigA,
 		B.addLen (undefined :: Word16) sn ]
 
 instance HandshakeItem CertificateRequest where
@@ -156,8 +156,8 @@ data Type
 	deriving Show
 
 instance B.Bytable Type where
-	fromByteString = byteStringToType
-	toByteString = typeToByteString
+	decode = byteStringToType
+	encode = typeToByteString
 
 byteStringToType :: BS.ByteString -> Either String Type
 byteStringToType bs = case BS.unpack bs of

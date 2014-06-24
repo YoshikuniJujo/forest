@@ -135,8 +135,8 @@ data ContentType
 	deriving (Show, Eq)
 
 instance B.Bytable ContentType where
-	fromByteString = Right . byteStringToContentType
-	toByteString = contentTypeToByteString
+	decode = Right . byteStringToContentType
+	encode = contentTypeToByteString
 
 byteStringToContentType :: BS.ByteString -> ContentType
 byteStringToContentType "" = error "Types.byteStringToContentType: empty"

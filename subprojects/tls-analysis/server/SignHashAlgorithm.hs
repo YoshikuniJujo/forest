@@ -24,8 +24,8 @@ data HashAlgorithm
 	deriving Show
 
 instance B.Bytable HashAlgorithm where
-	fromByteString = byteStringToHashAlgorithm
-	toByteString = hashAlgorithmToByteString
+	decode = byteStringToHashAlgorithm
+	encode = hashAlgorithmToByteString
 
 byteStringToHashAlgorithm :: BS.ByteString -> Either String HashAlgorithm
 byteStringToHashAlgorithm bs = case BS.unpack bs of
@@ -54,8 +54,8 @@ data SignatureAlgorithm
 	deriving Show
 
 instance B.Bytable SignatureAlgorithm where
-	fromByteString = byteStringToSignatureAlgorithm
-	toByteString = signatureAlgorithmToByteString
+	decode = byteStringToSignatureAlgorithm
+	encode = signatureAlgorithmToByteString
 
 byteStringToSignatureAlgorithm :: BS.ByteString -> Either String SignatureAlgorithm
 byteStringToSignatureAlgorithm bs = case BS.unpack bs of

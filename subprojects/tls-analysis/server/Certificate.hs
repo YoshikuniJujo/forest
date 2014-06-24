@@ -30,8 +30,8 @@ data Certificate
 	deriving Show
 
 instance B.Bytable X509.CertificateChain where
-	fromByteString = B.evalBytableM B.parse
-	toByteString = certificateChainToByteString
+	decode = B.evalBytableM B.parse
+	encode = certificateChainToByteString
 
 instance B.Parsable X509.CertificateChain where
 	parse = parseCertificateChain'
@@ -55,8 +55,8 @@ parseCertificate' :: B.BytableM Certificate
 parseCertificate' = B.take =<< B.take 3
 
 instance B.Bytable Certificate where
-	fromByteString = Right . CertificateRaw
-	toByteString (CertificateRaw bs) = bs
+	decode = Right . CertificateRaw
+	encode (CertificateRaw bs) = bs
 
 certificateChainToByteString :: X509.CertificateChain -> BS.ByteString
 certificateChainToByteString = certificateListToByteString . encodeCert
@@ -83,8 +83,8 @@ data CertificateRequest
 	deriving Show
 
 instance B.Bytable CertificateRequest where
-	fromByteString = B.evalBytableM parseCertificateRequest'
-	toByteString = certificateRequestToByteString
+	decode = B.evalBytableM parseCertificateRequest'
+	encode = certificateRequestToByteString
 
 parseCertificateRequest' :: B.BytableM CertificateRequest
 parseCertificateRequest' = do
@@ -103,8 +103,8 @@ certificateRequestToByteString :: CertificateRequest -> BS.ByteString
 certificateRequestToByteString (CertificateRequest ccts hasas bss) = BS.concat [
 	B.addLen (undefined :: Word8) . BS.concat $
 		map clientCertificateTypeToByteString ccts,
-		B.toByteString (fromIntegral $ 2 * length hasas :: Word16),
-		BS.concat $ concatMap (\(ha, sa) -> [B.toByteString ha, B.toByteString sa]) hasas,
+		B.encode (fromIntegral $ 2 * length hasas :: Word16),
+		BS.concat $ concatMap (\(ha, sa) -> [B.encode ha, B.encode sa]) hasas,
 	B.addLen (undefined :: Word16) . BS.concat $
 		map (B.addLen (undefined :: Word16) . encodeASN1' DER . flip toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
@@ -116,8 +116,8 @@ data ClientCertificateType
 	deriving Show
 
 instance B.Bytable ClientCertificateType where
-	fromByteString = byteStringToClientCertificateType
-	toByteString = clientCertificateTypeToByteString
+	decode = byteStringToClientCertificateType
+	encode = clientCertificateTypeToByteString
 
 byteStringToClientCertificateType :: BS.ByteString -> Either String ClientCertificateType
 byteStringToClientCertificateType bs = case BS.unpack bs of
@@ -139,8 +139,8 @@ instance Show ClientKeyExchange where
 		showKeyPMS epms ++ ")"
 
 instance B.Bytable ClientKeyExchange where
-	fromByteString = Right . ClientKeyExchange
-	toByteString = encryptedPreMasterSecretToByteString
+	decode = Right . ClientKeyExchange
+	encode = encryptedPreMasterSecretToByteString
 
 showKeyPMS :: BS.ByteString -> String
 showKeyPMS = concatMap showH . BS.unpack
@@ -159,8 +159,8 @@ data DigitallySigned
 	deriving Show
 
 instance B.Bytable DigitallySigned where
-	fromByteString = B.evalBytableM parseDigitallySigned
-	toByteString = digitallySignedToByteString
+	decode = B.evalBytableM parseDigitallySigned
+	encode = digitallySignedToByteString
 
 parseDigitallySigned :: B.BytableM DigitallySigned
 parseDigitallySigned = DigitallySigned
@@ -169,8 +169,8 @@ parseDigitallySigned = DigitallySigned
 
 digitallySignedToByteString :: DigitallySigned -> BS.ByteString
 digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
-	B.toByteString ha,
-	B.toByteString sa,
+	B.encode ha,
+	B.encode sa,
 	B.addLen (undefined :: Word16) bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs
 
