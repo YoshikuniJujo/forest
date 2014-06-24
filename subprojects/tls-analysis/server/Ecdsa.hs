@@ -18,25 +18,21 @@ type Hash = BS.ByteString -> BS.ByteString
 
 blindSign :: Integer -> Hash -> ECDSA.PrivateKey -> [Integer] ->
 	BS.ByteString -> ECDSA.Signature
-blindSign bl hs sk ks m =
-	head $ (`mapMaybe` ks) $ \k -> blindSign_ bl hs sk k m
-
-blindSign_ :: Integer -> Hash -> ECDSA.PrivateKey -> Integer ->
-	BS.ByteString -> Maybe ECDSA.Signature
-blindSign_ bl hs (ECDSA.PrivateKey crv d) k m = do
-	e <- either (const Nothing) return . B.fromByteString $ hs m
-	let	dl = qlen e - qlen n
-		z = (if dl > 0 then (`shiftR` dl) else id) e
-	r <- case bPointMul bl crv k g of
-		ECC.PointO -> Nothing
-		ECC.Point 0 _ -> Nothing
-		ECC.Point x _ -> return $ x `mod` n
-	ki <- inverse k n
-	case ki * (z + r * d) `mod` n of
-		0 -> Nothing
-		s -> return $ ECDSA.Signature r s
+blindSign bl hs (ECDSA.PrivateKey crv d) ks m = head $ bs `mapMaybe` ks
 	where
+	bs k = do
+		r <- case bPointMul bl crv k g of
+			ECC.PointO -> Nothing
+			ECC.Point 0 _ -> Nothing
+			ECC.Point x _ -> return $ x `mod` n
+		ki <- inverse k n
+		case ki * (z + r * d) `mod` n of
+			0 -> Nothing
+			s -> return $ ECDSA.Signature r s
 	ECC.CurveCommon _ _ g n _ = ECC.common_curve crv
+	Right e = B.fromByteString $ hs m
+	dl = qlen e - qlen n
+	z = if dl > 0 then e `shiftR` dl else e
 
 bPointMul :: Integer -> ECC.Curve -> Integer -> ECC.Point -> ECC.Point
 bPointMul bl c@(ECC.CurveFP (ECC.CurvePrime _ cc)) k p =
@@ -44,6 +40,48 @@ bPointMul bl c@(ECC.CurveFP (ECC.CurvePrime _ cc)) k p =
 bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 -- RFC 6979
+
+generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
+generateKs hsbl@(hs, _) q x m = filter ((&&) <$> (> 0) <*> (< q)) .
+	uncurry (createKs hsbl q) . initializeKV hsbl q x $ hs m
+
+initializeKV :: (Hash, Int) ->
+	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
+initializeKV (hs, bls) q x h = (k2, v2)
+	where
+	k0 = BS.replicate (BS.length h) 0
+	v0 = BS.replicate (BS.length h) 1
+	k1 = hmac hs bls k0 $
+		BS.concat [v0, "\x00", int2octets q x, bits2octets q h]
+	v1 = hmac hs bls k1 v0
+	k2 = hmac hs bls k1 $
+		BS.concat [v1, "\x01", int2octets q x, bits2octets q h]
+	v2 = hmac hs bls k2 v1
+
+createKs :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> [Integer]
+createKs hsbl@(hs, bls) q k v = kk : createKs hsbl q k' v''
+	where
+	(t, v') = createT hsbl q k v ""
+	kk = bits2int q t
+	k' = hmac hs bls k $ v' `BS.append` "\x00"
+	v'' = hmac hs bls k' v'
+
+createT :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString ->
+	BS.ByteString -> (BS.ByteString, BS.ByteString)
+createT hsbl@(hs, bls) q k v t
+	| blen t < qlen q = createT hsbl q k v' $ t `BS.append` v'
+	| otherwise = (t, v)
+	where
+	v' = hmac hs bls k v
+
+hmac :: (BS.ByteString -> BS.ByteString) -> Int ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString
+hmac hs bls sk =
+	hs . BS.append (BS.map (0x5c `xor`) k) .
+	hs . BS.append (BS.map (0x36 `xor`) k)
+	where
+       	k = padd $ if BS.length sk > bls then hs sk else sk
+	padd bs = bs `BS.append` BS.replicate (bls - BS.length bs) 0
 
 qlen :: Integer -> Int
 qlen 0 = 0
@@ -58,78 +96,21 @@ blen = (8 *) . BS.length
 
 bits2int :: Integer -> BS.ByteString -> Integer
 bits2int q bs
-	| ql < bl = i `shiftR` (bl - ql)
+	| bl > ql = i `shiftR` (bl - ql)
 	| otherwise = i
 	where
 	ql = qlen q
 	bl = blen bs
-	i = either error id (B.fromByteString bs)
+	i = either error id $ B.fromByteString bs
 
 int2octets :: Integer -> Integer -> BS.ByteString
 int2octets q i
-	| bsl <= l0 = BS.replicate (l0 - bsl) 0 `BS.append` bs
+	| bl <= rl = BS.replicate (rl - bl) 0 `BS.append` bs
 	| otherwise = error "Functions.int2octets: too large integer"
 	where
-	rl = rlen q
-	l0 = rl `div` 8
+	rl = rlen q `div` 8
 	bs = B.toByteString i
-	bsl = BS.length bs
+	bl = BS.length bs
 
 bits2octets :: Integer -> BS.ByteString -> BS.ByteString
-bits2octets q bs = int2octets q z2
-	where
-	z1 = bits2int q bs
-	z2 = z1 `mod` q
-
-hmac :: Integral t => (BS.ByteString -> BS.ByteString) -> t ->
-	BS.ByteString -> BS.ByteString -> BS.ByteString
-hmac f bl secret msg =
-    f $! BS.append opad (f $! BS.append ipad msg)
-  where opad = BS.map (xor 0x5c) k'
-        ipad = BS.map (xor 0x36) k'
-
-        k' = BS.append kt pad
-          where kt  = if BS.length secret > fromIntegral bl then f secret else secret
-                pad = BS.replicate (fromIntegral bl - BS.length kt) 0
-
-initV :: BS.ByteString -> BS.ByteString
-initV h = BS.replicate (BS.length h) 1
-
-initK :: BS.ByteString -> BS.ByteString
-initK h = BS.replicate (BS.length h) 0
-
-initializeKV :: (Hash, Int) ->
-	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
-initializeKV (hs, bl) q x h = (k2, v2)
-	where
-	v0 = initV h
-	k0 = initK h
-	k1 = hmac hs bl k0 $ BS.concat
-		[v0, "\x00", int2octets q x, bits2octets q h]
-	v1 = hmac hs bl k1 v0
-	k2 = hmac hs bl k1 $ BS.concat
-		[v1, "\x01", int2octets q x, bits2octets q h]
-	v2 = hmac hs bl k2 v1
-
-createT :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString ->
-	BS.ByteString -> (BS.ByteString, BS.ByteString)
-createT hsbl@(hs, bl) q k v t
-	| blen t < qlen q = createT hsbl q k v' $ t `BS.append` v'
-	| otherwise = (t, v)
-	where
-	v' = hmac hs bl k v
-
-createKs :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> [Integer]
-createKs hsbl@(hs, bls) q k v = kk : createKs hsbl q k' v''
-	where
-	(t, v') = createT hsbl q k v ""
-	kk = bits2int q t
-	k' = hmac hs bls k $ v' `BS.append` "\x00"
-	v'' = hmac hs bls k' v'
-
-generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
-generateKs hsbl@(hs, _) q x m =
-	filter ((&&) <$> (> 0) <*> (< q)) $  createKs hsbl q k v
-	where
-	h = hs m
-	(k, v) = initializeKV hsbl q x h
+bits2octets q bs = int2octets q $ bits2int q bs `mod` q

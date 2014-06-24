@@ -1,3 +1,5 @@
+module Rfc6979Ex where
+
 import Functions
 
 import qualified Crypto.Hash.SHA1 as SHA1
