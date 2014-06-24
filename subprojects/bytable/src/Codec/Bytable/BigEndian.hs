@@ -9,43 +9,43 @@ import Codec.Bytable
 import qualified Data.ByteString as BS
 
 instance Bytable Int where
-	fromByteString bs
+	decode bs
 		| BS.length bs <= 4 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Int: too large"
-	toByteString = integralToByteStringN 4
+	encode = integralToByteStringN 4
 
 instance Bytable Integer where
-	fromByteString bs = Right $ byteStringToNum bs
-	toByteString = integralToByteString
+	decode bs = Right $ byteStringToNum bs
+	encode = integralToByteString
 
 instance Bytable Word16 where
-	fromByteString bs
+	decode bs
 		| BS.length bs <= 2 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word16: too large"
-	toByteString = integralToByteStringN 2
+	encode = integralToByteStringN 2
 
 instance Bytable Word24 where
-	fromByteString bs
+	decode bs
 		| BS.length bs <= 3 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word24: too large"
-	toByteString = integralToByteStringN 3
+	encode = integralToByteStringN 3
 
 instance Bytable Word32 where
-	fromByteString bs
+	decode bs
 		| BS.length bs <= 4 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word32: too large"
-	toByteString = integralToByteStringN 4
+	encode = integralToByteStringN 4
 
 instance Bytable Word64 where
-	fromByteString bs
+	decode bs
 		| BS.length bs <= 8 = Right $ byteStringToNum bs
 		| otherwise = Left
 			"Codec.Bytable.BigEndian: Bytable Word32: too large"
-	toByteString = integralToByteStringN 8
+	encode = integralToByteStringN 8
 
 byteStringToNum :: (Num n, Bits n) => BS.ByteString -> n
 byteStringToNum = wordsToNum . reverse . BS.unpack

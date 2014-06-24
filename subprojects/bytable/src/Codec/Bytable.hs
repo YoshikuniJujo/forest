@@ -1,7 +1,7 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings, TupleSections #-}
 
 module Codec.Bytable (
-	Bytable(..),
+	Bytable(..), fromByteString, toByteString,
 	Parsable(..),
 	BytableM(..), evalBytableM, execBytableM,
 	head, take, null, list, addLen,
@@ -37,19 +37,28 @@ instance Applicative BytableM where
 	(<*>) = ap
 
 class Bytable b where
-	fromByteString :: BS.ByteString -> Either String b
-	toByteString :: b -> BS.ByteString
+	decode :: BS.ByteString -> Either String b
+	encode :: b -> BS.ByteString
+
+fromByteString :: Bytable b => BS.ByteString -> Either String b
+fromByteString = decode
+
+toByteString :: Bytable b => b -> BS.ByteString
+toByteString = encode
+
+{-# DEPRECATED fromByteString "Use decode instead" #-}
+{-# DEPRECATED toByteString "Use encode instead" #-}
 
 instance Bytable Word8 where
-	fromByteString "" = Right 0
-	fromByteString bs
+	decode "" = Right 0
+	decode bs
 		| [w] <- BS.unpack bs = Right w
-	fromByteString _ = Left "Codec.Bytable.BigEndian: Bytable Word8: too large"
-	toByteString = BS.pack . (: [])
+	decode _ = Left "Codec.Bytable.BigEndian: Bytable Word8: too large"
+	encode = BS.pack . (: [])
 
 instance Bytable BS.ByteString where
-	fromByteString = Right
-	toByteString = id
+	decode = Right
+	encode = id
 
 class Parsable p where
 	parse :: BytableM p
@@ -64,7 +73,7 @@ take n = BytableM $ \bs -> do
 	unless (BS.length bs >= n) .  Left $
 		"Bytable.take: length shorter than " ++ show n
 	let (x, bs') = BS.splitAt n bs
-	(, bs') <$> fromByteString x
+	(, bs') <$> decode x
 
 null :: BytableM Bool
 null  = BytableM $ \bs -> Right (BS.null bs, bs)
@@ -82,4 +91,4 @@ list n m = do
 
 addLen :: (Bytable n, Num n) => n -> BS.ByteString -> BS.ByteString
 addLen t bs =
-	toByteString (fromIntegral (BS.length bs) `asTypeOf` t) `BS.append` bs
+	encode (fromIntegral (BS.length bs) `asTypeOf` t) `BS.append` bs
