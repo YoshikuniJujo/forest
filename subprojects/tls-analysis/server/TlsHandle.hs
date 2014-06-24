@@ -192,10 +192,10 @@ tlsFlush th = do
 	unless (ct == ContentTypeNull) $ do
 		enc <- tlsEncryptMessage th (keys th) ct bs
 		write th $ BS.concat [
-			B.toByteString ct,
-			B.toByteString (3 :: Word8),
-			B.toByteString (3 :: Word8),
-			B.toByteString (fromIntegral $ BS.length enc :: Word16),
+			B.encode ct,
+			B.encode (3 :: Word8),
+			B.encode (3 :: Word8),
+			B.encode (fromIntegral $ BS.length enc :: Word16),
 			enc ]
 
 tGetLine :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
@@ -266,9 +266,9 @@ checkAppData th m = do
 tGetWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
 tGetWholeWithCt th = do
-	ct <- (either error id . B.fromByteString) `liftM` read th 1
+	ct <- (either error id . B.decode) `liftM` read th 1
 	[_vmjr, _vmnr] <- BS.unpack `liftM` read th 2
-	ebody <- read th . either error id . B.fromByteString =<< read th 2
+	ebody <- read th . either error id . B.decode =<< read th 2
 	when (BS.null ebody) $ throwError "tGetWholeWithCt: ebody is null"
 	body <- tlsDecryptMessage th (keys th) ct ebody
 	return (ct, body)
@@ -290,7 +290,7 @@ tlsDecryptMessage th ks ct enc = do
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
 	either (throwError . strMsg . show) return $ decryptMessage hs wk mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") enc
+		(B.encode ct `BS.append` "\x03\x03") enc
 
 tlsEncryptMessage :: (HandleLike h, CPRG g) => TlsHandle h g ->
 	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
@@ -306,7 +306,7 @@ tlsEncryptMessage th ks ct msg = do
 		AES_128_CBC_SHA256 -> return hashSha256
 		_ -> throwError "bad"
 	let enc = encryptMessage hs wk mk sn
-		(B.toByteString ct `BS.append` "\x03\x03") msg
+		(B.encode ct `BS.append` "\x03\x03") msg
 	withRandom enc
 
 finishedHash :: HandleLike h =>

@@ -30,7 +30,7 @@ blindSign bl hs (ECDSA.PrivateKey crv d) ks m = head $ bs `mapMaybe` ks
 			0 -> Nothing
 			s -> return $ ECDSA.Signature r s
 	ECC.CurveCommon _ _ g n _ = ECC.common_curve crv
-	Right e = B.fromByteString $ hs m
+	Right e = B.decode $ hs m
 	dl = qlen e - qlen n
 	z = if dl > 0 then e `shiftR` dl else e
 
@@ -101,7 +101,7 @@ bits2int q bs
 	where
 	ql = qlen q
 	bl = blen bs
-	i = either error id $ B.fromByteString bs
+	i = either error id $ B.decode bs
 
 int2octets :: Integer -> Integer -> BS.ByteString
 int2octets q i
@@ -109,7 +109,7 @@ int2octets q i
 	| otherwise = error "Functions.int2octets: too large integer"
 	where
 	rl = rlen q `div` 8
-	bs = B.toByteString i
+	bs = B.encode i
 	bl = BS.length bs
 
 bits2octets :: Integer -> BS.ByteString -> BS.ByteString

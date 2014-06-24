@@ -58,14 +58,14 @@ decodeEcdsaKey bs = do
 			ASN1.Start (ASN1.Container ASN1.Context 1),
 				ASN1.BitString (ASN1.BitArray _pl p),
 				ASN1.End (ASN1.Container ASN1.Context 1),
-			ASN1.End ASN1.Sequence] -> (, o, p) <$> B.fromByteString s
+			ASN1.End ASN1.Sequence] -> (, o, p) <$> B.decode s
 		_ -> Left $ msgp ++ "bad ASN.1 structure"
 	unless (oid == oidSecp256r1) . Left $ msgp ++ "not implemented curve"
 	tpk <- case BS.uncons pk of
 		Just (4, t) -> return t
 		_ -> Left $ msgp ++ "not implemented point format"
 	(x, y) <- (\(ex, ey) -> (,) <$> ex <*> ey) .
-			(B.fromByteString *** B.fromByteString) $ BS.splitAt 32 tpk
+			(B.decode *** B.decode) $ BS.splitAt 32 tpk
 	unless (ECC.Point x y == ECC.pointMul secp256r1 sk g) .
 		Left $ msgp ++ "the public key not match"
 	return $ ECDSA.PrivateKey secp256r1 sk

@@ -143,8 +143,8 @@ serverKeyExchange ha dp sv ssk (cr, sr) = do
 		. ServerKeyEx edp pv ha (signatureAlgorithm ssk)
 		. sign ha bl ssk $ BS.concat [cr, sr, edp, pv]
 	where
-	edp = B.toByteString dp
-	pv = B.toByteString $ calculatePublic dp sv
+	edp = B.encode dp
+	pv = B.encode $ calculatePublic dp sv
 
 requestAndCertificate :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
@@ -208,7 +208,7 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp))
 	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
-	generateKeys rs =<< case calculateShared dp sv <$> B.fromByteString cke of
+	generateKeys rs =<< case calculateShared dp sv <$> B.decode cke of
 		Left em -> throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
 		Right pv -> return pv
@@ -237,13 +237,13 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 			"TlsServer.certificateverify: not implement: " ++ show a
 	unless (ECDSA.verify id
 		(ECDSA.PublicKey secp256r1 $ pnt xy)
-		(either error id $ B.fromByteString s) hs0) . throwError $ Alert
+		(either error id $ B.decode s) hs0) . throwError $ Alert
 			AlertLevelFatal AlertDescriptionDecryptError
 			"TlsServer.certificateverify: client auth failed"
 	where
 	pnt s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
-		(either error id $ B.fromByteString x)
-		(either error id $ B.fromByteString y)
+		(either error id $ B.decode x)
+		(either error id $ B.decode y)
 certificateVerify p = throwError . Alert
 	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p

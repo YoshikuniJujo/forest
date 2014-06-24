@@ -68,7 +68,7 @@ extensionToByteString (ExtensionServerName sns) = extensionToByteString .
 		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEllipticCurve . B.addLen (undefined :: Word16) .
-		BS.concat $ map B.toByteString ecs
+		BS.concat $ map B.encode ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
 	ExtensionRaw ExtensionTypeEcPointFormat . B.addLen (undefined :: Word8) .
 		BS.concat $ map ecPointFormatToByteString epf
@@ -108,13 +108,13 @@ byteStringToExtensionType bs = case BS.unpack bs of
 	_ -> Left "Extension.byteStringToExtensionType"
 
 extensionTypeToByteString :: ExtensionType -> BS.ByteString
-extensionTypeToByteString ExtensionTypeServerName = B.toByteString (0 :: Word16)
-extensionTypeToByteString ExtensionTypeEllipticCurve = B.toByteString (10 :: Word16)
-extensionTypeToByteString ExtensionTypeEcPointFormat = B.toByteString (11 :: Word16)
-extensionTypeToByteString ExtensionTypeSessionTicketTls = B.toByteString (35 :: Word16)
-extensionTypeToByteString ExtensionTypeNextProtocolNegotiation = B.toByteString (13172 :: Word16)
-extensionTypeToByteString ExtensionTypeRenegotiationInfo = B.toByteString (65281 :: Word16)
-extensionTypeToByteString (ExtensionTypeRaw et) = B.toByteString et
+extensionTypeToByteString ExtensionTypeServerName = B.encode (0 :: Word16)
+extensionTypeToByteString ExtensionTypeEllipticCurve = B.encode (10 :: Word16)
+extensionTypeToByteString ExtensionTypeEcPointFormat = B.encode (11 :: Word16)
+extensionTypeToByteString ExtensionTypeSessionTicketTls = B.encode (35 :: Word16)
+extensionTypeToByteString ExtensionTypeNextProtocolNegotiation = B.encode (13172 :: Word16)
+extensionTypeToByteString ExtensionTypeRenegotiationInfo = B.encode (65281 :: Word16)
+extensionTypeToByteString (ExtensionTypeRaw et) = B.encode et
 
 data ServerName
 	= ServerNameHostName BS.ByteString
@@ -193,7 +193,7 @@ data NamedCurve
 
 instance B.Bytable NamedCurve where
 	decode = byteStringToNamedCurve
-	toByteString = namedCurveToByteString
+	encode = namedCurveToByteString
 
 byteStringToNamedCurve :: BS.ByteString -> Either String NamedCurve
 byteStringToNamedCurve bs = case BS.unpack bs of
@@ -205,10 +205,10 @@ byteStringToNamedCurve bs = case BS.unpack bs of
 	_ -> Left "Types.byteStringToNamedCurve"
 
 namedCurveToByteString :: NamedCurve -> BS.ByteString
-namedCurveToByteString (Secp256r1) = B.toByteString (23 :: Word16)
-namedCurveToByteString (Secp384r1) = B.toByteString (24 :: Word16)
-namedCurveToByteString (Secp521r1) = B.toByteString (25 :: Word16)
-namedCurveToByteString (NamedCurveRaw nc) = B.toByteString nc
+namedCurveToByteString (Secp256r1) = B.encode (23 :: Word16)
+namedCurveToByteString (Secp384r1) = B.encode (24 :: Word16)
+namedCurveToByteString (Secp521r1) = B.encode (25 :: Word16)
+namedCurveToByteString (NamedCurveRaw nc) = B.encode nc
 -}
 
 instance B.Bytable ECC.CurveName where
@@ -225,21 +225,21 @@ byteStringToCurveName bs = case BS.unpack bs of
 	_ -> Left "Extension.byteStringToCurveName: bad format"
 
 curveNameToByteString :: ECC.CurveName -> BS.ByteString
-curveNameToByteString ECC.SEC_p256r1 = B.toByteString (23 :: Word16)
-curveNameToByteString ECC.SEC_p384r1 = B.toByteString (24 :: Word16)
-curveNameToByteString ECC.SEC_p521r1 = B.toByteString (25 :: Word16)
+curveNameToByteString ECC.SEC_p256r1 = B.encode (23 :: Word16)
+curveNameToByteString ECC.SEC_p384r1 = B.encode (24 :: Word16)
+curveNameToByteString ECC.SEC_p521r1 = B.encode (25 :: Word16)
 curveNameToByteString _ = error "Extension.curveNameToByteString: not implemented"
 
 instance B.Bytable DH.Params where
 	decode = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
 	encode (DH.Params dhP dhG) = BS.concat [
-		B.addLen (undefined :: Word16) $ B.toByteString dhP,
-		B.addLen (undefined :: Word16) $ B.toByteString dhG ]
+		B.addLen (undefined :: Word16) $ B.encode dhP,
+		B.addLen (undefined :: Word16) $ B.encode dhG ]
 
 instance B.Bytable DH.PublicNumber where
 	decode = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
 	encode = B.addLen (undefined :: Word16) .
-		B.toByteString . \(DH.PublicNumber pn) -> pn
+		B.encode . \(DH.PublicNumber pn) -> pn
 
 instance B.Bytable ECC.Point where
 	decode bs = case BS.uncons $ BS.tail bs of
@@ -248,8 +248,8 @@ instance B.Bytable ECC.Point where
 					(either error id $ B.decode y)
 		_ -> Left "KeyAgreement.hs: ECC.Point.decode"
 	encode (ECC.Point x y) = B.addLen (undefined :: Word8) .
-		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
-	encode ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
+		BS.cons 4 $ BS.append (B.encode x) (B.encode y)
+	encode ECC.PointO = error "KeyAgreement.hs: EC.Point.encode"
 
 data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | EcCurveTypeRaw Word8
 	deriving Show
@@ -268,5 +268,5 @@ instance B.Bytable ECC.Curve where
 encodeCurve :: ECC.Curve -> BS.ByteString
 encodeCurve c
 	| c == ECC.getCurveByName ECC.SEC_p256r1 =
-		B.toByteString NamedCurve `BS.append` B.toByteString ECC.SEC_p256r1
+		B.encode NamedCurve `BS.append` B.encode ECC.SEC_p256r1
 	| otherwise = error "TlsServer.encodeCurve: not implemented"

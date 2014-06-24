@@ -39,7 +39,7 @@ encryptMessage (hs, _) key mk sn pre msg gen =
 calcMac :: (BS.ByteString -> BS.ByteString) ->
 	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
 calcMac hs sn mk inp =
-	hmac hs 64 mk $ B.toByteString sn `BS.append` inp
+	hmac hs 64 mk $ B.encode sn `BS.append` inp
 
 padd :: BS.ByteString -> BS.ByteString
 padd bs = bs `BS.append` pd
