@@ -20,9 +20,11 @@ module HandshakeBase (
 	HM.Partner(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1 ) where
 
+import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.Error (throwError)
+import Data.Maybe (fromJust)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import Numeric (readHex)
@@ -165,16 +167,14 @@ instance SecretKey ECDSA.PrivateKey where
 	generateBlinder _ rng = let
 		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
 		(bl, rng')
-	sign ha bl sk bs = let
+	sign ha bl sk = B.toByteString . fromJust .
+		(($) <$> blindSign bl hs sk . generateK (hs, bls) q x <*> id)
+		where
 		(hs, bls) = case ha of
 			HashAlgorithmSha1 -> (SHA1.hash, 64)
 			HashAlgorithmSha256 -> (SHA256.hash, 64)
 			_ -> error $ "HandshakeBase: " ++
 				"not implemented bulk encryption type"
-		Just (ECDSA.Signature r s) =
-			blindSign bl (generateK (hs, bls) q x bs) sk hs bs in
-		B.toByteString $ ECDSA.Signature r s
-		where
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
 	signatureAlgorithm _ = SignatureAlgorithmEcdsa
@@ -192,7 +192,7 @@ instance DhParam DH.Params where
 	generateSecret = flip DH.generatePrivate
 	calculatePublic = DH.calculatePublic
 	calculateShared ps sn pn = B.toByteString .
-		(\(DH.SharedKey i) -> i) $ DH.getShared ps sn pn
+		(\(DH.SharedKey s) -> s) $ DH.getShared ps sn pn
 
 dh3072Modp :: DH.Params
 dh3072Modp = DH.Params p 2

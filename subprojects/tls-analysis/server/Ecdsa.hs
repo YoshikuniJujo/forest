@@ -18,12 +18,12 @@ bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 type Hash = BS.ByteString -> BS.ByteString
 
-blindSign :: Integer -> Integer -> PrivateKey -> Hash -> BS.ByteString ->
+blindSign :: Integer -> Hash -> PrivateKey -> Integer -> BS.ByteString ->
 	Maybe Signature
-blindSign bl k (PrivateKey curve d) hash msg = do
+blindSign bl hs (PrivateKey curve d) k msg = do
 	let	CurveCommon _ _ g n _ = common_curve curve
 		mul = bPointMul bl curve
-		z = tHash hash msg n
+		z = tHash hs msg n
 		point = k `mul` g
 	r <- case point of
 		PointO -> Nothing
