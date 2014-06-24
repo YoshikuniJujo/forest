@@ -29,43 +29,34 @@ import Certificate (
 	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake
-	= HClientHello ClientHello
-	| HServerHello ServerHello
-	| HCertificate X509.CertificateChain
-	| HServerKeyEx BS.ByteString
-	| HCertificateReq CertificateRequest
-	| HServerHelloDone
-	| HCertVerify DigitallySigned
-	| HClientKeyEx ClientKeyExchange
-	| HFinished BS.ByteString
-	| HRaw Type BS.ByteString
+	= HClientHello ClientHello           | HServerHello ServerHello
+	| HCertificate X509.CertificateChain | HServerKeyEx BS.ByteString
+	| HCertificateReq CertificateRequest | HServerHelloDone
+	| HCertVerify DigitallySigned        | HClientKeyEx ClientKeyExchange
+	| HFinished BS.ByteString            | HRaw Type BS.ByteString
 	deriving Show
 
 instance B.Bytable Handshake where
-	decode = B.evalBytableM B.parse
-	encode = encodeH
+	decode = B.evalBytableM B.parse; encode = encodeH
 
 instance B.Parsable Handshake where
-	parse = parseHandshake
-
-parseHandshake :: B.BytableM Handshake
-parseHandshake = do
-	t <- B.take 1
-	len <- B.take 3
-	case t of
-		TClientHello -> HClientHello <$> B.take len
-		TServerHello -> HServerHello <$> B.take len
-		TCertificate -> HCertificate <$> B.take len
-		TServerKeyEx -> HServerKeyEx <$> B.take len
-		TCertificateReq -> HCertificateReq <$> B.take len
-		TServerHelloDone -> let 0 = len in return HServerHelloDone
-		TCertVerify -> HCertVerify <$> B.take len
-		TClientKeyEx -> HClientKeyEx <$> B.take len
-		TFinished -> HFinished <$> B.take len
-		_ -> HRaw t <$> B.take len
+	parse = do
+		t <- B.take 1
+		len <- B.take 3
+		case t of
+			TClientHello -> HClientHello <$> B.take len
+			TServerHello -> HServerHello <$> B.take len
+			TCertificate -> HCertificate <$> B.take len
+			TServerKeyEx -> HServerKeyEx <$> B.take len
+			TCertificateReq -> HCertificateReq <$> B.take len
+			TServerHelloDone -> let 0 = len in return HServerHelloDone
+			TCertVerify -> HCertVerify <$> B.take len
+			TClientKeyEx -> HClientKeyEx <$> B.take len
+			TFinished -> HFinished <$> B.take len
+			_ -> HRaw t <$> B.take len
 
 encodeH :: Handshake -> BS.ByteString
-encodeH (HClientHello ch) = encodeH .  HRaw TClientHello $ B.encode ch
+encodeH (HClientHello ch) = encodeH . HRaw TClientHello $ B.encode ch
 encodeH (HServerHello sh) = encodeH . HRaw TServerHello $ B.encode sh
 encodeH (HCertificate crts) = encodeH . HRaw TCertificate $ B.encode crts
 encodeH (HServerKeyEx ske) = encodeH $ HRaw TServerKeyEx ske
@@ -77,7 +68,7 @@ encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
 encodeH (HRaw t bs) = B.encode t `BS.append` B.addLen (undefined :: Word24) bs
 
 class HandshakeItem hi where
-	fromHandshake :: Handshake -> Maybe hi
+	fromHandshake :: Handshake -> Maybe hi;
 	toHandshake :: hi -> Handshake
 
 instance HandshakeItem ClientHello where
@@ -104,13 +95,8 @@ instance HandshakeItem ServerKeyExchange where
 
 instance B.Bytable ServerKeyExchange where
 	decode = undefined
-	encode = serverKeyExchangeToByteString
-
-serverKeyExchangeToByteString :: ServerKeyExchange -> BS.ByteString
-serverKeyExchangeToByteString
-	(ServerKeyEx params dhYs hashA sigA sn) =
-	BS.concat [
-		params, dhYs, B.encode hashA, B.encode sigA,
+	encode (ServerKeyEx ps pv ha sa sn) = BS.concat [
+		ps, pv, B.encode ha, B.encode sa,
 		B.addLen (undefined :: Word16) sn ]
 
 instance HandshakeItem CertificateRequest where
@@ -143,44 +129,31 @@ instance HandshakeItem Finished where
 data ServerHelloDone = ServerHelloDone deriving Show
 
 data Type
-	= TClientHello
-	| TServerHello
-	| TCertificate
-	| TServerKeyEx
-	| TCertificateReq
-	| TServerHelloDone
-	| TCertVerify
-	| TClientKeyEx
-	| TFinished
-	| TRaw Word8
+	= TClientHello | TServerHello
+	| TCertificate | TServerKeyEx | TCertificateReq | TServerHelloDone
+	| TCertVerify  | TClientKeyEx | TFinished       | TRaw Word8
 	deriving Show
 
 instance B.Bytable Type where
-	decode = byteStringToType
-	encode = typeToByteString
-
-byteStringToType :: BS.ByteString -> Either String Type
-byteStringToType bs = case BS.unpack bs of
-	[1] -> Right TClientHello
-	[2] -> Right TServerHello
-	[11] -> Right TCertificate
-	[12] -> Right TServerKeyEx
-	[13] -> Right TCertificateReq
-	[14] -> Right TServerHelloDone
-	[15] -> Right TCertVerify
-	[16] -> Right TClientKeyEx
-	[20] -> Right TFinished
-	[ht] -> Right $ TRaw ht
-	_ -> Left "Handshake.byteStringToType"
-
-typeToByteString :: Type -> BS.ByteString
-typeToByteString TClientHello = BS.pack [1]
-typeToByteString TServerHello = BS.pack [2]
-typeToByteString TCertificate = BS.pack [11]
-typeToByteString TServerKeyEx = BS.pack [12]
-typeToByteString TCertificateReq = BS.pack [13]
-typeToByteString TServerHelloDone = BS.pack [14]
-typeToByteString TCertVerify = BS.pack [15]
-typeToByteString TClientKeyEx = BS.pack [16]
-typeToByteString TFinished = BS.pack [20]
-typeToByteString (TRaw w) = BS.pack [w]
+	decode bs = case BS.unpack bs of
+		[1] -> Right TClientHello
+		[2] -> Right TServerHello
+		[11] -> Right TCertificate
+		[12] -> Right TServerKeyEx
+		[13] -> Right TCertificateReq
+		[14] -> Right TServerHelloDone
+		[15] -> Right TCertVerify
+		[16] -> Right TClientKeyEx
+		[20] -> Right TFinished
+		[ht] -> Right $ TRaw ht
+		_ -> Left "Handshake.decodeT"
+	encode TClientHello = BS.pack [1]
+	encode TServerHello = BS.pack [2]
+	encode TCertificate = BS.pack [11]
+	encode TServerKeyEx = BS.pack [12]
+	encode TCertificateReq = BS.pack [13]
+	encode TServerHelloDone = BS.pack [14]
+	encode TCertVerify = BS.pack [15]
+	encode TClientKeyEx = BS.pack [16]
+	encode TFinished = BS.pack [20]
+	encode (TRaw w) = BS.pack [w]
