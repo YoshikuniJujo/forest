@@ -2,39 +2,31 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Extension (
-	ExtensionList,
-	SignatureAlgorithm(..), HashAlgorithm(..), -- NamedCurve(..),
-) where
+	Extension, SignatureAlgorithm(..), HashAlgorithm(..) ) where
 
-import Prelude hiding (head, concat)
-
-import Control.Applicative
+import Control.Applicative ((<$>), (<*>))
+import Data.Bits (shiftL, (.|.))
+import Data.Word (Word8, Word16)
 
 import qualified Data.ByteString as BS
+import qualified Codec.Bytable as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import Data.Bits
-import Data.Word
 import SignHashAlgorithm(SignatureAlgorithm(..), HashAlgorithm(..))
 
-import qualified Codec.Bytable as B
-
-type ExtensionList = [Extension]
-
 data Extension
-	= ExtensionServerName [ServerName]
-	| ExtensionEllipticCurve [ECC.CurveName]
-	| ExtensionEcPointFormat [EcPointFormat]
-	| ExtensionSessionTicketTls BS.ByteString
-	| ExtensionNextProtocolNegotiation BS.ByteString
-	| ExtensionRenegotiationInfo BS.ByteString
-	| ExtensionRaw ExtensionType BS.ByteString
+	= EServerName [ServerName]
+	| EECurve [ECC.CurveName] | EEcPFormat [EcPointFormat]
+	| ESsnTicketTls BS.ByteString
+	| ENextProtoNego BS.ByteString
+	| ERenegoInfo BS.ByteString
+	| ERaw ExtensionType BS.ByteString
 	deriving Show
 
 instance B.Bytable Extension where
 	decode = B.evalBytableM B.parse
-	encode = extensionToByteString
+	encode = encodeE
 
 instance B.Parsable Extension where
 	parse = parseExtension
@@ -44,77 +36,64 @@ parseExtension = do
 	et <- B.take 2
 	len0 <- B.take 2
 	case et of
-		ExtensionTypeServerName -> do
-			len <- B.take 2
-			ExtensionServerName <$> B.list len B.parse
-		ExtensionTypeEllipticCurve -> do
-			len <- B.take 2
-			ExtensionEllipticCurve <$> B.list len (B.take 2)
-		ExtensionTypeEcPointFormat -> do
-			len <- B.take 1
-			ExtensionEcPointFormat <$> B.list len (B.take 1)
-		ExtensionTypeSessionTicketTls ->
-			ExtensionSessionTicketTls <$> B.take len0
-		ExtensionTypeNextProtocolNegotiation ->
-			ExtensionNextProtocolNegotiation <$> B.take len0
-		ExtensionTypeRenegotiationInfo -> do
-			len <- B.take 1
-			ExtensionRenegotiationInfo <$> B.take len
-		_ -> ExtensionRaw et <$> B.take len0
+		TServerName -> EServerName <$> (flip B.list B.parse =<< B.take 2)
+		TECurve -> EECurve <$> (flip B.list (B.take 2) =<< B.take 2)
+		TEcPFormat -> EEcPFormat <$> (flip B.list (B.take 1) =<< B.take 1)
+		TSsnTicketTls -> ESsnTicketTls <$> B.take len0
+		TNextProtoNego -> ENextProtoNego <$> B.take len0
+		TRenegoInfo -> ERenegoInfo <$> (B.take =<< B.take 1)
+		_ -> ERaw et <$> B.take len0
 
-extensionToByteString :: Extension -> BS.ByteString
-extensionToByteString (ExtensionServerName sns) = extensionToByteString .
-	ExtensionRaw ExtensionTypeServerName . B.addLen (undefined :: Word16) .
+encodeE :: Extension -> BS.ByteString
+encodeE (EServerName sns) =
+	encodeE . ERaw TServerName . B.addLen (undefined :: Word16) .
 		BS.concat $ map serverNameToByteString sns
-extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEllipticCurve . B.addLen (undefined :: Word16) .
+encodeE (EECurve ecs) =
+	encodeE . ERaw TECurve . B.addLen (undefined :: Word16) .
 		BS.concat $ map B.encode ecs
-extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEcPointFormat . B.addLen (undefined :: Word8) .
+encodeE (EEcPFormat epf) =
+	encodeE . ERaw TEcPFormat . B.addLen (undefined :: Word8) .
 		BS.concat $ map ecPointFormatToByteString epf
-extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
-	ExtensionRaw ExtensionTypeSessionTicketTls stt
-extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
-	ExtensionRaw ExtensionTypeNextProtocolNegotiation npn
-extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString .
-	ExtensionRaw ExtensionTypeRenegotiationInfo $ B.addLen (undefined :: Word8) ri
-extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `BS.append`
-	B.addLen (undefined :: Word16) body
+encodeE (ESsnTicketTls stt) = encodeE $ ERaw TSsnTicketTls stt
+encodeE (ENextProtoNego npn) = encodeE $ ERaw TNextProtoNego npn
+encodeE (ERenegoInfo ri) =
+	encodeE . ERaw TRenegoInfo $ B.addLen (undefined :: Word8) ri
+encodeE (ERaw et body) = B.encode et `BS.append` B.addLen (undefined :: Word16) body
 
 data ExtensionType
-	= ExtensionTypeServerName
-	| ExtensionTypeEllipticCurve
-	| ExtensionTypeEcPointFormat
-	| ExtensionTypeSessionTicketTls
-	| ExtensionTypeNextProtocolNegotiation
-	| ExtensionTypeRenegotiationInfo
-	| ExtensionTypeRaw Word16
+	= TServerName
+	| TECurve
+	| TEcPFormat
+	| TSsnTicketTls
+	| TNextProtoNego
+	| TRenegoInfo
+	| TRaw Word16
 	deriving Show
 
 instance B.Bytable ExtensionType where
 	decode = byteStringToExtensionType
-	encode = extensionTypeToByteString
+	encode = encodeT
 
 byteStringToExtensionType :: BS.ByteString -> Either String ExtensionType
 byteStringToExtensionType bs = case BS.unpack bs of
 	[w1, w2] -> Right $ case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
-		0 -> ExtensionTypeServerName
-		10 -> ExtensionTypeEllipticCurve
-		11 -> ExtensionTypeEcPointFormat
-		35 -> ExtensionTypeSessionTicketTls
-		13172 -> ExtensionTypeNextProtocolNegotiation
-		65281 -> ExtensionTypeRenegotiationInfo
-		et -> ExtensionTypeRaw et
+		0 -> TServerName
+		10 -> TECurve
+		11 -> TEcPFormat
+		35 -> TSsnTicketTls
+		13172 -> TNextProtoNego
+		65281 -> TRenegoInfo
+		et -> TRaw et
 	_ -> Left "Extension.byteStringToExtensionType"
 
-extensionTypeToByteString :: ExtensionType -> BS.ByteString
-extensionTypeToByteString ExtensionTypeServerName = B.encode (0 :: Word16)
-extensionTypeToByteString ExtensionTypeEllipticCurve = B.encode (10 :: Word16)
-extensionTypeToByteString ExtensionTypeEcPointFormat = B.encode (11 :: Word16)
-extensionTypeToByteString ExtensionTypeSessionTicketTls = B.encode (35 :: Word16)
-extensionTypeToByteString ExtensionTypeNextProtocolNegotiation = B.encode (13172 :: Word16)
-extensionTypeToByteString ExtensionTypeRenegotiationInfo = B.encode (65281 :: Word16)
-extensionTypeToByteString (ExtensionTypeRaw et) = B.encode et
+encodeT :: ExtensionType -> BS.ByteString
+encodeT TServerName = B.encode (0 :: Word16)
+encodeT TECurve = B.encode (10 :: Word16)
+encodeT TEcPFormat = B.encode (11 :: Word16)
+encodeT TSsnTicketTls = B.encode (35 :: Word16)
+encodeT TNextProtoNego = B.encode (13172 :: Word16)
+encodeT TRenegoInfo = B.encode (65281 :: Word16)
+encodeT (TRaw et) = B.encode et
 
 data ServerName
 	= ServerNameHostName BS.ByteString
@@ -182,34 +161,6 @@ byteStringToEcPointFormat bs = case BS.unpack bs of
 ecPointFormatToByteString :: EcPointFormat -> BS.ByteString
 ecPointFormatToByteString EcPointFormatUncompressed = BS.pack [0]
 ecPointFormatToByteString (EcPointFormatRaw epf) = BS.pack [epf]
-
-{-
-data NamedCurve
-	= Secp256r1
-	| Secp384r1
-	| Secp521r1
-	| NamedCurveRaw Word16
-	deriving Show
-
-instance B.Bytable NamedCurve where
-	decode = byteStringToNamedCurve
-	encode = namedCurveToByteString
-
-byteStringToNamedCurve :: BS.ByteString -> Either String NamedCurve
-byteStringToNamedCurve bs = case BS.unpack bs of
-	[w1, w2] -> Right $ case fromIntegral w1 `shiftL` 8 .|. fromIntegral w2 of
-		23 -> Secp256r1
-		24 -> Secp384r1
-		25 -> Secp521r1
-		nc -> NamedCurveRaw nc
-	_ -> Left "Types.byteStringToNamedCurve"
-
-namedCurveToByteString :: NamedCurve -> BS.ByteString
-namedCurveToByteString (Secp256r1) = B.encode (23 :: Word16)
-namedCurveToByteString (Secp384r1) = B.encode (24 :: Word16)
-namedCurveToByteString (Secp521r1) = B.encode (25 :: Word16)
-namedCurveToByteString (NamedCurveRaw nc) = B.encode nc
--}
 
 instance B.Bytable ECC.CurveName where
 	decode = byteStringToCurveName

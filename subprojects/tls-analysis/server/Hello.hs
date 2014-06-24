@@ -13,12 +13,12 @@ import Numeric (showHex)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 
-import Extension (ExtensionList, SignatureAlgorithm(..), HashAlgorithm(..))
+import Extension (Extension, SignatureAlgorithm(..), HashAlgorithm(..))
 import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 data ClientHello
 	= ClientHello (Word8, Word8) BS.ByteString SessionId
-		[CipherSuite] [CompressionMethod] (Maybe ExtensionList)
+		[CipherSuite] [CompressionMethod] (Maybe [Extension])
 	| ClientHelloRaw BS.ByteString
 	deriving Show
 
@@ -45,7 +45,7 @@ encodeCh (ClientHelloRaw bs) = bs
 
 data ServerHello
 	= ServerHello (Word8, Word8) BS.ByteString SessionId
-		CipherSuite CompressionMethod (Maybe ExtensionList)
+		CipherSuite CompressionMethod (Maybe [Extension])
 	| ServerHelloRaw BS.ByteString
 	deriving Show
 
