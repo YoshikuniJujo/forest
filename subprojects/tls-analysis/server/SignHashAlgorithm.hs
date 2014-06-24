@@ -1,73 +1,37 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables,
-	FlexibleInstances, TypeFamilies, TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-module SignHashAlgorithm (
-	SignatureAlgorithm(..), HashAlgorithm(..),
-) where
+module SignHashAlgorithm (SignatureAlgorithm(..), HashAlgorithm(..)) where
 
-import Data.Word
+import Data.Word (Word8)
+
 import qualified Data.ByteString as BS
-
-import Prelude hiding (head, take)
-import qualified Prelude
-
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 
-data HashAlgorithm
-	= HashAlgorithmSha1
-	| HashAlgorithmSha224
-	| HashAlgorithmSha256
-	| HashAlgorithmSha384
-	| HashAlgorithmSha512
-	| HashAlgorithmRaw Word8
+data HashAlgorithm = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8
 	deriving Show
 
 instance B.Bytable HashAlgorithm where
-	decode = byteStringToHashAlgorithm
-	encode = hashAlgorithmToByteString
+	encode Sha1   = "\x02"
+	encode Sha224 = "\x03"
+	encode Sha256 = "\x04"
+	encode Sha384 = "\x05"
+	encode Sha512 = "\x06"
+	encode (HARaw w) = BS.pack [w]
+	decode bs = case BS.unpack bs of
+		[ha] -> Right $ case ha of
+			2 -> Sha1  ; 3 -> Sha224; 4 -> Sha256
+			5 -> Sha384; 6 -> Sha512; _ -> HARaw ha
+		_ -> Left "SignHashAlgorithm: Bytable.decode"
 
-byteStringToHashAlgorithm :: BS.ByteString -> Either String HashAlgorithm
-byteStringToHashAlgorithm bs = case BS.unpack bs of
-	[ha] -> Right $ case ha of
-		2 -> HashAlgorithmSha1
-		3 -> HashAlgorithmSha224
-		4 -> HashAlgorithmSha256
-		5 -> HashAlgorithmSha384
-		6 -> HashAlgorithmSha512
-		_ -> HashAlgorithmRaw ha
-	_ -> Left "Type.byteStringToHashAlgorithm"
-
-hashAlgorithmToByteString :: HashAlgorithm -> BS.ByteString
-hashAlgorithmToByteString HashAlgorithmSha1 = "\x02"
-hashAlgorithmToByteString HashAlgorithmSha224 = "\x03"
-hashAlgorithmToByteString HashAlgorithmSha256 = "\x04"
-hashAlgorithmToByteString HashAlgorithmSha384 = "\x05"
-hashAlgorithmToByteString HashAlgorithmSha512 = "\x06"
-hashAlgorithmToByteString (HashAlgorithmRaw w) = BS.pack [w]
-
-data SignatureAlgorithm
-	= SignatureAlgorithmRsa
-	| SignatureAlgorithmDsa
-	| SignatureAlgorithmEcdsa
-	| SignatureAlgorithmRaw Word8
-	deriving Show
+data SignatureAlgorithm = Rsa | Dsa | Ecdsa | SARaw Word8 deriving Show
 
 instance B.Bytable SignatureAlgorithm where
-	decode = byteStringToSignatureAlgorithm
-	encode = signatureAlgorithmToByteString
-
-byteStringToSignatureAlgorithm :: BS.ByteString -> Either String SignatureAlgorithm
-byteStringToSignatureAlgorithm bs = case BS.unpack bs of
-	[sa] -> Right $ case sa of
-		1 -> SignatureAlgorithmRsa
-		2 -> SignatureAlgorithmDsa
-		3 -> SignatureAlgorithmEcdsa
-		_ -> SignatureAlgorithmRaw sa
-	_ -> Left "Type.byteStringToSignatureAlgorithm"
-
-signatureAlgorithmToByteString :: SignatureAlgorithm -> BS.ByteString
-signatureAlgorithmToByteString SignatureAlgorithmRsa = "\x01"
-signatureAlgorithmToByteString SignatureAlgorithmDsa = "\x02"
-signatureAlgorithmToByteString SignatureAlgorithmEcdsa = "\x03"
-signatureAlgorithmToByteString (SignatureAlgorithmRaw w) = BS.pack [w]
+	encode Rsa = "\x01"
+	encode Dsa = "\x02"
+	encode Ecdsa = "\x03"
+	encode (SARaw w) = BS.pack [w]
+	decode bs = case BS.unpack bs of
+		[sa] -> Right $ case sa of
+			1 -> Rsa; 2 -> Dsa; 3 -> Ecdsa; _ -> SARaw sa
+		_ -> Left "Type.decodeSA"

@@ -144,9 +144,9 @@ instance SecretKey RSA.PrivateKey where
 		RSA.generateBlinder rng . RSA.public_n $ RSA.private_pub sk
 	sign hs bl sk bs = let
 		(h, oid) = first ($ bs) $ case hs of
-			HashAlgorithmSha1 -> (SHA1.hash,
+			Sha1 -> (SHA1.hash,
 				ASN1.OID [1, 3, 14, 3, 2, 26])
-			HashAlgorithmSha256 -> (SHA256.hash,
+			Sha256 -> (SHA256.hash,
 				ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1])
 			_ -> error $ "HandshakeBase: " ++
 				"not implemented bulk encryption type"
@@ -158,7 +158,7 @@ instance SecretKey RSA.PrivateKey where
 		pd = BS.concat [ "\x00\x01",
 			BS.replicate (125 - BS.length b) 0xff, "\NUL", b ] in
 		RSA.dp (Just bl) sk pd
-	signatureAlgorithm _ = SignatureAlgorithmRsa
+	signatureAlgorithm _ = Rsa
 
 instance SecretKey ECDSA.PrivateKey where
 	type Blinder ECDSA.PrivateKey = Integer
@@ -169,13 +169,13 @@ instance SecretKey ECDSA.PrivateKey where
 		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
 		where
 		(hs, bls) = case ha of
-			HashAlgorithmSha1 -> (SHA1.hash, 64)
-			HashAlgorithmSha256 -> (SHA256.hash, 64)
+			Sha1 -> (SHA1.hash, 64)
+			Sha256 -> (SHA256.hash, 64)
 			_ -> error $ "HandshakeBase: " ++
 				"not implemented bulk encryption type"
 		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
 		x = ECDSA.private_d sk
-	signatureAlgorithm _ = SignatureAlgorithmEcdsa
+	signatureAlgorithm _ = Ecdsa
 
 class DhParam b where
 	type Secret b

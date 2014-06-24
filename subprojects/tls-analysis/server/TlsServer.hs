@@ -62,8 +62,8 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	sr <- serverHello cs rcc ecc
 	setCipherSuite cs
 	ha <- case be of
-		AES_128_CBC_SHA -> return HashAlgorithmSha1
-		AES_128_CBC_SHA256 -> return HashAlgorithmSha256
+		AES_128_CBC_SHA -> return Sha1
+		AES_128_CBC_SHA256 -> return Sha256
 		_ -> throwError
 			"TlsServer.openClient: not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
@@ -151,8 +151,7 @@ requestAndCertificate :: (ValidateHandle h, CPRG g) =>
 requestAndCertificate mcs = do
 	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
 		[ClientCertificateTypeRsaSign, ClientCertificateTypeEcdsaSign]
-		[	(HashAlgorithmSha256, SignatureAlgorithmRsa),
-			(HashAlgorithmSha256, SignatureAlgorithmEcdsa) ]
+		[(Sha256, Rsa), (Sha256, Ecdsa)]
 	writeHandshake ServerHelloDone
 	maybe (return Nothing) (liftM Just . clientCertificate) mcs
 
@@ -219,7 +218,7 @@ certificateVerify (X509.PubKeyRSA pk) = do
 	hs0 <- rsaPadding pk `liftM` handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
-		(HashAlgorithmSha256, SignatureAlgorithmRsa) -> return ()
+		(Sha256, Rsa) -> return ()
 		_ -> throwError . Alert AlertLevelFatal
 			AlertDescriptionDecodeError $
 			"TlsServer.certificateVEerify: not implement: " ++ show a
@@ -231,7 +230,7 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	hs0 <- handshakeHash
 	DigitallySigned a s <- readHandshake
 	case a of
-		(HashAlgorithmSha256, SignatureAlgorithmEcdsa) -> return ()
+		(Sha256, Ecdsa) -> return ()
 		_ -> throwError . Alert
 			AlertLevelFatal AlertDescriptionDecodeError $
 			"TlsServer.certificateverify: not implement: " ++ show a
