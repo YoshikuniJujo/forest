@@ -2,32 +2,26 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
-	CertificateRequest(..), certificateRequest,
-	ClientCertificateType(..),
-	ClientKeyExchange(..),
-	DigitallySigned(..),
-) where
-
-import Prelude hiding (concat)
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	ClientKeyExchange(..), DigitallySigned(..)) where
 
 import Control.Applicative
-import qualified Data.X509 as X509
-import qualified Data.X509.CertificateStore as X509
-import Data.ASN1.Encoding
-import Data.ASN1.BinaryEncoding
-import Data.ASN1.Types
-import Numeric
 import Data.Word
 import Data.Word.Word24
+import Numeric
 
 import qualified Data.ByteString as BS
-import SignHashAlgorithm
-
+import qualified Data.ASN1.Types as ASN1
+import qualified Data.ASN1.Encoding as ASN1
+import qualified Data.ASN1.BinaryEncoding as ASN1
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 
-data Certificate
-	= CertificateRaw BS.ByteString
-	deriving Show
+import SignHashAlgorithm
+
+
+data Certificate = CertificateRaw BS.ByteString deriving Show
 
 instance B.Bytable X509.CertificateChain where
 	decode = B.evalBytableM B.parse
@@ -95,8 +89,8 @@ parseCertificateRequest' = do
 	dnsl <- B.take 2
 	dns <- B.list dnsl $ do
 		bs <- B.take =<< B.take 2
-		asn1 <- either (fail . show) return $ decodeASN1' DER bs
-		either (fail . show) (return . fst) $ fromASN1 asn1
+		asn1 <- either (fail . show) return $ ASN1.decodeASN1' ASN1.DER bs
+		either (fail . show) (return . fst) $ ASN1.fromASN1 asn1
 	return $ CertificateRequest ccts hasas dns
 
 certificateRequestToByteString :: CertificateRequest -> BS.ByteString
@@ -106,7 +100,7 @@ certificateRequestToByteString (CertificateRequest ccts hasas bss) = BS.concat [
 		B.encode (fromIntegral $ 2 * length hasas :: Word16),
 		BS.concat $ concatMap (\(ha, sa) -> [B.encode ha, B.encode sa]) hasas,
 	B.addLen (undefined :: Word16) . BS.concat $
-		map (B.addLen (undefined :: Word16) . encodeASN1' DER . flip toASN1 []) bss ]
+		map (B.addLen (undefined :: Word16) . ASN1.encodeASN1' ASN1.DER . flip ASN1.toASN1 []) bss ]
 certificateRequestToByteString (CertificateRequestRaw bs) = bs
 
 data ClientCertificateType
