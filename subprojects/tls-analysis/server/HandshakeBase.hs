@@ -65,8 +65,7 @@ import qualified HandshakeMonad as HM (
 		generateKeys, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash )
-import Rfc6979 (generateK)
-import Ecdsa (blindSign)
+import Ecdsa (blindSign, generateK)
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do

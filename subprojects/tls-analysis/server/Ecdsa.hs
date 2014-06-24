@@ -1,4 +1,6 @@
-module Ecdsa (blindSign) where
+{-# LANGUAGE OverloadedStrings #-}
+
+module Ecdsa (blindSign, generateK) where
 
 import Crypto.Number.ModArithmetic
 import Control.Monad
@@ -17,6 +19,8 @@ bPointMul bl c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (bl * n + k) p
 bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 type Hash = BS.ByteString -> BS.ByteString
+
+-- type Hash = (BS.ByteString -> BS.ByteString, Int)
 
 blindSign :: Integer -> Hash -> PrivateKey -> Integer -> BS.ByteString ->
 	Maybe Signature
@@ -44,3 +48,97 @@ tHash hs m n
 myLog2 :: Integer -> Int
 myLog2 0 = 0
 myLog2 n = 1 + myLog2 (n `shiftR` 1)
+
+-- RFC 6979
+
+qlen :: Integer -> Int
+qlen 0 = 0
+qlen q = succ . qlen $ q `shiftR` 1
+
+rlen :: Integer -> Int
+rlen 0 = 0
+rlen q = 8 + rlen (q `shiftR` 8)
+
+blen :: BS.ByteString -> Int
+blen = (8 *) . BS.length
+
+bits2int :: Integer -> BS.ByteString -> Integer
+bits2int q bs
+	| ql < bl = i `shiftR` (bl - ql)
+	| otherwise = i
+	where
+	ql = qlen q
+	bl = blen bs
+	i = either error id (B.fromByteString bs)
+
+int2octets :: Integer -> Integer -> BS.ByteString
+int2octets q i
+	| bsl <= l0 = BS.replicate (l0 - bsl) 0 `BS.append` bs
+	| otherwise = error "Functions.int2octets: too large integer"
+	where
+	rl = rlen q
+	l0 = rl `div` 8
+	bs = B.toByteString i
+	bsl = BS.length bs
+
+bits2octets :: Integer -> BS.ByteString -> BS.ByteString
+bits2octets q bs = int2octets q z2
+	where
+	z1 = bits2int q bs
+	z2 = z1 `mod` q
+
+hmac :: Integral t => (BS.ByteString -> BS.ByteString) -> t ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString
+hmac f bl secret msg =
+    f $! BS.append opad (f $! BS.append ipad msg)
+  where opad = BS.map (xor 0x5c) k'
+        ipad = BS.map (xor 0x36) k'
+
+        k' = BS.append kt pad
+          where kt  = if BS.length secret > fromIntegral bl then f secret else secret
+                pad = BS.replicate (fromIntegral bl - BS.length kt) 0
+
+initV :: BS.ByteString -> BS.ByteString
+initV h = BS.replicate (BS.length h) 1
+
+initK :: BS.ByteString -> BS.ByteString
+initK h = BS.replicate (BS.length h) 0
+
+-- calculateK :: Integer -> BS.ByteString -> Integer
+
+initializeKV :: (Hash, Int) ->
+	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
+initializeKV (hs, bl) q x h = (k2, v2)
+	where
+	v0 = initV h
+	k0 = initK h
+	k1 = hmac hs bl k0 $ BS.concat
+		[v0, "\x00", int2octets q x, bits2octets q h]
+	v1 = hmac hs bl k1 v0
+	k2 = hmac hs bl k1 $ BS.concat
+		[v1, "\x01", int2octets q x, bits2octets q h]
+	v2 = hmac hs bl k2 v1
+
+createT :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString ->
+	BS.ByteString -> (BS.ByteString, BS.ByteString)
+createT hsbl@(hs, bl) q k v t
+	| blen t < qlen q = createT hsbl q k v' $ t `BS.append` v'
+	| otherwise = (t, v)
+	where
+	v' = hmac hs bl k v
+
+createK :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> Integer
+createK hsbl@(hs, bl) q k v
+	| 0 < kk && kk < q = kk
+	| otherwise = createK hsbl q k' v''
+	where
+	(t, v') = createT hsbl q k v ""
+	kk = bits2int q t
+	k' = hmac hs bl k $ v' `BS.append` "\x00"
+	v'' = hmac hs bl k' v'
+
+generateK :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> Integer
+generateK hsbl@(hs, _) q x m = createK hsbl q k v
+	where
+	h = hs m
+	(k, v) = initializeKV hsbl q x h
