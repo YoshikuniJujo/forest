@@ -64,22 +64,22 @@ parseExtension = do
 
 extensionToByteString :: Extension -> BS.ByteString
 extensionToByteString (ExtensionServerName sns) = extensionToByteString .
-	ExtensionRaw ExtensionTypeServerName . B.addLength (undefined :: Word16) .
+	ExtensionRaw ExtensionTypeServerName . B.addLen (undefined :: Word16) .
 		BS.concat $ map serverNameToByteString sns
 extensionToByteString (ExtensionEllipticCurve ecs) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEllipticCurve . B.addLength (undefined :: Word16) .
+	ExtensionRaw ExtensionTypeEllipticCurve . B.addLen (undefined :: Word16) .
 		BS.concat $ map B.toByteString ecs
 extensionToByteString (ExtensionEcPointFormat epf) = extensionToByteString .
-	ExtensionRaw ExtensionTypeEcPointFormat . B.addLength (undefined :: Word8) .
+	ExtensionRaw ExtensionTypeEcPointFormat . B.addLen (undefined :: Word8) .
 		BS.concat $ map ecPointFormatToByteString epf
 extensionToByteString (ExtensionSessionTicketTls stt) = extensionToByteString $
 	ExtensionRaw ExtensionTypeSessionTicketTls stt
 extensionToByteString (ExtensionNextProtocolNegotiation npn) = extensionToByteString $
 	ExtensionRaw ExtensionTypeNextProtocolNegotiation npn
 extensionToByteString (ExtensionRenegotiationInfo ri) = extensionToByteString .
-	ExtensionRaw ExtensionTypeRenegotiationInfo $ B.addLength (undefined :: Word8) ri
+	ExtensionRaw ExtensionTypeRenegotiationInfo $ B.addLen (undefined :: Word8) ri
 extensionToByteString (ExtensionRaw et body) = extensionTypeToByteString et `BS.append`
-	B.addLength (undefined :: Word16) body
+	B.addLen (undefined :: Word16) body
 
 data ExtensionType
 	= ExtensionTypeServerName
@@ -141,7 +141,7 @@ serverNameToByteString :: ServerName -> BS.ByteString
 serverNameToByteString (ServerNameHostName nm) = serverNameToByteString $
 	ServerNameRaw NameTypeHostName nm
 serverNameToByteString (ServerNameRaw nt nm) =
-	nameTypeToByteString nt `BS.append` B.addLength (undefined :: Word16) nm
+	nameTypeToByteString nt `BS.append` B.addLen (undefined :: Word16) nm
 
 data NameType
 	= NameTypeHostName
@@ -233,12 +233,12 @@ curveNameToByteString _ = error "Extension.curveNameToByteString: not implemente
 instance B.Bytable DH.Params where
 	fromByteString = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
 	toByteString (DH.Params dhP dhG) = BS.concat [
-		B.addLength (undefined :: Word16) $ B.toByteString dhP,
-		B.addLength (undefined :: Word16) $ B.toByteString dhG ]
+		B.addLen (undefined :: Word16) $ B.toByteString dhP,
+		B.addLen (undefined :: Word16) $ B.toByteString dhG ]
 
 instance B.Bytable DH.PublicNumber where
 	fromByteString = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
-	toByteString = B.addLength (undefined :: Word16) .
+	toByteString = B.addLen (undefined :: Word16) .
 		B.toByteString . \(DH.PublicNumber pn) -> pn
 
 instance B.Bytable ECC.Point where
@@ -247,7 +247,7 @@ instance B.Bytable ECC.Point where
 			ECC.Point	(either error id $ B.fromByteString x)
 					(either error id $ B.fromByteString y)
 		_ -> Left "KeyAgreement.hs: ECC.Point.fromByteString"
-	toByteString (ECC.Point x y) = B.addLength (undefined :: Word8) .
+	toByteString (ECC.Point x y) = B.addLen (undefined :: Word8) .
 		BS.cons 4 $ BS.append (B.toByteString x) (B.toByteString y)
 	toByteString ECC.PointO = error "KeyAgreement.hs: EC.Point.toByteString"
 

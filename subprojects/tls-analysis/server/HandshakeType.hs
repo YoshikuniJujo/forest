@@ -74,7 +74,7 @@ encodeH HServerHelloDone = encodeH $ HRaw TServerHelloDone ""
 encodeH (HCertVerify ds) = encodeH . HRaw TCertVerify $ B.toByteString ds
 encodeH (HClientKeyEx epms) = encodeH . HRaw TClientKeyEx $ B.toByteString epms
 encodeH (HFinished bs) = encodeH $ HRaw TFinished bs
-encodeH (HRaw t bs) = B.toByteString t `BS.append` B.addLength (undefined :: Word24) bs
+encodeH (HRaw t bs) = B.toByteString t `BS.append` B.addLen (undefined :: Word24) bs
 
 class HandshakeItem hi where
 	fromHandshake :: Handshake -> Maybe hi
@@ -111,7 +111,7 @@ serverKeyExchangeToByteString
 	(ServerKeyEx params dhYs hashA sigA sn) =
 	BS.concat [
 		params, dhYs, B.toByteString hashA, B.toByteString sigA,
-		B.addLength (undefined :: Word16) sn ]
+		B.addLen (undefined :: Word16) sn ]
 
 instance HandshakeItem CertificateRequest where
 	fromHandshake (HCertificateReq cr) = Just cr

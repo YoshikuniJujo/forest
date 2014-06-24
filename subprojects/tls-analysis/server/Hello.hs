@@ -48,10 +48,10 @@ clientHelloToByteString (ClientHello (vmjr, vmnr) r sid css cms mel) = BS.concat
 	B.toByteString vmjr,
 	B.toByteString vmnr,
 	B.toByteString r,
-	B.addLength (undefined :: Word8) $ B.toByteString sid,
-	B.addLength (undefined :: Word16) . BS.concat $ map B.toByteString css,
-	B.addLength (undefined :: Word8) . BS.concat $ map B.toByteString cms,
-	maybe "" (B.addLength (undefined :: Word16) . BS.concat . map B.toByteString) mel ]
+	B.addLen (undefined :: Word8) $ B.toByteString sid,
+	B.addLen (undefined :: Word16) . BS.concat $ map B.toByteString css,
+	B.addLen (undefined :: Word8) . BS.concat $ map B.toByteString cms,
+	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.toByteString) mel ]
 clientHelloToByteString (ClientHelloRaw bs) = bs
 
 data ServerHello
@@ -86,10 +86,10 @@ serverHelloToByteString (ServerHello (vmjr, vmnr) r sid cs cm mes) = BS.concat [
 	B.toByteString vmjr,
 	B.toByteString vmnr,
 	B.toByteString r,
-	B.addLength (undefined :: Word8) $ B.toByteString sid,
+	B.addLen (undefined :: Word8) $ B.toByteString sid,
 	B.toByteString cs,
 	compressionMethodToByteString cm,
-	maybe "" (B.addLength (undefined :: Word16) . BS.concat . map B.toByteString) mes ]
+	maybe "" (B.addLen (undefined :: Word16) . BS.concat . map B.toByteString) mes ]
 serverHelloToByteString (ServerHelloRaw sh) = sh
 
 data CompressionMethod
