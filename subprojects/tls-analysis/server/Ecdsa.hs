@@ -1,53 +1,47 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Ecdsa (blindSign, generateK) where
+module Ecdsa (blindSign, generateKs) where
 
-import Crypto.Number.ModArithmetic
-import Control.Monad
-import Data.Bits
-import Crypto.PubKey.ECC.ECDSA
-import Crypto.Types.PubKey.ECC
-import Crypto.PubKey.ECC.Prim
+import Control.Applicative ((<$>), (<*>))
+import Data.Maybe (mapMaybe)
+import Data.Bits (shiftR, xor)
+import Crypto.Number.ModArithmetic (inverse)
+
+import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
-import qualified Data.ByteString as BS
-
-bPointMul :: Integer -> Curve -> Integer -> Point -> Point
-bPointMul bl c@(CurveFP (CurvePrime _ cc)) k p = pointMul c (bl * n + k) p
-	where
-	n = ecc_n cc
-bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
+import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.ECC.Prim as ECC
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 type Hash = BS.ByteString -> BS.ByteString
 
--- type Hash = (BS.ByteString -> BS.ByteString, Int)
+blindSign :: Integer -> Hash -> ECDSA.PrivateKey -> [Integer] ->
+	BS.ByteString -> ECDSA.Signature
+blindSign bl hs sk ks m =
+	head $ (`mapMaybe` ks) $ \k -> blindSign_ bl hs sk k m
 
-blindSign :: Integer -> Hash -> PrivateKey -> Integer -> BS.ByteString ->
-	Maybe Signature
-blindSign bl hs (PrivateKey curve d) k msg = do
-	let	CurveCommon _ _ g n _ = common_curve curve
-		mul = bPointMul bl curve
-		z = tHash hs msg n
-		point = k `mul` g
-	r <- case point of
-		PointO -> Nothing
-		Point x _ -> return $ x `mod` n
-	kInv <- inverse k n
-	let s = kInv * (z + r * d) `mod` n
-	when (r == 0 || s == 0) Nothing
-	return $ Signature r s
-
-tHash :: (BS.ByteString -> BS.ByteString) -> BS.ByteString -> Integer -> Integer
-tHash hs m n
-	| d > 0 = e `shiftR` d
-	| otherwise = e
+blindSign_ :: Integer -> Hash -> ECDSA.PrivateKey -> Integer ->
+	BS.ByteString -> Maybe ECDSA.Signature
+blindSign_ bl hs (ECDSA.PrivateKey crv d) k m = do
+	e <- either (const Nothing) return . B.fromByteString $ hs m
+	let	dl = qlen e - qlen n
+		z = (if dl > 0 then (`shiftR` dl) else id) e
+	r <- case bPointMul bl crv k g of
+		ECC.PointO -> Nothing
+		ECC.Point 0 _ -> Nothing
+		ECC.Point x _ -> return $ x `mod` n
+	ki <- inverse k n
+	case ki * (z + r * d) `mod` n of
+		0 -> Nothing
+		s -> return $ ECDSA.Signature r s
 	where
-	Right e = B.fromByteString $ hs m
-	d = myLog2 e - myLog2 n
+	ECC.CurveCommon _ _ g n _ = ECC.common_curve crv
 
-myLog2 :: Integer -> Int
-myLog2 0 = 0
-myLog2 n = 1 + myLog2 (n `shiftR` 1)
+bPointMul :: Integer -> ECC.Curve -> Integer -> ECC.Point -> ECC.Point
+bPointMul bl c@(ECC.CurveFP (ECC.CurvePrime _ cc)) k p =
+	ECC.pointMul c (bl * ECC.ecc_n cc + k) p
+bPointMul _ _ _ _ = error "Ecdsa.bPointMul: not implemented"
 
 -- RFC 6979
 
@@ -104,8 +98,6 @@ initV h = BS.replicate (BS.length h) 1
 initK :: BS.ByteString -> BS.ByteString
 initK h = BS.replicate (BS.length h) 0
 
--- calculateK :: Integer -> BS.ByteString -> Integer
-
 initializeKV :: (Hash, Int) ->
 	Integer -> Integer -> BS.ByteString -> (BS.ByteString, BS.ByteString)
 initializeKV (hs, bl) q x h = (k2, v2)
@@ -127,18 +119,17 @@ createT hsbl@(hs, bl) q k v t
 	where
 	v' = hmac hs bl k v
 
-createK :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> Integer
-createK hsbl@(hs, bl) q k v
-	| 0 < kk && kk < q = kk
-	| otherwise = createK hsbl q k' v''
+createKs :: (Hash, Int) -> Integer -> BS.ByteString -> BS.ByteString -> [Integer]
+createKs hsbl@(hs, bls) q k v = kk : createKs hsbl q k' v''
 	where
 	(t, v') = createT hsbl q k v ""
 	kk = bits2int q t
-	k' = hmac hs bl k $ v' `BS.append` "\x00"
-	v'' = hmac hs bl k' v'
+	k' = hmac hs bls k $ v' `BS.append` "\x00"
+	v'' = hmac hs bls k' v'
 
-generateK :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> Integer
-generateK hsbl@(hs, _) q x m = createK hsbl q k v
+generateKs :: (Hash, Int) -> Integer -> Integer -> BS.ByteString -> [Integer]
+generateKs hsbl@(hs, _) q x m =
+	filter ((&&) <$> (> 0) <*> (< q)) $  createKs hsbl q k v
 	where
 	h = hs m
 	(k, v) = initializeKV hsbl q x h

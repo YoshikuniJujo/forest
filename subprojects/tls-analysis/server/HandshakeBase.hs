@@ -24,7 +24,6 @@ import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.Error (throwError)
-import Data.Maybe (fromJust)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import Numeric (readHex)
@@ -65,7 +64,7 @@ import qualified HandshakeMonad as HM (
 		generateKeys, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	Partner(..), handshakeHash, finishedHash )
-import Ecdsa (blindSign, generateK)
+import Ecdsa (blindSign, generateKs)
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
@@ -166,8 +165,8 @@ instance SecretKey ECDSA.PrivateKey where
 	generateBlinder _ rng = let
 		(Right bl, rng') = first B.fromByteString $ cprgGenerate 32 rng in
 		(bl, rng')
-	sign ha bl sk = B.toByteString . fromJust .
-		(($) <$> blindSign bl hs sk . generateK (hs, bls) q x <*> id)
+	sign ha bl sk = B.toByteString .
+		(($) <$> blindSign bl hs sk . generateKs (hs, bls) q x <*> id)
 		where
 		(hs, bls) = case ha of
 			HashAlgorithmSha1 -> (SHA1.hash, 64)

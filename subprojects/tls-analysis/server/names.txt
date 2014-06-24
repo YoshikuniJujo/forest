@@ -1,0 +1,17 @@
+pln: 平文
+enc: 暗号文
+m: 署名されるメッセージ
+bl: ブラインダ
+hs: ハッシュ
+crv: 曲線
+pk: 公開鍵
+sk: 秘密鍵
+k: k値 (ECDSAのnonce)
+d: d値 (ECDSAの秘密鍵)
+ki: k値の逆数 (ECDSA)
+n: n値 (ECC)
+g: g点 (ECC)
+z: メッセージのハッシュ値の前半Lnビット (ECDSA)
+r: r値 (ECDSAの署名の前半)
+rp: r値を含む点 (ECDSA: rpのx座標がr値となる)
+s: s値 (ECDSAの署名の後半)
