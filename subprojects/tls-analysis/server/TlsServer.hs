@@ -140,7 +140,7 @@ serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 serverKeyExchange ha dp sv ssk (cr, sr) = do
 	bl <- withRandom $ generateBlinder ssk
 	writeHandshake
-		. ServerKeyExchange edp pv ha (signatureAlgorithm ssk)
+		. ServerKeyEx edp pv ha (signatureAlgorithm ssk)
 		. sign ha bl ssk $ BS.concat [cr, sr, edp, pv]
 	where
 	edp = B.toByteString dp

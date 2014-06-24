@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
-	CertificateRequest(..),
+	CertificateRequest(..), certificateRequest,
 	ClientCertificateType(..),
 	ClientKeyExchange(..),
 	DigitallySigned(..),
@@ -12,6 +12,7 @@ import Prelude hiding (concat)
 
 import Control.Applicative
 import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 import Data.ASN1.Encoding
 import Data.ASN1.BinaryEncoding
 import Data.ASN1.Types
@@ -172,3 +173,11 @@ digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
 	B.toByteString sa,
 	B.addLength (undefined :: Word16) bs ]
 digitallySignedToByteString (DigitallySignedRaw bs) = bs
+
+certificateRequest ::
+	[ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
+	X509.CertificateStore -> CertificateRequest
+certificateRequest cct cca =
+	CertificateRequest cct cca
+		. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+		. X509.listCertificates
