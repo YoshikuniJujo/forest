@@ -1,10 +1,10 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PatternGuards, OverloadedStrings, TupleSections #-}
 
 module Codec.Bytable (
 	Bytable(..),
 	Parsable(..),
 	BytableM(..), evalBytableM, execBytableM,
-	head, take, null, list, addLength,
+	head, take, null, list, addLen,
 ) where
 
 import Prelude hiding (take, head, null)
@@ -40,6 +40,13 @@ class Bytable b where
 	fromByteString :: BS.ByteString -> Either String b
 	toByteString :: b -> BS.ByteString
 
+instance Bytable Word8 where
+	fromByteString "" = Right 0
+	fromByteString bs
+		| [w] <- BS.unpack bs = Right w
+	fromByteString _ = Left "Codec.Bytable.BigEndian: Bytable Word8: too large"
+	toByteString = BS.pack . (: [])
+
 instance Bytable BS.ByteString where
 	fromByteString = Right
 	toByteString = id
@@ -73,6 +80,6 @@ list n m = do
 		e <- null
 		if e then return [] else (:) <$> m <*> lst
 
-addLength :: (Bytable n, Num n) => n -> BS.ByteString -> BS.ByteString
-addLength t bs =
+addLen :: (Bytable n, Num n) => n -> BS.ByteString -> BS.ByteString
+addLen t bs =
 	toByteString (fromIntegral (BS.length bs) `asTypeOf` t) `BS.append` bs
