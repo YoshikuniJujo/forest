@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Ecdsa (blindSign, generateKs) where
 
@@ -13,6 +14,20 @@ import Codec.Bytable.BigEndian ()
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+
+import qualified Data.ASN1.Types as ASN1
+import qualified Data.ASN1.Encoding as ASN1
+import qualified Data.ASN1.BinaryEncoding as ASN1
+
+instance B.Bytable ECDSA.Signature where
+	encode (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
+		ASN1.Start ASN1.Sequence,
+			ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence ]
+	decode bs = case ASN1.decodeASN1' ASN1.DER bs of
+		Right [ASN1.Start ASN1.Sequence, ASN1.IntVal r, ASN1.IntVal s,
+			ASN1.End ASN1.Sequence] -> Right $ ECDSA.Signature r s
+		Right _ -> Left "KeyExchange.decodeSignature"
+		Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
 
 type Hash = BS.ByteString -> BS.ByteString
 

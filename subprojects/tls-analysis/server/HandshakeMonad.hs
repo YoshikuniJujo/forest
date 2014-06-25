@@ -1,126 +1,58 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports,
-	TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module HandshakeMonad (
-	ValidateHandle(..),
-	TH.run, setClientNames, checkName, clientName,
-
-	TH.TlsHandle(..),
-	TH.ContentType(..),
+	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
+	ValidateHandle(..), handshakeValidate,
+	TH.TlsHandle(..), TH.ContentType(..),
+		setClientNames, checkName, clientName,
+		setCipherSuite, flushCipherSuite, debugCipherSuite,
+		tlsGetContentType, tlsGet, tlsPut,
+		generateKeys, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDescription(..),
-	TH.Partner(..),
-	TH.cipherSuite,
-	flushCipherSuite,
-	TH.TlsM,
-	TH.newHandle, setCipherSuite,
-
-	handshakeHash, withRandom, tlsGet, tlsGetContentType, tlsPut,
-	HandshakeM, randomByteString,
-	handshakeValidate, generateKeys, debugCipherSuite, finishedHash,
-
-	rsaPadding,
-	decryptRsa,
-	execHandshakeM,
-) where
+	TH.Partner(..), handshakeHash, finishedHash ) where
 
 import Prelude hiding (read)
 
-import Control.Arrow
+import Control.Arrow (first)
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, execStateT, get, gets, put, modify)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (listToMaybe)
-import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ASN1.Types as ASN1
-import qualified Data.ASN1.Encoding as ASN1
-import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Codec.Bytable as B
+import qualified Crypto.Hash.SHA256 as SHA256
+import qualified Crypto.PubKey.HashDescr as HD
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
-import qualified Crypto.PubKey.HashDescr as RSA
-import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
 import qualified TlsHandle as TH (
 	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), Keys, ContentType(..),
+	TlsHandle(..), ContentType(..),
 		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
 
-import qualified Crypto.Hash.SHA256 as SHA256
-
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
-
-generateKeys :: HandleLike h =>
-	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
-generateKeys (cr, sr) pms = do
-	ks <- generateKeys_ cr sr pms
-	th <- gets fst
-	modify . first $ const th { TH.keys = ks }
-
-setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
-setClientNames nms = do
-	th <- gets fst
-	modify . first $ const th { TH.clientNames = nms }
 
 execHandshakeM :: HandleLike h =>
 	h -> HandshakeM h g () -> TH.TlsM h g (TH.TlsHandle h g)
-execHandshakeM h = liftM fst . (newState h >>=) . execStateT
+execHandshakeM h =
+	liftM fst . ((, SHA256.init) `liftM` TH.newHandle h >>=) . execStateT
 
-newState :: HandleLike h => h -> TH.TlsM h g (TH.TlsHandle h g, SHA256.Ctx)
-newState h = (, SHA256.init) `liftM` TH.newHandle h
-
-tlsPut :: (HandleLike h, CPRG g) =>
-	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
-tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
-
-handshakeValidate :: ValidateHandle h =>
-	X509.CertificateStore -> X509.CertificateChain ->
-	HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc = gets fst >>= \t ->
-	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
-
-generateKeys_ :: HandleLike h => BS.ByteString -> BS.ByteString -> BS.ByteString ->
-	HandshakeM h g TH.Keys
-generateKeys_ cr sr pms = do
-	th <- gets fst
-	lift $ TH.generateKeys (TH.cipherSuite th) cr sr pms
+withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
+withRandom = lift . TH.withRandom
 
 randomByteString :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 randomByteString = lift . TH.randomByteString
-
-decryptRsa :: (HandleLike h, CPRG g) =>
-	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-decryptRsa sk e =
-	either (throwError . strMsg . show) return =<<
-	withRandom (\g -> RSA.decryptSafer g sk e)
-
-debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
-debugCipherSuite msg = do
-	th <- gets fst
-	lift $ TH.debugCipherSuite th msg
-
-rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
-rsaPadding pub bs =
-	case RSA.padSignature (RSA.public_size pub) $
-			RSA.digestToASN1 RSA.hashDescrSHA256 bs of
-		Right pd -> pd
-		Left msg -> error $ show msg
-
-finishedHash :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g BS.ByteString
-finishedHash p = get >>= lift . flip TH.finishedHash p
 
 class HandleLike h => ValidateHandle h where
 	validate :: h -> X509.CertificateStore -> X509.CertificateChain ->
@@ -135,67 +67,14 @@ instance ValidateHandle Handle where
 			(\_ _ _ -> return ())
 		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
-tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
-tlsGet n = do -- (snd `liftM`) . (get >>=) . (.) lift . flip TH.tlsGet
-	t <- get
-	((_, bs), t') <- lift $ TH.tlsGet t n
-	put t'
-	return bs
+handshakeValidate :: ValidateHandle h =>
+	X509.CertificateStore -> X509.CertificateChain ->
+	HandshakeM h g [X509.FailedReason]
+handshakeValidate cs cc =
+	gets fst >>= \t -> lift . lift . lift $ validate (TH.tlsHandle t) cs cc
 
-tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
-tlsGetContentType = gets fst >>= lift . TH.tlsGetContentType
-
-data ChangeCipherSpec
-	= ChangeCipherSpec
-	| ChangeCipherSpecRaw Word8
-	deriving Show
-
-instance B.Bytable ChangeCipherSpec where
-	decode bs = case BS.unpack bs of
-			[1] -> Right ChangeCipherSpec
-			[ccs] -> Right $ ChangeCipherSpecRaw ccs
-			_ -> Left "Content.hs: instance Bytable ChangeCipherSpec"
-	encode ChangeCipherSpec = BS.pack [1]
-	encode (ChangeCipherSpecRaw ccs) = BS.pack [ccs]
-
-data EcCurveType
-	= ExplicitPrime
-	| ExplicitChar2
-	| NamedCurve
-	| EcCurveTypeRaw Word8
-	deriving Show
-
-instance B.Bytable EcCurveType where
-	decode = undefined
-	encode ExplicitPrime = BS.pack [1]
-	encode ExplicitChar2 = BS.pack [2]
-	encode NamedCurve = BS.pack [3]
-	encode (EcCurveTypeRaw w) = BS.pack [w]
-
-instance B.Bytable ECDSA.Signature where
-	decode = decodeSignature
-	encode = encodeSignature
-
-decodeSignature :: BS.ByteString -> Either String ECDSA.Signature
-decodeSignature bs = case ASN1.decodeASN1' ASN1.DER bs of
-	Right [ASN1.Start ASN1.Sequence,
-		ASN1.IntVal r,
-		ASN1.IntVal s,
-		ASN1.End ASN1.Sequence] ->
-		Right $ ECDSA.Signature r s
-	Right _ -> Left "KeyExchange.decodeSignature"
-	Left err -> Left $ "KeyExchange.decodeSignature: " ++ show err
-
-encodeSignature :: ECDSA.Signature -> BS.ByteString
-encodeSignature (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
-	ASN1.Start ASN1.Sequence,
-	ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence ]
-
-handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
-handshakeHash = get >>= lift . TH.handshakeHash
-
-withRandom :: HandleLike h => (g -> (a, g)) -> HandshakeM h g a
-withRandom = lift . TH.withRandom
+setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
+setClientNames n = do t <- gets fst; modify . first $ const t { TH.clientNames = n }
 
 checkName :: TH.TlsHandle h g -> String -> Bool
 checkName tc n = n `elem` TH.clientNames tc
@@ -209,3 +88,40 @@ setCipherSuite = modify . first . TH.setCipherSuite
 flushCipherSuite :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g ()
 flushCipherSuite p =
 	TH.flushCipherSuite p `liftM` gets fst >>= modify . first . const
+
+debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
+debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
+
+tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
+tlsGetContentType = gets fst >>= lift . TH.tlsGetContentType
+
+tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
+tlsGet n = do ((_, bs), t') <- lift . flip TH.tlsGet n =<< get; put t'; return bs
+
+tlsPut :: (HandleLike h, CPRG g) =>
+	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
+tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
+
+generateKeys :: HandleLike h =>
+	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
+generateKeys (cr, sr) pms = do
+	t <- gets fst
+	k <- lift $ TH.generateKeys (TH.cipherSuite t) cr sr pms
+	modify . first $ const t { TH.keys = k }
+
+decryptRsa :: (HandleLike h, CPRG g) =>
+	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
+decryptRsa sk e =
+	either (throwError . strMsg . show) return =<<
+	withRandom (\g -> RSA.decryptSafer g sk e)
+
+rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString
+rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
+			HD.digestToASN1 HD.hashDescrSHA256 bs of
+		Right pd -> pd; Left m -> error $ show m
+
+handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
+handshakeHash = get >>= lift . TH.handshakeHash
+
+finishedHash :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g BS.ByteString
+finishedHash p = get >>= lift . flip TH.finishedHash p
