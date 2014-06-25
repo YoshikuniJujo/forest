@@ -1,48 +1,41 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module TlsHandle (
-	TlsM, run, cipherSuite, setCipherSuite, CipherSuite(..),
-	read, write, randomByteString, updateHash, handshakeHash,
-	updateSequenceNumber,
-	getContentType, buffered, withRandom, debugCipherSuite,
-
-	Partner(..), Alert(..), AlertLevel(..), AlertDescription(..),
-	
-	flushCipherSuite,
-
-	newHandle,
-
-	ErrorType, Error, MonadError, throwError, lift, catchError,
-
-	TlsClientState, initialTlsState,
-	decryptMessage,
-	hashSha1, hashSha256, encryptMessage,
-	ContentType(..),
-	TlsHandle(..), Keys,
-	finishedHash, generateKeys,
-
-	tlsGetContentType, tlsGet, tlsPut,
-) where
+	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
+		run, withRandom, randomByteString,
+	TlsHandle(..), ContentType(..), CipherSuite(..),
+		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
+		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
+	Partner(..), finishedHash, handshakeHash ) where
 
 import Prelude hiding (read)
 
-import Control.Applicative
-import Control.Monad
-import Data.Word
-import Data.HandleLike
-import "crypto-random" Crypto.Random
-import "monads-tf" Control.Monad.State
-import "monads-tf" Control.Monad.Error.Class
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad (liftM, when, unless)
+import "monads-tf" Control.Monad.State (get, put, lift)
+import "monads-tf" Control.Monad.Error (throwError)
+import "monads-tf" Control.Monad.Error.Class (strMsg)
+import Data.Word (Word8, Word16, Word64)
+import Data.HandleLike (HandleLike(..))
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
-
-import TlsMonad
-import CryptoTools
-
 import qualified Codec.Bytable as B
-
 import qualified Crypto.Hash.SHA256 as SHA256
+
+import TlsMonad (
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	Keys(..), ContentType(..), TlsM, thlClose, thlError, withRandom,
+	getWBuf, setWBuf, getBuf, setBuf, nullKeys, newClientId, ClientId,
+	thlGet, thlPut, strToAlert, getClientSn, getServerSn, succClientSn,
+	succServerSn, thlDebug, run,
+	Alert(..), AlertLevel(..), AlertDescription(..),
+	)
+import CryptoTools (
+	hashSha1, hashSha256, decryptMessage, encryptMessage, finishedHash_,
+	makeKeys,
+	)
 
 cipherSuite :: TlsHandle h g -> CipherSuite
 cipherSuite = kCachedCipherSuite . keys
