@@ -2,13 +2,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
-	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
+	CertificateRequest, certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..)) where
 
-import Control.Applicative
-import Data.Word
-import Data.Word.Word24
-import Numeric
+import Control.Applicative ((<$>), (<*>))
+import Data.Word (Word8, Word16)
+import Data.Word.Word24 (Word24)
 
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
@@ -18,57 +17,21 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 
-import SignHashAlgorithm
-
-
-data Certificate = CertificateRaw BS.ByteString deriving Show
+import SignHashAlgorithm (SignatureAlgorithm, HashAlgorithm)
 
 instance B.Bytable X509.CertificateChain where
 	decode = B.evalBytableM B.parse
-	encode = certificateChainToByteString
+	encode = B.addLen w24 . cmap (B.addLen w24)
+		. (\(X509.CertificateChainRaw ccr) -> ccr)
+		. X509.encodeCertificateChain
 
 instance B.Parsable X509.CertificateChain where
-	parse = parseCertificateChain'
-
-parseCertificateChain' :: B.BytableM X509.CertificateChain
-parseCertificateChain' = do
-	ecc <- decodeCert <$> parseCertificateList'
-	case ecc of
-		Right cc -> return cc
-		Left (n, err) -> fail $ show n ++ " " ++ err
-
-parseCertificateList' :: B.BytableM [Certificate]
-parseCertificateList' = do
-	len <- B.take 3
-	B.list len B.parse
-
-instance B.Parsable Certificate where
-	parse = parseCertificate'
-
-parseCertificate' :: B.BytableM Certificate
-parseCertificate' = B.take =<< B.take 3
-
-instance B.Bytable Certificate where
-	decode = Right . CertificateRaw
-	encode (CertificateRaw bs) = bs
-
-certificateChainToByteString :: X509.CertificateChain -> BS.ByteString
-certificateChainToByteString = certificateListToByteString . encodeCert
-
-decodeCert :: [Certificate] -> Either (Int, String) X509.CertificateChain
-decodeCert = X509.decodeCertificateChain . X509.CertificateChainRaw .
-	map (\(CertificateRaw c) -> c)
-
-encodeCert :: X509.CertificateChain -> [Certificate]
-encodeCert = (\(X509.CertificateChainRaw ccr) -> map CertificateRaw ccr) .
-	X509.encodeCertificateChain
-
-certificateListToByteString :: [Certificate] -> BS.ByteString
-certificateListToByteString =
-	B.addLen (undefined :: Word24) . BS.concat . map certificateToByteString
-
-certificateToByteString :: Certificate -> BS.ByteString
-certificateToByteString (CertificateRaw crt) = B.addLen (undefined :: Word24) crt
+	parse = do
+		ecc <- X509.decodeCertificateChain . X509.CertificateChainRaw <$>
+			(flip B.list (B.take =<< B.take 3) =<< B.take 3)
+		case ecc of
+			Right cc -> return cc
+			Left (n, err) -> fail $ show n ++ " " ++ err
 
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
@@ -76,76 +39,47 @@ data CertificateRequest
 	| CertificateRequestRaw BS.ByteString
 	deriving Show
 
+certificateRequest ::
+	[ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
+	X509.CertificateStore -> CertificateRequest
+certificateRequest t a = CertificateRequest t a
+	. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
+	. X509.listCertificates
+
 instance B.Bytable CertificateRequest where
-	decode = B.evalBytableM parseCertificateRequest'
-	encode = certificateRequestToByteString
+	encode (CertificateRequest t a n) = BS.concat [
+		B.addLen w8 $ cmap B.encode t,
+		B.addLen w16 . BS.concat $
+			concatMap (\(h, s) -> [B.encode h, B.encode s]) a,
+		B.addLen w16 . flip cmap n $ B.addLen w16 .
+			ASN1.encodeASN1' ASN1.DER . flip ASN1.toASN1 [] ]
+	encode (CertificateRequestRaw bs) = bs
+	decode = B.evalBytableM $ do
+		t <- flip B.list (B.take 1) =<< B.take 1
+		a <- flip B.list ((,) <$> B.take 1 <*> B.take 1) =<< B.take 2
+		n <- (B.take 2 >>=) $ flip B.list $ do
+			bs <- B.take =<< B.take 2
+			a1 <- either (fail . show) return $
+				ASN1.decodeASN1' ASN1.DER bs
+			either (fail . show) (return . fst) $ ASN1.fromASN1 a1
+		return $ CertificateRequest t a n
 
-parseCertificateRequest' :: B.BytableM CertificateRequest
-parseCertificateRequest' = do
-	cctsl <- B.take 1
-	ccts <- B.list cctsl $ B.take 1
-	hasasl <- B.take 2
-	hasas <- B.list hasasl $ (,) <$> B.take 1 <*> B.take 1
-	dnsl <- B.take 2
-	dns <- B.list dnsl $ do
-		bs <- B.take =<< B.take 2
-		asn1 <- either (fail . show) return $ ASN1.decodeASN1' ASN1.DER bs
-		either (fail . show) (return . fst) $ ASN1.fromASN1 asn1
-	return $ CertificateRequest ccts hasas dns
-
-certificateRequestToByteString :: CertificateRequest -> BS.ByteString
-certificateRequestToByteString (CertificateRequest ccts hasas bss) = BS.concat [
-	B.addLen (undefined :: Word8) . BS.concat $
-		map clientCertificateTypeToByteString ccts,
-		B.encode (fromIntegral $ 2 * length hasas :: Word16),
-		BS.concat $ concatMap (\(ha, sa) -> [B.encode ha, B.encode sa]) hasas,
-	B.addLen (undefined :: Word16) . BS.concat $
-		map (B.addLen (undefined :: Word16) . ASN1.encodeASN1' ASN1.DER . flip ASN1.toASN1 []) bss ]
-certificateRequestToByteString (CertificateRequestRaw bs) = bs
-
-data ClientCertificateType
-	= ClientCertificateTypeRsaSign
-	| ClientCertificateTypeEcdsaSign
-	| ClientCertificateTypeRaw Word8
-	deriving Show
+data ClientCertificateType = CTRsaSign | CTEcdsaSign | CTRaw Word8 deriving Show
 
 instance B.Bytable ClientCertificateType where
-	decode = byteStringToClientCertificateType
-	encode = clientCertificateTypeToByteString
+	encode CTRsaSign = "\x01"
+	encode CTEcdsaSign = "\x40"
+	encode (CTRaw w) = BS.pack [w]
+	decode bs = case BS.unpack bs of
+		[w] -> Right $ case w of
+			1 -> CTRsaSign; 64 -> CTEcdsaSign; _ -> CTRaw w
+		_ -> Left "Certificate: ClientCertificateType.decode"
 
-byteStringToClientCertificateType :: BS.ByteString -> Either String ClientCertificateType
-byteStringToClientCertificateType bs = case BS.unpack bs of
-	[w] -> Right $ case w of
-		1 -> ClientCertificateTypeRsaSign
-		64 -> ClientCertificateTypeEcdsaSign
-		_ -> ClientCertificateTypeRaw w
-	_ -> Left "Certificate.byteStringToClientCertificateType"
-
-clientCertificateTypeToByteString :: ClientCertificateType -> BS.ByteString
-clientCertificateTypeToByteString ClientCertificateTypeRsaSign = "\x01"
-clientCertificateTypeToByteString ClientCertificateTypeEcdsaSign = "\x40"
-clientCertificateTypeToByteString (ClientCertificateTypeRaw w) = BS.pack [w]
-
-data ClientKeyExchange = ClientKeyExchange { getClientKeyExchange :: BS.ByteString }
-
-instance Show ClientKeyExchange where
-	show (ClientKeyExchange epms) = "(ClientKeyExchange " ++
-		showKeyPMS epms ++ ")"
+data ClientKeyExchange = ClientKeyExchange BS.ByteString deriving Show
 
 instance B.Bytable ClientKeyExchange where
 	decode = Right . ClientKeyExchange
-	encode = encryptedPreMasterSecretToByteString
-
-showKeyPMS :: BS.ByteString -> String
-showKeyPMS = concatMap showH . BS.unpack
-
-showH :: Word8 -> String
-showH w = replicate (2 - length s) '0' ++ s
-	where
-	s = showHex w ""
-
-encryptedPreMasterSecretToByteString :: ClientKeyExchange -> BS.ByteString
-encryptedPreMasterSecretToByteString (ClientKeyExchange epms) = epms
+	encode (ClientKeyExchange epms) = epms
 
 data DigitallySigned
 	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) BS.ByteString
@@ -153,25 +87,17 @@ data DigitallySigned
 	deriving Show
 
 instance B.Bytable DigitallySigned where
-	decode = B.evalBytableM parseDigitallySigned
-	encode = digitallySignedToByteString
+	decode = B.evalBytableM $
+		DigitallySigned
+			<$> ((,) <$> B.take 1 <*> B.take 1)
+			<*> (B.take =<< B.take 2)
+	encode (DigitallySigned (ha, sa) bs) = BS.concat [
+		B.encode ha, B.encode sa, B.addLen w16 bs ]
+	encode (DigitallySignedRaw bs) = bs
 
-parseDigitallySigned :: B.BytableM DigitallySigned
-parseDigitallySigned = DigitallySigned
-	<$> ((,) <$> B.take 1 <*> B.take 1)
-	<*> (B.take =<< B.take 2)
+w8 :: Word8; w8 = undefined
+w16 :: Word16; w16 = undefined
+w24 :: Word24; w24 = undefined
 
-digitallySignedToByteString :: DigitallySigned -> BS.ByteString
-digitallySignedToByteString (DigitallySigned (ha, sa) bs) = BS.concat [
-	B.encode ha,
-	B.encode sa,
-	B.addLen (undefined :: Word16) bs ]
-digitallySignedToByteString (DigitallySignedRaw bs) = bs
-
-certificateRequest ::
-	[ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
-	X509.CertificateStore -> CertificateRequest
-certificateRequest cct cca =
-	CertificateRequest cct cca
-		. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
-		. X509.listCertificates
+cmap :: (a -> BS.ByteString) -> [a] -> BS.ByteString
+cmap = (BS.concat .) . map

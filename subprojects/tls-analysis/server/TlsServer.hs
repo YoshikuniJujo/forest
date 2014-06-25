@@ -150,8 +150,7 @@ requestAndCertificate :: (ValidateHandle h, CPRG g) =>
 	Maybe X509.CertificateStore -> HandshakeM h g (Maybe X509.PubKey)
 requestAndCertificate mcs = do
 	flip (maybe $ return ()) mcs $ writeHandshake . certificateRequest
-		[ClientCertificateTypeRsaSign, ClientCertificateTypeEcdsaSign]
-		[(Sha256, Rsa), (Sha256, Ecdsa)]
+		[CTRsaSign, CTEcdsaSign] [(Sha256, Rsa), (Sha256, Ecdsa)]
 	writeHandshake ServerHelloDone
 	maybe (return Nothing) (liftM Just . clientCertificate) mcs
 
