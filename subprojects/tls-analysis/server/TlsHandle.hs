@@ -1,5 +1,4 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes, TupleSections,
-	FlexibleContexts, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, PackageImports #-}
 
 module TlsHandle (
 	TlsM, run, cipherSuite, setCipherSuite, CipherSuite(..),

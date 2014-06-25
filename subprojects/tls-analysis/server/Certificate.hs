@@ -57,7 +57,7 @@ instance B.Bytable CertificateRequest where
 	decode = B.evalBytableM $ do
 		t <- flip B.list (B.take 1) =<< B.take 1
 		a <- flip B.list ((,) <$> B.take 1 <*> B.take 1) =<< B.take 2
-		n <- (B.take 2 >>=) $ flip B.list $ do
+		n <- (B.take 2 >>=) . flip B.list $ do
 			bs <- B.take =<< B.take 2
 			a1 <- either (fail . show) return $
 				ASN1.decodeASN1' ASN1.DER bs
