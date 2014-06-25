@@ -3,10 +3,10 @@
 module TlsHandle (
 	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), ContentType(..), CipherSuite(..),
+	TlsHandle(..), Partner(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-	Partner(..), handshakeHash, finishedHash ) where
+		handshakeHash, finishedHash ) where
 
 import Prelude hiding (read)
 
@@ -16,7 +16,7 @@ import Control.Monad (liftM, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
 import "monads-tf" Control.Monad.Error (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Word (Word8, Word16, Word64)
+import Data.Word (Word16, Word64)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -26,14 +26,14 @@ import qualified Codec.Bytable as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import TlsMonad (
-	TlsM, run, thlGet, thlPut, thlClose, thlDebug, thlError,
+	TlsM, run, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getClientSn, getServerSn, succClientSn, succServerSn,
 	Alert(..), AlertLevel(..), AlertDescription(..), strToAlert,
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ClientId, newClientId, Keys(..), nullKeys )
-import CryptoTools (
-	makeKeys, decryptMessage, encryptMessage, hashSha1, hashSha256,
+import qualified CryptoTools as CT (
+	makeKeys, decrypt, encrypt, hashSha1, hashSha256,
 	finishedHash_ )
 
 data TlsHandle h g = TlsHandle {
@@ -41,6 +41,8 @@ data TlsHandle h g = TlsHandle {
 	tlsHandle :: h, keys :: Keys, clientNames :: [String] }
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
+
+data Partner = Server | Client deriving (Show, Eq)
 
 newHandle :: HandleLike h => h -> TlsM h g (TlsHandle h g)
 newHandle h = do
@@ -63,7 +65,7 @@ tlsGet :: (HandleLike h, CPRG g) => HandleHash h g ->
 tlsGet hh@(t, _) n = do
 	r@(ct, bs) <- buffered t n
 	(r ,) `liftM` case ct of
-		ContentTypeHandshake -> updateHash hh bs
+		CTHandshake -> updateHash hh bs
 		_ -> return hh
 
 buffered :: (HandleLike h, CPRG g) =>
@@ -86,32 +88,90 @@ buffered t n = do
 
 getWholeWithCt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
-getWholeWithCt th = do
-	ct <- (either error id . B.decode) `liftM` read th 1
-	[_vmjr, _vmnr] <- BS.unpack `liftM` read th 2
-	ebody <- read th . either error id . B.decode =<< read th 2
-	when (BS.null ebody) $ throwError "getWholeWithCt: ebody is null"
-	body <- tlsDecryptMessage th (keys th) ct ebody
-	return (ct, body)
+getWholeWithCt t = do
+	flush t
+	ct <- (either (throwError . strMsg) return . B.decode) =<< read t 1
+	[_vmj, _vmn] <- BS.unpack `liftM` read t 2
+	e <- read t =<< either (throwError . strMsg) return . B.decode =<< read t 2
+	when (BS.null e) $ throwError "TlsHandle.getWholeWithCt: e is null"
+	p <- decrypt t ct e
+	return (ct, p)
+
+read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
+read t n = do
+	r <- thlGet (tlsHandle t) n
+	unless (BS.length r == n) . throwError . strToAlert $
+		"TlsHandle.read: can't read " ++ show (BS.length r) ++ " " ++ show n
+	return r
+
+decrypt :: HandleLike h =>
+	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+decrypt t _ e
+	| Keys{ kClientCipherSuite = CipherSuite _ BE_NULL } <- keys t = return e
+decrypt t@TlsHandle{ keys = ks } ct e = do
+	let	CipherSuite _ be = kClientCipherSuite ks
+		wk = kClientWriteKey ks
+		mk = kClientWriteMacKey ks
+	sn <- updateSequenceNumber t Client
+	hs <- case be of
+		AES_128_CBC_SHA -> return CT.hashSha1
+		AES_128_CBC_SHA256 -> return CT.hashSha256
+		_ -> throwError "TlsHandle.decrypt: not implement bulk encryption"
+	either (throwError . strMsg . show) return $
+		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
 tlsPut :: (HandleLike h, CPRG g) =>
 	HandleHash h g -> ContentType -> BS.ByteString -> TlsM h g (HandleHash h g)
-tlsPut (th, ctx) ct bs = do
-	(bct, bbs) <- getWBuf $ clientId th
+tlsPut hh@(t, _) ct p = do
+	(bct, bp) <- getWBuf $ clientId t
 	case ct of
-		ContentTypeChangeCipherSpec -> do
-				tlsFlush th
-				setWBuf (clientId th) (ct, bs)
-				tlsFlush th
-				return ()
-		_	| bct /= CTNull && ct /= bct -> do
-				tlsFlush th
-				setWBuf (clientId th) (ct, bs)
-			| otherwise ->
-				setWBuf (clientId th) (ct, bbs `BS.append` bs)
+		CTCCSpec -> flush t >> setWBuf (clientId t) (ct, p) >> flush t
+		_	| bct /= CTNull && ct /= bct ->
+				flush t >> setWBuf (clientId t) (ct, p)
+			| otherwise -> setWBuf (clientId t) (ct, bp `BS.append` p)
 	case ct of
-		ContentTypeHandshake -> updateHash (th, ctx) bs
-		_ -> return (th, ctx)
+		CTHandshake -> updateHash hh p
+		_ -> return hh
+
+flush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
+flush t = do
+	(bct, bp) <- getWBuf $ clientId t
+	setWBuf (clientId t) (CTNull, "")
+	unless (bct == CTNull) $ do
+		e <- encrypt t bct bp
+		thlPut (tlsHandle t) $ BS.concat [
+			B.encode bct, "\x03\x03", B.addLen (undefined :: Word16) e ]
+
+encrypt :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
+encrypt t _ p
+	| Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } <- keys t = return p
+encrypt t@TlsHandle{ keys = ks } ct p = do
+	let	CipherSuite _ be = kServerCipherSuite ks
+		wk = kServerWriteKey ks
+		mk = kServerWriteMacKey ks
+	sn <- updateSequenceNumber t Server
+	hs <- case be of
+		AES_128_CBC_SHA -> return CT.hashSha1
+		AES_128_CBC_SHA256 -> return CT.hashSha256
+		_ -> throwError "TlsHandle.encrypt: not implemented bulk encryption"
+	withRandom $ CT.encrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") p
+
+updateHash ::
+	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
+updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
+
+updateSequenceNumber :: HandleLike h => TlsHandle h g -> Partner -> TlsM h g Word64
+updateSequenceNumber t@TlsHandle{ keys = ks } p = do
+	(sn, cs) <- case p of
+		Client -> (, kClientCipherSuite ks) `liftM` getClientSn (clientId t)
+		Server -> (, kServerCipherSuite ks) `liftM` getServerSn (clientId t)
+	case cs of
+		CipherSuite _ BE_NULL -> return ()
+		_ -> case p of
+			Client -> succClientSn $ clientId t
+			Server -> succServerSn $ clientId t
+	return sn
 
 generateKeys :: HandleLike h => CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
@@ -120,8 +180,9 @@ generateKeys cs cr sr pms = do
 	kl <- case be of
 		AES_128_CBC_SHA -> return 20
 		AES_128_CBC_SHA256 -> return 32
-		_ -> throwError "TlsServer.generateKeys"
-	let Right (ms, cwmk, swmk, cwk, swk) = makeKeys kl cr sr pms
+		_ -> throwError
+			"TlsServer.generateKeys: not implemented bulk encryption"
+	let Right (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
 	return Keys {
 		kCachedCipherSuite = cs,
 		kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
@@ -136,112 +197,51 @@ cipherSuite :: TlsHandle h g -> CipherSuite
 cipherSuite = kCachedCipherSuite . keys
 
 setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
-setCipherSuite cs th@TlsHandle { keys = ks } =
-	th { keys = ks { kCachedCipherSuite = cs } }
+setCipherSuite c t@TlsHandle{ keys = k } = t{ keys = k{ kCachedCipherSuite = c } }
 
 flushCipherSuite :: Partner -> TlsHandle h g -> TlsHandle h g
-flushCipherSuite p th@TlsHandle { keys = ks } = case p of
-	Client -> th { keys = ks { kClientCipherSuite = kCachedCipherSuite ks } }
-	Server -> th { keys = ks { kServerCipherSuite = kCachedCipherSuite ks } }
+flushCipherSuite p t@TlsHandle{ keys = ks } = case p of
+	Client -> t{ keys = ks { kClientCipherSuite = kCachedCipherSuite ks } }
+	Server -> t{ keys = ks { kServerCipherSuite = kCachedCipherSuite ks } }
 
-data Partner = Server | Client deriving (Show, Eq)
+debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
+debugCipherSuite t a = thlDebug (tlsHandle t) 5 . BSC.pack
+	. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
+	. show . kCachedCipherSuite $ keys t
+	where lenSpace n str = str ++ replicate (n - length str) ' '
 
 handshakeHash :: HandleLike h => HandleHash h g -> TlsM h g BS.ByteString
 handshakeHash = return . SHA256.finalize . snd
 
 finishedHash :: HandleLike h => HandleHash h g -> Partner -> TlsM h g BS.ByteString
-finishedHash (th, ctx) partner = do
-	let ms = kMasterSecret $ keys th
-	sha256 <- handshakeHash (th, ctx)
-	return $ finishedHash_ (partner == Client) ms sha256
-
-debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
-debugCipherSuite th a = do
-	let h = tlsHandle th
-	thlDebug h 5 . BSC.pack
-		. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
-		. show . kCachedCipherSuite $ keys th
-	where
-	lenSpace n str = str ++ replicate (n - length str) ' '
-
-write :: HandleLike h => TlsHandle h g -> BS.ByteString -> TlsM h g ()
-write th = thlPut $ tlsHandle th
-
-read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
-read h n = do
-	tlsFlush h
-	r <- flip thlGet n $ tlsHandle h
-	if BS.length r == n
-		then return r
-		else throwError . strToAlert $ "Basic.read: bad reading: " ++
-			show (BS.length r) ++ " " ++ show n
-
-updateHash ::
-	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
-updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
-
-updateSequenceNumber :: HandleLike h =>
-	TlsHandle h g -> Partner -> Keys -> TlsM h g Word64
-updateSequenceNumber th partner ks = do
-	sn <- case partner of
-		Client -> getClientSn $ clientId th
-		Server -> getServerSn $ clientId th
-	let	cs = pCipherSuite partner ks
-	case cs of
-		CipherSuite _ BE_NULL -> return ()
-		_ -> case partner of
-			Client -> succClientSn $ clientId th
-			Server -> succServerSn $ clientId th
-	return sn
-
-pCipherSuite :: Partner -> Keys -> CipherSuite
-pCipherSuite p = case p of
-	Client -> kClientCipherSuite
-	Server -> kServerCipherSuite
+finishedHash (t, ctx) partner = do
+	let ms = kMasterSecret $ keys t
+	sha256 <- handshakeHash (t, ctx)
+	return $ CT.finishedHash_ (partner == Client) ms sha256
 
 instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g
 	type DebugLevel (TlsHandle h g) = DebugLevel h
-	hlPut = ((>> return ()) .) . flip tlsPut ContentTypeApplicationData . (, undefined)
+	hlPut = ((>> return ()) .) . flip tlsPut CTAppData . (, undefined)
 	hlGet = (.) <$> checkAppData <*> ((fst `liftM`) .) . tlsGet . (, undefined)
-	hlGetLine = tGetLine
-	hlGetContent = tGetContent
-	hlDebug h l = lift . lift . hlDebug (tlsHandle h) l
-	hlClose = tCloseSt
+	hlGetLine = ($) <$> checkAppData <*> tGetLine
+	hlGetContent = ($) <$> checkAppData <*> tGetContent
+	hlDebug t l = lift . lift . hlDebug (tlsHandle t) l
+	hlClose t = tlsPut (t, undefined) CTAlert "\SOH\NUL" >>
+		flush t >> thlClose (tlsHandle t)
 
-tlsFlush :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
-tlsFlush th = do
-	(ct, bs) <- getWBuf $ clientId th
-	setWBuf (clientId th) (CTNull, "")
-	unless (ct == CTNull) $ do
-		enc <- tlsEncryptMessage th (keys th) ct bs
-		write th $ BS.concat [
-			B.encode ct,
-			B.encode (3 :: Word8),
-			B.encode (3 :: Word8),
-			B.encode (fromIntegral $ BS.length enc :: Word16),
-			enc ]
+tGetLine :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+tGetLine t = do
+	(bct, bp) <- getBuf $ clientId t
+	case splitLine bp of
+		Just (l, ls) -> setBuf (clientId t) (bct, ls) >> return (bct, l)
+		_ -> do	cp <- getWholeWithCt t
+			setBuf (clientId t) cp
+			second (bp `BS.append`) `liftM` tGetLine t
 
-tGetLine :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetLine tc = do
-	(mct, bfr) <- getBuf $ clientId tc
-	case splitOneLine bfr of
-		Just (l, ls) -> do
-			setBuf (clientId tc) (mct, ls)
-			return l
-		_ -> do	msg <- tGetWhole tc
-			setBuf (clientId tc) (ContentTypeApplicationData, msg)
-			(bfr `BS.append`) `liftM` tGetLine tc
-
-tGetContent :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetContent tc = do
-	(_, bfr) <- getBuf $ clientId tc
-	if BS.null bfr then tGetWhole tc else do
-		setBuf (clientId tc) (CTNull, BS.empty)
-		return bfr
-
-splitOneLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
-splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
+splitLine :: BS.ByteString -> Maybe (BS.ByteString, BS.ByteString)
+splitLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 	(True, _) -> let
 		(l, ls) = BSC.span (/= '\r') bs
 		Just ('\r', ls') = BSC.uncons ls in
@@ -253,58 +253,19 @@ splitOneLine bs = case ('\r' `BSC.elem` bs, '\n' `BSC.elem` bs) of
 		Just ('\n', ls') = BSC.uncons ls in Just (l, ls')
 	_ -> Nothing
 
-tCloseSt :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ()
-tCloseSt tc = do
-	_ <- tlsPut (tc, undefined) ContentTypeAlert "\SOH\NUL"
-	tlsFlush tc
-	thlClose h
-	where
-	h = tlsHandle tc
-
-tGetWhole :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g BS.ByteString
-tGetWhole th = checkAppData th $ getWholeWithCt th
+tGetContent :: (HandleLike h, CPRG g) =>
+	TlsHandle h g -> TlsM h g (ContentType, BS.ByteString)
+tGetContent t = do
+	bcp@(_, bp) <- getBuf $ clientId t
+	if BS.null bp then getWholeWithCt t else
+		setBuf (clientId t) (CTNull, BS.empty) >> return bcp
 
 checkAppData :: (HandleLike h, CPRG g) => TlsHandle h g ->
 	TlsM h g (ContentType, BS.ByteString) -> TlsM h g BS.ByteString
-checkAppData th m = do
-	ctbs <- m
-	case ctbs of
-		(ContentTypeApplicationData, ad) -> return ad
-		(ContentTypeAlert, "\SOH\NUL") -> do
-			_ <- tlsPut (th, undefined) ContentTypeAlert "\SOH\NUL"
-			thlError (tlsHandle th) "tGetWhole: EOF"
-		_ -> do	_ <- tlsPut (th, undefined) ContentTypeAlert "\2\10"
-			throwError "not application data"
-
-tlsDecryptMessage :: HandleLike h => TlsHandle h g ->
-	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-tlsDecryptMessage _ Keys{ kClientCipherSuite = CipherSuite _ BE_NULL } _ enc =
-	return enc
-tlsDecryptMessage th ks ct enc = do
-	let	CipherSuite _ be = pCipherSuite Client ks
-		wk = kClientWriteKey ks
-		mk = kClientWriteMacKey ks
-	sn <- updateSequenceNumber th Client ks
-	hs <- case be of
-		AES_128_CBC_SHA -> return hashSha1
-		AES_128_CBC_SHA256 -> return hashSha256
-		_ -> throwError "bad"
-	either (throwError . strMsg . show) return $ decryptMessage hs wk mk sn
-		(B.encode ct `BS.append` "\x03\x03") enc
-
-tlsEncryptMessage :: (HandleLike h, CPRG g) => TlsHandle h g ->
-	Keys -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
-tlsEncryptMessage _ Keys{ kServerCipherSuite = CipherSuite _ BE_NULL } _ msg =
-	return msg
-tlsEncryptMessage th ks ct msg = do
-	let	CipherSuite _ be = pCipherSuite Server ks
-		wk = kServerWriteKey ks
-		mk = kServerWriteMacKey ks
-	sn <- updateSequenceNumber th Server ks
-	hs <- case be of
-		AES_128_CBC_SHA -> return hashSha1
-		AES_128_CBC_SHA256 -> return hashSha256
-		_ -> throwError "bad"
-	let enc = encryptMessage hs wk mk sn
-		(B.encode ct `BS.append` "\x03\x03") msg
-	withRandom enc
+checkAppData t m = m >>= \cp -> case cp of
+	(CTAppData, ad) -> return ad
+	(CTAlert, "\SOH\NUL") -> do
+		_ <- tlsPut (t, undefined) CTAlert "\SOH\NUL"
+		throwError "TlsHandle.checkAppData: EOF"
+	_ -> do	_ <- tlsPut (t, undefined) CTAlert "\2\10"
+		throwError "TlsHandle.checkAppData: not application data"

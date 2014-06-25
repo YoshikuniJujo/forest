@@ -70,7 +70,7 @@ readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g h
 readHandshake = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
-		ContentHandshake hs -> return hs
+		CHandshake hs -> return hs
 		_ -> throwError $ HM.Alert
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.readHandshake: not handshake"
@@ -82,7 +82,7 @@ readHandshake = do
 
 writeHandshake ::
 	(HandleLike h, CPRG g, HandshakeItem hi) => hi -> HM.HandshakeM h g ()
-writeHandshake = uncurry HM.tlsPut . encodeContent . ContentHandshake . toHandshake
+writeHandshake = uncurry HM.tlsPut . encodeContent . CHandshake . toHandshake
 
 data ChangeCipherSpec = ChangeCipherSpec | ChangeCipherSpecRaw Word8 deriving Show
 
@@ -98,39 +98,30 @@ getChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 getChangeCipherSpec = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	case cnt of
-		ContentChangeCipherSpec ChangeCipherSpec -> return ()
+		CCCSpec ChangeCipherSpec -> return ()
 		_ -> throwError $ HM.Alert
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
-putChangeCipherSpec =
-	uncurry HM.tlsPut . encodeContent $ ContentChangeCipherSpec ChangeCipherSpec
+putChangeCipherSpec = uncurry HM.tlsPut . encodeContent $ CCCSpec ChangeCipherSpec
 
-data Content
-	= ContentChangeCipherSpec ChangeCipherSpec
-	| ContentAlert Word8 Word8
-	| ContentHandshake Handshake
+data Content = CCCSpec ChangeCipherSpec | CAlert Word8 Word8 | CHandshake Handshake
 	deriving Show
 
 readContent :: Monad m => (Int -> m BS.ByteString) -> HM.ContentType -> m Content
-readContent rd HM.ContentTypeChangeCipherSpec =
-	(ContentChangeCipherSpec . either error id . B.decode) `liftM` rd 1
-readContent rd HM.ContentTypeAlert =
-	((\[al, ad] -> ContentAlert al ad) . BS.unpack) `liftM` rd 2
-readContent rd HM.ContentTypeHandshake = ContentHandshake `liftM` do
+readContent rd HM.CTCCSpec = (CCCSpec . either error id . B.decode) `liftM` rd 1
+readContent rd HM.CTAlert = ((\[al, ad] -> CAlert al ad) . BS.unpack) `liftM` rd 2
+readContent rd HM.CTHandshake = CHandshake `liftM` do
 	(t, len) <- (,) `liftM` rd 1 `ap` rd 3
 	body <- rd . either error id $ B.decode len
 	return . either error id . B.decode $ BS.concat [t, len, body]
 readContent _ _ = undefined
 
 encodeContent :: Content -> (HM.ContentType, BS.ByteString)
-encodeContent (ContentChangeCipherSpec ccs) =
-	(HM.ContentTypeChangeCipherSpec, B.encode ccs)
-encodeContent (ContentAlert al ad) =
-	(HM.ContentTypeAlert, BS.pack [al, ad])
-encodeContent (ContentHandshake hss) =
-	(HM.ContentTypeHandshake, B.encode hss)
+encodeContent (CCCSpec ccs) = (HM.CTCCSpec, B.encode ccs)
+encodeContent (CAlert al ad) = (HM.CTAlert, BS.pack [al, ad])
+encodeContent (CHandshake hss) = (HM.CTHandshake, B.encode hss)
 
 class SecretKey sk where
 	type Blinder sk

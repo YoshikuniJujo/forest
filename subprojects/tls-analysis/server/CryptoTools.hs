@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
 
 module CryptoTools (
-	encryptMessage, decryptMessage, hashSha1, hashSha256,
+	encrypt, decrypt, hashSha1, hashSha256,
 
 	MSVersion(..), tupleToVersion,
 	ClientRandom(..), ServerRandom(..),
@@ -27,11 +27,11 @@ hashSha1, hashSha256 :: Hash
 hashSha1 = (SHA1.hash, 20)
 hashSha256 = (SHA256.hash, 32)
 
-encryptMessage :: CPRG gen =>
+encrypt :: CPRG gen =>
 	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> gen -> (BS.ByteString, gen)
-encryptMessage (hs, _) key mk sn pre msg gen = 
-	encrypt gen key . padd $ msg `BS.append` mac
+encrypt (hs, _) key mk sn pre msg gen = 
+	encrypt_ gen key . padd $ msg `BS.append` mac
 	where
 	mac = calcMac hs sn mk $ BS.concat
 		[pre, B.addLen (undefined :: Word16) msg]
@@ -47,9 +47,9 @@ padd bs = bs `BS.append` pd
 	plen = 16 - (BS.length bs + 1) `mod` 16
 	pd = BS.replicate (plen + 1) $ fromIntegral plen
 
-encrypt :: CPRG gen =>
+encrypt_ :: CPRG gen =>
 	gen -> BS.ByteString -> BS.ByteString -> (BS.ByteString, gen)
-encrypt gen key pln = let
+encrypt_ gen key pln = let
 	(iv, gen') = cprgGenerate 16 gen in
 	(iv `BS.append` encryptCBC (initAES key) iv pln, gen')
 
@@ -62,8 +62,8 @@ myLast :: String -> BS.ByteString -> Word8
 myLast msg "" = error msg
 myLast _ bs = BS.last bs
 
-decrypt :: BS.ByteString -> BS.ByteString -> BS.ByteString
-decrypt key ivenc = let
+decrypt_ :: BS.ByteString -> BS.ByteString -> BS.ByteString
+decrypt_ key ivenc = let
 	(iv, enc) = BS.splitAt 16 ivenc in
 	decryptCBC (initAES key) iv enc
 
@@ -94,16 +94,16 @@ getFinishedLabel :: Bool -> BS.ByteString
 getFinishedLabel True = "client finished"
 getFinishedLabel False = "server finished"
 
-decryptMessage :: Hash ->
+decrypt :: Hash ->
 	BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decryptMessage (hs, ml) key mk sn pre enc = if mac == cmac then Right body else
-	Left $ "CryptoTools.decryptMessage: bad MAC:\n\t" ++
+decrypt (hs, ml) key mk sn pre enc = if mac == cmac then Right body else
+	Left $ "CryptoTools.decrypt: bad MAC:\n\t" ++
 		"Expected: " ++ show cmac ++ "\n\t" ++
 		"Recieved: " ++ show mac ++ "\n\t" ++
 		"ml: " ++ show ml ++ "\n"
 	where
-	bm = unpadd $ decrypt key enc
+	bm = unpadd $ decrypt_ key enc
 	(body, mac) = BS.splitAt (BS.length bm - ml) bm
 	cmac = calcMac hs sn mk $ BS.concat
 		[pre, B.addLen (undefined :: Word16) body]

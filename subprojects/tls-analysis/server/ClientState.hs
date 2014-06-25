@@ -126,12 +126,12 @@ initialTlsState g = TlsClientState {
 	tlsClientStateList = [] }
 
 data ContentType
-	= ContentTypeChangeCipherSpec
-	| ContentTypeAlert
-	| ContentTypeHandshake
-	| ContentTypeApplicationData
+	= CTCCSpec
+	| CTAlert
+	| CTHandshake
+	| CTAppData
 	| CTNull
-	| ContentTypeRaw Word8
+	| CTRaw Word8
 	deriving (Show, Eq)
 
 instance B.Bytable ContentType where
@@ -140,19 +140,19 @@ instance B.Bytable ContentType where
 
 byteStringToContentType :: BS.ByteString -> ContentType
 byteStringToContentType "" = error "Types.byteStringToContentType: empty"
-byteStringToContentType "\20" = ContentTypeChangeCipherSpec
-byteStringToContentType "\21" = ContentTypeAlert
-byteStringToContentType "\22" = ContentTypeHandshake
-byteStringToContentType "\23" = ContentTypeApplicationData
-byteStringToContentType bs = let [ct] = BS.unpack bs in ContentTypeRaw ct
+byteStringToContentType "\20" = CTCCSpec
+byteStringToContentType "\21" = CTAlert
+byteStringToContentType "\22" = CTHandshake
+byteStringToContentType "\23" = CTAppData
+byteStringToContentType bs = let [ct] = BS.unpack bs in CTRaw ct
 
 contentTypeToByteString :: ContentType -> BS.ByteString
-contentTypeToByteString ContentTypeChangeCipherSpec = BS.pack [20]
-contentTypeToByteString ContentTypeAlert = BS.pack [21]
-contentTypeToByteString ContentTypeHandshake = BS.pack [22]
-contentTypeToByteString ContentTypeApplicationData = BS.pack [23]
+contentTypeToByteString CTCCSpec = BS.pack [20]
+contentTypeToByteString CTAlert = BS.pack [21]
+contentTypeToByteString CTHandshake = BS.pack [22]
+contentTypeToByteString CTAppData = BS.pack [23]
 contentTypeToByteString CTNull = BS.pack [0]
-contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]
+contentTypeToByteString (CTRaw ct) = BS.pack [ct]
 
 nullKeys :: Keys
 nullKeys = Keys {
