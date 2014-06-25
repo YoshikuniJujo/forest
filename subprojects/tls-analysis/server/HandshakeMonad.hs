@@ -37,7 +37,7 @@ import qualified TlsHandle as TH (
 	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
 		run, withRandom, randomByteString,
 	TlsHandle(..), ContentType(..),
-		newHandle, tlsGetContentType, tlsGet, tlsPut, generateKeys,
+		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
 
@@ -93,7 +93,7 @@ debugCipherSuite :: HandleLike h => String -> HandshakeM h g ()
 debugCipherSuite m = do t <- gets fst; lift $ TH.debugCipherSuite t m
 
 tlsGetContentType :: (HandleLike h, CPRG g) => HandshakeM h g TH.ContentType
-tlsGetContentType = gets fst >>= lift . TH.tlsGetContentType
+tlsGetContentType = gets fst >>= lift . TH.getContentType
 
 tlsGet :: (HandleLike h, CPRG g) => Int -> HandshakeM h g BS.ByteString
 tlsGet n = do ((_, bs), t') <- lift . flip TH.tlsGet n =<< get; put t'; return bs

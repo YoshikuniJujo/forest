@@ -6,7 +6,7 @@ module TlsMonad (
 	thlPut, thlGet, thlDebug, thlError, thlClose,
 	getBuf, setBuf,
 	getWBuf, setWBuf,
-	withRandom,
+	withRandom, randomByteString,
 	getServerSn, getClientSn, succServerSn, succClientSn,
 
 	CS.ContentType(..),
@@ -35,6 +35,8 @@ import Data.HandleLike
 import qualified Data.ByteString as BS
 
 import qualified ClientState as CS
+
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run = (liftM fst .) . runClient
@@ -80,6 +82,9 @@ withRandom p = do
 	let (x, gen') = p gen
 	modify $ setRandomGen gen'
 	return x
+
+randomByteString :: (HandleLike h, CPRG g) => Int -> TlsM h g BS.ByteString
+randomByteString = withRandom . cprgGenerate
 
 thlDebug :: HandleLike h =>
 	h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()

@@ -72,8 +72,8 @@ newClientId s = (ClientId cid ,) s {
 	where
 	cid = tlsNextClientId s
 	cs = TlsClientStateOne {
-		tlsBuffer = (ContentTypeNull, ""),
-		tlsWriteBuffer = (ContentTypeNull, ""),
+		tlsBuffer = (CTNull, ""),
+		tlsWriteBuffer = (CTNull, ""),
 		tlsClientSequenceNumber = 0,
 		tlsServerSequenceNumber = 0 }
 	sl = tlsClientStateList s
@@ -130,7 +130,7 @@ data ContentType
 	| ContentTypeAlert
 	| ContentTypeHandshake
 	| ContentTypeApplicationData
-	| ContentTypeNull
+	| CTNull
 	| ContentTypeRaw Word8
 	deriving (Show, Eq)
 
@@ -151,7 +151,7 @@ contentTypeToByteString ContentTypeChangeCipherSpec = BS.pack [20]
 contentTypeToByteString ContentTypeAlert = BS.pack [21]
 contentTypeToByteString ContentTypeHandshake = BS.pack [22]
 contentTypeToByteString ContentTypeApplicationData = BS.pack [23]
-contentTypeToByteString ContentTypeNull = BS.pack [0]
+contentTypeToByteString CTNull = BS.pack [0]
 contentTypeToByteString (ContentTypeRaw ct) = BS.pack [ct]
 
 nullKeys :: Keys
