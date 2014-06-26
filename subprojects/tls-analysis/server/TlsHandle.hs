@@ -33,8 +33,7 @@ import TlsMonad (
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ClientId, newClientId, Keys(..), nullKeys )
 import qualified CryptoTools as CT (
-	makeKeys, decrypt, encrypt, hashSha1, hashSha256,
-	finishedHash_ )
+	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
 data TlsHandle h g = TlsHandle {
 	clientId :: ClientId,
@@ -189,7 +188,7 @@ generateKeys cs cr sr pms = do
 		AES_128_CBC_SHA256 -> return 32
 		_ -> throwError
 			"TlsServer.generateKeys: not implemented bulk encryption"
-	let Right (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
+	let (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
 	return Keys {
 		kCachedCS = cs,
 		kClientCS = CipherSuite KE_NULL BE_NULL,
@@ -221,7 +220,7 @@ finishedHash :: HandleLike h => HandleHash h g -> Partner -> TlsM h g BS.ByteStr
 finishedHash (t, ctx) partner = do
 	let ms = kMasterSecret $ keys t
 	sha256 <- handshakeHash (t, ctx)
-	return $ CT.finishedHash_ (partner == Client) ms sha256
+	return $ CT.finishedHash (partner == Client) ms sha256
 
 instance (HandleLike h, CPRG g) => HandleLike (TlsHandle h g) where
 	type HandleMonad (TlsHandle h g) = TlsM h g

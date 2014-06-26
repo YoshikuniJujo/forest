@@ -1,162 +1,99 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
 
 module CryptoTools (
-	encrypt, decrypt, hashSha1, hashSha256,
+	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash) where
 
-	MSVersion(..), tupleToVersion,
-	ClientRandom(..), ServerRandom(..),
+import Prelude hiding (splitAt, take)
 
-	makeKeys, finishedHash_,
-) where
+import Control.Arrow (first)
+import Data.Bits (xor)
+import Data.Word (Word8, Word16, Word64)
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
-import Data.Bits
-
-import Data.Word
 import qualified Data.ByteString as BS
-import "crypto-random" Crypto.Random
+import qualified Data.ByteString.Lazy as BSL
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
-import Crypto.Cipher.AES
+import qualified Crypto.Cipher.AES as AES
 
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 
-type Hash = (BS.ByteString -> BS.ByteString, Int)
+makeKeys :: Int -> BS.ByteString -> BS.ByteString -> BS.ByteString ->
+	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
+makeKeys kl cr sr pms = let
+	kls = [kl, kl, 16, 16]
+	ms = take 48 . prf pms $ BS.concat ["master secret", cr, sr]
+	ems = prf ms $ BS.concat ["key expansion", sr, cr]
+	[cwmk, swmk, cwk, swk] = divide kls ems in
+	(ms, cwmk, swmk, cwk, swk)
+	where
+	divide [] _ = []
+	divide (n : ns) bs
+		| BSL.null bs = []
+		| otherwise = let (x, bs') = splitAt n bs in x : divide ns bs'
 
-hashSha1, hashSha256 :: Hash
+prf :: BS.ByteString -> BS.ByteString -> BSL.ByteString
+prf sk sd = BSL.fromChunks . ph $ hm sk sd
+	where
+	hm = hmac SHA256.hash 64
+	ph a = hm sk (a `BS.append` sd) : ph (hm sk a)
+
+hmac :: (BS.ByteString -> BS.ByteString) -> Int ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString
+hmac hs bls sk =
+	hs . BS.append (BS.map (0x5c `xor`) k) .
+	hs . BS.append (BS.map (0x36 `xor`) k)
+	where
+	k = pd $ if BS.length sk > bls then hs sk else sk
+	pd bs = bs `BS.append` BS.replicate (bls - BS.length bs) 0
+
+type Hash = BS.ByteString -> BS.ByteString
+
+hashSha1, hashSha256 :: (Hash, Int)
 hashSha1 = (SHA1.hash, 20)
 hashSha256 = (SHA256.hash, 32)
 
-encrypt :: CPRG gen =>
-	Hash -> BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString -> BS.ByteString -> gen -> (BS.ByteString, gen)
-encrypt (hs, _) key mk sn pre msg gen = 
-	encrypt_ gen key . padd $ msg `BS.append` mac
+encrypt :: CPRG g => (Hash, Int) -> BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> BS.ByteString -> g -> (BS.ByteString, g)
+encrypt (hs, _) k mk sn p m g = (, g') $
+	iv `BS.append` AES.encryptCBC (AES.initAES k) iv (pln `BS.append` pd)
 	where
-	mac = calcMac hs sn mk $ BS.concat
-		[pre, B.addLen (undefined :: Word16) msg]
+	(iv, g') = cprgGenerate 16 g
+	pln = m `BS.append` calcMac hs mk sn (p `BS.append` B.addLen w16 m)
+	l = 16 - (BS.length pln + 1) `mod` 16
+	pd = BS.replicate (l + 1) $ fromIntegral l
 
-calcMac :: (BS.ByteString -> BS.ByteString) ->
-	Word64 -> BS.ByteString -> BS.ByteString -> BS.ByteString
-calcMac hs sn mk inp =
-	hmac hs 64 mk $ B.encode sn `BS.append` inp
-
-padd :: BS.ByteString -> BS.ByteString
-padd bs = bs `BS.append` pd
+decrypt :: (Hash, Int) ->
+	BS.ByteString -> BS.ByteString -> Word64 ->
+	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
+decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else Left $
+	"CryptoTools.decrypt: bad MAC:" ++
+		"\n\tExpected: " ++ show em ++
+		"\n\tRecieved: " ++ show rm ++
+		"\n\tml: " ++ show ml ++ "\n"
 	where
-	plen = 16 - (BS.length bs + 1) `mod` 16
-	pd = BS.replicate (plen + 1) $ fromIntegral plen
+	pln = uncurry (AES.decryptCBC $ AES.initAES k) $ BS.splitAt 16 enc
+	up = BS.take (BS.length pln - fromIntegral (myLast "decrypt" pln) - 1) pln
+	(b, rm) = BS.splitAt (BS.length up - ml) up
+	em = calcMac hs mk sn $ p `BS.append` B.addLen w16 b
 
-encrypt_ :: CPRG gen =>
-	gen -> BS.ByteString -> BS.ByteString -> (BS.ByteString, gen)
-encrypt_ gen key pln = let
-	(iv, gen') = cprgGenerate 16 gen in
-	(iv `BS.append` encryptCBC (initAES key) iv pln, gen')
+calcMac :: Hash -> BS.ByteString -> Word64 -> BS.ByteString -> BS.ByteString
+calcMac hs mk sn m = hmac hs 64 mk $ B.encode sn `BS.append` m
 
-unpadd :: BS.ByteString -> BS.ByteString
-unpadd bs = BS.take (BS.length bs - plen) bs
-	where
-	plen = fromIntegral (myLast "unpadd" bs) + 1
+finishedHash :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
+finishedHash c ms hash = take 12 . prf ms . (`BS.append` hash) $ if c
+	then "client finished"
+	else "server finished"
 
 myLast :: String -> BS.ByteString -> Word8
 myLast msg "" = error msg
 myLast _ bs = BS.last bs
 
-decrypt_ :: BS.ByteString -> BS.ByteString -> BS.ByteString
-decrypt_ key ivenc = let
-	(iv, enc) = BS.splitAt 16 ivenc in
-	decryptCBC (initAES key) iv enc
+take :: Int -> BSL.ByteString -> BS.ByteString
+take = (fst .) . splitAt
 
-makeKeys :: Int -> BS.ByteString -> BS.ByteString ->
-	BS.ByteString -> Either String
-	(BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString, BS.ByteString)
-makeKeys kl cr sr pms = do
-	let	ms = generateMasterSecret pms cr sr
-		ems = generateKeyBlock
-			(ClientRandom cr) (ServerRandom sr) ms $ kl * 2 + 32
-		[cwmk, swmk, cwk, swk] = divide [kl, kl, 16, 16] ems
-	return (ms, cwmk, swmk, cwk, swk)
-	where
-	divide [] _ = []
-	divide (n : ns) bs
-		| bs == BS.empty = []
-		| otherwise = let (x, xs) = BS.splitAt n bs in x : divide ns xs
+splitAt :: Int -> BSL.ByteString -> (BS.ByteString, BSL.ByteString)
+splitAt n = first BSL.toStrict . BSL.splitAt (fromIntegral n)
 
-finishedHash_ :: Bool -> BS.ByteString -> BS.ByteString -> BS.ByteString
-finishedHash_ = generateFinished TLS12
-
-generateFinished :: MSVersion -> Bool -> Bytes -> Bytes -> Bytes
-generateFinished TLS12 isC ms hash =
-	prfSha256 ms (getFinishedLabel isC `BS.append` hash) 12
-generateFinished _ _ _ _ = error "Not implemented"
-
-getFinishedLabel :: Bool -> BS.ByteString
-getFinishedLabel True = "client finished"
-getFinishedLabel False = "server finished"
-
-decrypt :: Hash ->
-	BS.ByteString -> BS.ByteString -> Word64 ->
-	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decrypt (hs, ml) key mk sn pre enc = if mac == cmac then Right body else
-	Left $ "CryptoTools.decrypt: bad MAC:\n\t" ++
-		"Expected: " ++ show cmac ++ "\n\t" ++
-		"Recieved: " ++ show mac ++ "\n\t" ++
-		"ml: " ++ show ml ++ "\n"
-	where
-	bm = unpadd $ decrypt_ key enc
-	(body, mac) = BS.splitAt (BS.length bm - ml) bm
-	cmac = calcMac hs sn mk $ BS.concat
-		[pre, B.addLen (undefined :: Word16) body]
-
-tupleToVersion :: (Word8, Word8) -> Maybe MSVersion
-tupleToVersion (3, 1) = Just TLS10
-tupleToVersion (3, 3) = Just TLS12
-tupleToVersion _ = Nothing
-
-type Bytes = BS.ByteString
-
-type PRF = Bytes -> Bytes -> Int -> Bytes
-
-data ClientRandom = ClientRandom BS.ByteString deriving Show
-data ServerRandom = ServerRandom BS.ByteString deriving Show
-
-generateMasterSecret :: Bytes -> BS.ByteString -> BS.ByteString -> Bytes
-generateMasterSecret pms c s = prfSha256 pms (BS.concat ["master secret", c, s]) 48
-
-generateKeyBlockTls :: PRF -> ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
-generateKeyBlockTls prf (ClientRandom c) (ServerRandom s) mastersecret =
-    prf mastersecret seed
-    where seed = BS.concat [ "key expansion", s, c ]
-
-data MSVersion = SSL2 | SSL3 | TLS10 | TLS11 | TLS12
-	deriving (Eq, Show)
-
-generateKeyBlock :: ClientRandom -> ServerRandom -> Bytes -> Int -> Bytes
-generateKeyBlock = generateKeyBlockTls prfSha256
-
-type HMAC = BS.ByteString -> BS.ByteString -> BS.ByteString
-
-hmac :: (BS.ByteString -> BS.ByteString) -> Int -> HMAC
-hmac f bl secret msg =
-    f $! BS.append opad (f $! BS.append ipad msg)
-  where opad = BS.map (xor 0x5c) k'
-        ipad = BS.map (xor 0x36) k'
-
-        k' = BS.append kt pad
-          where kt  = if BS.length secret > fromIntegral bl then f secret else secret
-                pad = BS.replicate (fromIntegral bl - BS.length kt) 0
-
-hmacSHA256 :: HMAC
-hmacSHA256 = hmac SHA256.hash 64
-
-hmacIter :: HMAC -> BS.ByteString -> BS.ByteString -> BS.ByteString -> Int -> [BS.ByteString]
-hmacIter f secret seed aprev len =
-    let an = f secret aprev in
-    let out = f secret (BS.concat [an, seed]) in
-    let digestsize = fromIntegral $ BS.length out in
-    if digestsize >= len
-        then [ BS.take (fromIntegral len) out ]
-        else out : hmacIter f secret seed an (len - digestsize)
-
-prfSha256 :: BS.ByteString -> BS.ByteString -> Int -> BS.ByteString
-prfSha256 secret seed len = BS.concat $ hmacIter hmacSHA256 secret seed seed len
+w16 :: Word16; w16 = undefined
