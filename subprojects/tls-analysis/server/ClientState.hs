@@ -2,14 +2,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module ClientState (
-	TlsClientState,
+	HandshakeState,
 	ClientId,
 	newClientId,
 	getBuffer, setBuffer,
 	getWriteBuffer, setWriteBuffer,
-	setRandomGen, getRandomGen,
-	succClientSequenceNumber, getClientSequenceNumber,
-	succServerSequenceNumber, getServerSequenceNumber,
+	setRandomGen, randomGen,
+	getClientSN, getServerSN, succClientSN, succServerSN,
 	initialTlsState,
 
 	ContentType(..),
@@ -20,6 +19,8 @@ module ClientState (
 
 	Alert(..), AlertLevel(..), AlertDescription(..),
 	alertToByteString,
+	alertLevelToWord8,
+	alertDescriptionToWord8,
 ) where
 
 import Prelude hiding (read)
@@ -34,13 +35,13 @@ import CipherSuite
 import "monads-tf" Control.Monad.Error.Class
 import Data.String
 
-data TlsClientState h gen = TlsClientState {
+data HandshakeState h gen = TlsClientState {
 	tlsRandomGen :: gen,
 	tlsNextClientId :: Int,
 	tlsClientStateList :: [(ClientId, TlsClientStateOne gen)] }
 
 setClientState :: ClientId -> TlsClientStateOne gen ->
-	TlsClientState h gen -> TlsClientState h gen
+	HandshakeState h gen -> HandshakeState h gen
 setClientState cid cso cs = cs {
 	tlsClientStateList = (cid, cso) : tlsClientStateList cs }
 
@@ -48,11 +49,11 @@ fromJust' :: String -> Maybe a -> a
 fromJust' _ (Just x) = x
 fromJust' msg _ = error msg
 
-getClientState :: ClientId -> TlsClientState h gen -> TlsClientStateOne gen
+getClientState :: ClientId -> HandshakeState h gen -> TlsClientStateOne gen
 getClientState cid = fromJust' "getClientState" . lookup cid . tlsClientStateList
 
 modifyClientState :: ClientId -> (TlsClientStateOne gen -> TlsClientStateOne gen) ->
-	TlsClientState h gen -> TlsClientState h gen
+	HandshakeState h gen -> HandshakeState h gen
 modifyClientState cid f cs = let
 	cso = getClientState cid cs in
 	setClientState cid (f cso) cs
@@ -65,7 +66,7 @@ data TlsClientStateOne gen = TlsClientStateOne {
 
 data ClientId = ClientId Int deriving (Show, Eq)
 
-newClientId :: TlsClientState h gen -> (ClientId, TlsClientState h gen)
+newClientId :: HandshakeState h gen -> (ClientId, HandshakeState h gen)
 newClientId s = (ClientId cid ,) s {
 	tlsNextClientId = succ cid,
 	tlsClientStateList = (ClientId cid, cs) : sl }
@@ -78,48 +79,48 @@ newClientId s = (ClientId cid ,) s {
 		tlsServerSequenceNumber = 0 }
 	sl = tlsClientStateList s
 
-getBuffer :: ClientId -> TlsClientState h gen -> (ContentType, BS.ByteString)
+getBuffer :: ClientId -> HandshakeState h gen -> (ContentType, BS.ByteString)
 getBuffer cid = tlsBuffer . fromJust' "getBuffer" . lookup cid . tlsClientStateList
 
 setBuffer ::
-	ClientId -> (ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
+	ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h gen)
 setBuffer cid = modifyClientState cid . sb
 	where sb bs st = st { tlsBuffer = bs }
 
-getWriteBuffer :: ClientId -> TlsClientState h gen -> (ContentType, BS.ByteString)
+getWriteBuffer :: ClientId -> HandshakeState h gen -> (ContentType, BS.ByteString)
 getWriteBuffer cid = tlsWriteBuffer .
 	fromJust' "getWriteBuffer" . lookup cid . tlsClientStateList
 
 setWriteBuffer ::
-	ClientId -> (ContentType, BS.ByteString) -> Modify (TlsClientState h gen)
+	ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h gen)
 setWriteBuffer cid = modifyClientState cid . swb
 	where swb bs st = st { tlsWriteBuffer = bs }
 
-setRandomGen :: gen -> TlsClientState h gen -> TlsClientState h gen
+setRandomGen :: gen -> HandshakeState h gen -> HandshakeState h gen
 setRandomGen rg st = st { tlsRandomGen = rg }
 
-getRandomGen :: TlsClientState h gen -> gen
-getRandomGen = tlsRandomGen
+randomGen :: HandshakeState h gen -> gen
+randomGen = tlsRandomGen
 
 type Modify s = s -> s
 
-succClientSequenceNumber, succServerSequenceNumber ::
-	ClientId -> Modify (TlsClientState h gen)
-succClientSequenceNumber cid = modifyClientState cid scsn
+succClientSN, succServerSN ::
+	ClientId -> Modify (HandshakeState h gen)
+succClientSN cid = modifyClientState cid scsn
 	where scsn st@TlsClientStateOne { tlsClientSequenceNumber = s } =
 		st { tlsClientSequenceNumber = succ s }
-succServerSequenceNumber cid = modifyClientState cid scsn
+succServerSN cid = modifyClientState cid scsn
 	where scsn st@TlsClientStateOne { tlsServerSequenceNumber = s } =
 		st { tlsServerSequenceNumber = succ s }
 
-getClientSequenceNumber, getServerSequenceNumber ::
-	ClientId -> TlsClientState h gen -> Word64
-getClientSequenceNumber cid =
+getClientSN, getServerSN ::
+	ClientId -> HandshakeState h gen -> Word64
+getClientSN cid =
 	tlsClientSequenceNumber . fromJust . lookup cid . tlsClientStateList
-getServerSequenceNumber cid =
+getServerSN cid =
 	tlsServerSequenceNumber . fromJust . lookup cid . tlsClientStateList
 
-initialTlsState :: gen -> TlsClientState h gen
+initialTlsState :: gen -> HandshakeState h gen
 initialTlsState g = TlsClientState {
 	tlsRandomGen = g,
 	tlsNextClientId = 0,
@@ -186,7 +187,7 @@ data Alert
 alertToByteString :: Alert -> BS.ByteString
 alertToByteString (Alert al ad _) = "\21\3\3\0\2" `BS.append`
 	BS.pack [alertLevelToWord8 al, alertDescriptionToWord8 ad]
-alertToByteString alt = error $ "alertToByteString: " ++ show alt
+alertToByteString (NotDetected m) = error $ "alertToByteString: " ++ m
 
 data AlertLevel
 	= AlertLevelWarning

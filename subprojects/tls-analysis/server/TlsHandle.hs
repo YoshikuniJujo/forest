@@ -14,7 +14,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Arrow (second)
 import Control.Monad (liftM, when, unless)
 import "monads-tf" Control.Monad.State (get, put, lift)
-import "monads-tf" Control.Monad.Error (throwError)
+import "monads-tf" Control.Monad.Error (throwError, catchError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Word (Word16, Word64)
 import Data.HandleLike (HandleLike(..))
@@ -26,10 +26,10 @@ import qualified Codec.Bytable as B
 import qualified Crypto.Hash.SHA256 as SHA256
 
 import TlsMonad (
-	TlsM, run, thlGet, thlPut, thlClose, thlDebug,
+	TlsM, evalTlsM, initialTlsState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getClientSn, getServerSn, succClientSn, succServerSn,
-	Alert(..), AlertLevel(..), AlertDescription(..), strToAlert,
+	Alert(..), AlertLevel(..), AlertDescription(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ClientId, newClientId, Keys(..), nullKeys )
 import qualified CryptoTools as CT (
@@ -43,6 +43,14 @@ data TlsHandle h g = TlsHandle {
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
 
 data Partner = Server | Client deriving (Show, Eq)
+
+run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
+run m g = do
+	ret <- (`evalTlsM` initialTlsState g) $ do
+		m `catchError` \a -> throwError a
+	case ret of
+		Right r -> return r
+		Left a -> error $ show a
 
 newHandle :: HandleLike h => h -> TlsM h g (TlsHandle h g)
 newHandle h = do
@@ -77,7 +85,7 @@ buffered t n = do
 		setBuf (clientId t) $ if BS.null b' then (CTNull, "") else (ct, b')
 		return (ct, ret)
 	else do	(ct', b') <- getWholeWithCt t
-		unless (ct' == ct) . throwError . strToAlert $
+		unless (ct' == ct) . throwError . strMsg $
 			"Content Type confliction\n" ++
 				"\tExpected: " ++ show ct ++ "\n" ++
 				"\tActual  : " ++ show ct' ++ "\n" ++
@@ -100,7 +108,7 @@ getWholeWithCt t = do
 read :: (HandleLike h, CPRG g) => TlsHandle h g -> Int -> TlsM h g BS.ByteString
 read t n = do
 	r <- thlGet (tlsHandle t) n
-	unless (BS.length r == n) . throwError . strToAlert $
+	unless (BS.length r == n) . throwError . strMsg $
 		"TlsHandle.read: can't read " ++ show (BS.length r) ++ " " ++ show n
 	return r
 

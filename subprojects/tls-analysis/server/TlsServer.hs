@@ -9,7 +9,8 @@ module TlsServer (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
-import "monads-tf" Control.Monad.Error (throwError, catchError)
+import "monads-tf" Control.Monad.Error (catchError)
+import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.List (find)
 import Data.Word (Word8)
@@ -34,7 +35,7 @@ import HandshakeBase (
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
-	Alert(..), AlertLevel(..), AlertDescription(..),
+	AlertLevel(..), AlertDescription(..),
 	ServerKeyExchange(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -45,7 +46,7 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1)
+	DhParam(..), dh3072Modp, secp256r1, throwError )
 
 type Version = (Word8, Word8)
 
@@ -64,19 +65,19 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	ha <- case be of
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
-		_ -> throwError
+		_ -> E.throwError
 			"TlsServer.openClient: not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
 		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
 		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
-		_ -> \_ _ -> throwError
+		_ -> \_ _ -> E.throwError
 			"TlsServer.openClient: not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
 	fok <- (==) `liftM` finishedHash Client `ap` readHandshake
-	unless fok . throwError $ Alert AlertLevelFatal
+	unless fok $ throwError AlertLevelFatal
 		AlertDescriptionDecryptError
 		"TlsServer.openClient: wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Server
@@ -110,13 +111,13 @@ clientHello cssv = do
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
 	chk cv css cms
-		| cv < version = throwError . Alert
+		| cv < version = throwError
 			AlertLevelFatal AlertDescriptionProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
-		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError . Alert
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError
 			AlertLevelFatal AlertDescriptionIllegalParameter $
 			pmsg ++ "TLS_RSA_AES_128_CBC_SHA must be supported"
-		| CompressionMethodNull `notElem` cms = throwError . Alert
+		| CompressionMethodNull `notElem` cms = throwError
 			AlertLevelFatal AlertDescriptionDecodeError $
 			pmsg ++ "compression method NULL must be supported"
 		| otherwise = return ()
@@ -131,7 +132,7 @@ serverHello cs@(CipherSuite ke _) rcc ecc = do
 		version sr (SessionId "") cs CompressionMethodNull Nothing
 	writeHandshake $ case ke of ECDHE_ECDSA -> ecc; _ -> rcc
 	return sr
-serverHello _ _ _ = throwError "TlsServer.serverHello: never occur"
+serverHello _ _ _ = E.throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
@@ -163,7 +164,7 @@ clientCertificate cs = do
 	where
 	chk cc = do
 		rs <- handshakeValidate cs cc
-		unless (null rs) . throwError . Alert AlertLevelFatal
+		unless (null rs) $ throwError AlertLevelFatal
 			(selectAlert rs) $
 			"TlsServer.clientCertificate: " ++ show rs
 	selectAlert rs
@@ -187,19 +188,19 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 	ClientKeyExchange cke <- readHandshake
 	epms <- case B.runBytableM (B.take =<< B.take 2) cke of
 		Right (e, "") -> return e
-		Left em -> throwError . strMsg $ pmsg ++ em
-		_ -> throwError . strMsg $ pmsg ++ " : more data"
+		Left em -> E.throwError . strMsg $ pmsg ++ em
+		_ -> E.throwError . strMsg $ pmsg ++ " : more data"
 	generateKeys rs =<< mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	pmsg = "TlsServer.clientKeyExchange: "
 	mkpms epms = do
 		pms <- decryptRsa sk epms
-		unless (BS.length pms == 48) $ throwError "mkpms: length"
+		unless (BS.length pms == 48) $ E.throwError "mkpms: length"
 		case BS.unpack $ BS.take 2 pms of
 			[pvj, pvn] -> unless (pvj == cvj && pvn == cvn) $
-				throwError "mkpms: version"
-			_ -> throwError "mkpms: never occur"
+				E.throwError "mkpms: version"
+			_ -> E.throwError "mkpms: never occur"
 		return pms
 
 dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp)) =>
@@ -207,7 +208,7 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp))
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
 	generateKeys rs =<< case calculateShared dp sv <$> B.decode cke of
-		Left em -> throwError . strMsg $
+		Left em -> E.throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
 		Right pv -> return pv
 
@@ -218,10 +219,10 @@ certificateVerify (X509.PubKeyRSA pk) = do
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Rsa) -> return ()
-		_ -> throwError . Alert AlertLevelFatal
+		_ -> throwError AlertLevelFatal
 			AlertDescriptionDecodeError $
 			"TlsServer.certificateVEerify: not implement: " ++ show a
-	unless (RSA.ep pk s == hs0) . throwError $ Alert
+	unless (RSA.ep pk s == hs0) $ throwError
 		AlertLevelFatal AlertDescriptionDecryptError
 		"TlsServer.certificateVerify: client auth failed "
 certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
@@ -230,18 +231,18 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Ecdsa) -> return ()
-		_ -> throwError . Alert
+		_ -> throwError
 			AlertLevelFatal AlertDescriptionDecodeError $
 			"TlsServer.certificateverify: not implement: " ++ show a
 	unless (ECDSA.verify id
 		(ECDSA.PublicKey secp256r1 $ pnt xy)
-		(either error id $ B.decode s) hs0) . throwError $ Alert
+		(either error id $ B.decode s) hs0) $ throwError
 			AlertLevelFatal AlertDescriptionDecryptError
 			"TlsServer.certificateverify: client auth failed"
 	where
 	pnt s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
 		(either error id $ B.decode x)
 		(either error id $ B.decode y)
-certificateVerify p = throwError . Alert
+certificateVerify p = throwError
 	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p

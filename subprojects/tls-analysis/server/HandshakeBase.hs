@@ -18,12 +18,11 @@ module HandshakeBase (
 		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
 	HM.Partner(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1 ) where
+	DhParam(..), dh3072Modp, secp256r1, HM.throwError ) where
 
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
-import "monads-tf" Control.Monad.Error (throwError)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import Numeric (readHex)
@@ -63,7 +62,7 @@ import qualified HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDescription(..),
-	Partner(..), handshakeHash, finishedHash )
+	Partner(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
@@ -71,12 +70,12 @@ readHandshake = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	hs <- case cnt of
 		CHandshake hs -> return hs
-		_ -> throwError $ HM.Alert
+		_ -> HM.throwError
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.readHandshake: not handshake"
 	case fromHandshake hs of
 		Just i -> return i
-		_ -> throwError . HM.Alert
+		_ -> HM.throwError
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage $
 			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
@@ -99,7 +98,7 @@ getChangeCipherSpec = do
 	cnt <- readContent HM.tlsGet =<< HM.tlsGetContentType
 	case cnt of
 		CCCSpec ChangeCipherSpec -> return ()
-		_ -> throwError $ HM.Alert
+		_ -> HM.throwError
 			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
 			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
 

@@ -9,7 +9,7 @@ module HandshakeMonad (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDescription(..),
-	TH.Partner(..), handshakeHash, finishedHash ) where
+	TH.Partner(..), handshakeHash, finishedHash, throwError ) where
 
 import Prelude hiding (read)
 
@@ -17,7 +17,7 @@ import Control.Arrow (first)
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, execStateT, get, gets, put, modify)
-import "monads-tf" Control.Monad.Error (throwError)
+import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
 import Data.Maybe (listToMaybe)
 import Data.HandleLike (HandleLike(..))
@@ -40,6 +40,12 @@ import qualified TlsHandle as TH (
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
+
+throwError :: HandleLike h =>
+	TH.AlertLevel -> TH.AlertDescription -> String -> HandshakeM h g a
+throwError al ad m = do
+--	h <- gets (TH.tlsHandle . fst)
+	E.throwError $ TH.Alert al ad m
 
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 
@@ -112,7 +118,7 @@ generateKeys (cr, sr) pms = do
 decryptRsa :: (HandleLike h, CPRG g) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
 decryptRsa sk e =
-	either (throwError . strMsg . show) return =<<
+	either (E.throwError . strMsg . show) return =<<
 	withRandom (\g -> RSA.decryptSafer g sk e)
 
 rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString

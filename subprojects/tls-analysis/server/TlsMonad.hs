@@ -1,94 +1,63 @@
-{-# LANGUAGE OverloadedStrings, PackageImports, RankNTypes, TupleSections,
-	FlexibleContexts #-}
+{-# LANGUAGE PackageImports #-}
 
 module TlsMonad (
-	TlsM, run,
-	thlPut, thlGet, thlDebug, thlError, thlClose,
-	getBuf, setBuf,
-	getWBuf, setWBuf,
-	withRandom, randomByteString,
-	getServerSn, getClientSn, succServerSn, succClientSn,
-
+	TlsM, evalTlsM, CS.initialTlsState,
+		thlGet, thlPut, thlClose, thlDebug, thlError,
+		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
+		getClientSn, getServerSn, succClientSn, succServerSn,
+	CS.Alert(..), CS.AlertLevel(..), CS.AlertDescription(..),
 	CS.ContentType(..),
 	CS.CipherSuite(..), CS.KeyExchange(..), CS.BulkEncryption(..),
-	CS.Keys(..),
-	CS.TlsClientState, CS.ClientId,
-	CS.initialTlsState,
+	CS.ClientId, CS.newClientId, CS.Keys(..), CS.nullKeys ) where
 
-	throwError, runErrorT, catchError, ErrorType, Error, MonadError, lift,
-	modify, StateT(..),
-	
-	CS.Alert(..), CS.AlertLevel(..), CS.AlertDescription(..),
-	CS.alertToByteString, strToAlert,
-
-	CS.newClientId, CS.nullKeys,
-) where
-
-import Prelude hiding (read)
-
-import "monads-tf" Control.Monad.State
-import "monads-tf" Control.Monad.Error
-import "monads-tf" Control.Monad.Error.Class
-import Data.Word
-import Data.HandleLike
+import Control.Monad (liftM)
+import "monads-tf" Control.Monad.Trans (lift)
+import "monads-tf" Control.Monad.State (StateT, evalStateT, gets, modify)
+import "monads-tf" Control.Monad.Error (ErrorT, runErrorT)
+import Data.Word (Word64)
+import Data.HandleLike (HandleLike(..))
+import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 
-import qualified ClientState as CS
+import qualified ClientState as CS (
+	HandshakeState, initialTlsState, ClientId, newClientId, Keys(..), nullKeys,
+	ContentType(..), Alert(..), AlertLevel(..), AlertDescription(..),
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	randomGen, setRandomGen,
+	setBuffer, getBuffer, setWriteBuffer, getWriteBuffer,
+	getClientSN, getServerSN, succClientSN, succServerSN )
 
-import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
+type TlsM h g = ErrorT CS.Alert (StateT (CS.HandshakeState h g) (HandleMonad h))
 
-run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
-run = (liftM fst .) . runClient
-
-runClient :: HandleLike h =>
-	TlsM h g a -> g -> HandleMonad h (a, CS.TlsClientState h g)
-runClient s g = do
-	(ret, st') <- s `runTlsM` CS.initialTlsState g
-	case ret of
-		Right r -> return (r, st')
-		Left msg -> error $ show msg
-
-type TlsM h g = ErrorT CS.Alert (StateT (HandshakeState h g) (HandleMonad h))
-
-runTlsM :: HandleLike h =>
-	TlsM h g a -> HandshakeState h g ->
-	HandleMonad h (Either CS.Alert a, HandshakeState h g)
-runTlsM m st = runErrorT m `runStateT` st
+evalTlsM :: HandleLike h => 
+	TlsM h g a -> CS.HandshakeState h g -> HandleMonad h (Either CS.Alert a)
+evalTlsM = evalStateT . runErrorT
 
 data Partner = Server | Client deriving (Show, Eq)
 
 getBuf, getWBuf ::  HandleLike h =>
 	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
-getBuf = gets . CS.getBuffer
-getWBuf = gets . CS.getWriteBuffer
+getBuf = gets . CS.getBuffer; getWBuf = gets . CS.getWriteBuffer
 
 setBuf, setWBuf :: HandleLike h =>
 	CS.ClientId -> (CS.ContentType, BS.ByteString) -> TlsM h g ()
-setBuf = (modify .) . CS.setBuffer
-setWBuf = (modify .) . CS.setWriteBuffer
+setBuf = (modify .) . CS.setBuffer; setWBuf = (modify .) . CS.setWriteBuffer
 
 getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64
-getServerSn = gets . CS.getServerSequenceNumber
-getClientSn = gets . CS.getClientSequenceNumber
+getServerSn = gets . CS.getServerSN; getClientSn = gets . CS.getClientSN
 
 succServerSn, succClientSn :: HandleLike h => CS.ClientId -> TlsM h g ()
-succServerSn = modify . CS.succServerSequenceNumber
-succClientSn = modify . CS.succClientSequenceNumber
+succServerSn = modify . CS.succServerSN; succClientSn = modify . CS.succClientSN
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
 withRandom p = do
-	gen <- gets randomGen
-	let (x, gen') = p gen
-	modify $ setRandomGen gen'
+	(x, g') <- p `liftM` gets CS.randomGen
+	modify $ CS.setRandomGen g'
 	return x
 
 randomByteString :: (HandleLike h, CPRG g) => Int -> TlsM h g BS.ByteString
 randomByteString = withRandom . cprgGenerate
-
-thlDebug :: HandleLike h =>
-	h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
-thlDebug = (((lift . lift) .) .) . hlDebug
 
 thlGet :: HandleLike h => h -> Int -> TlsM h g BS.ByteString
 thlGet = ((lift . lift) .) . hlGet
@@ -96,21 +65,12 @@ thlGet = ((lift . lift) .) . hlGet
 thlPut :: HandleLike h => h -> BS.ByteString -> TlsM h g ()
 thlPut = ((lift . lift) .) . hlPut
 
-thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
-thlError = ((lift . lift) .) . hlError
-
 thlClose :: HandleLike h => h -> TlsM h g ()
 thlClose = lift . lift . hlClose
 
-type HandshakeState h gen = CS.TlsClientState h gen
+thlDebug :: HandleLike h =>
+	h -> DebugLevel h -> BS.ByteString -> TlsM h gen ()
+thlDebug = (((lift . lift) .) .) . hlDebug
 
-type Modify s = s -> s
-
-randomGen :: HandshakeState h gen -> gen
-randomGen = CS.getRandomGen
-
-setRandomGen :: gen -> Modify (HandshakeState h gen)
-setRandomGen = CS.setRandomGen
-
-strToAlert :: String -> CS.Alert
-strToAlert = strMsg
+thlError :: HandleLike h => h -> BS.ByteString -> TlsM h g a
+thlError = ((lift . lift) .) . hlError
