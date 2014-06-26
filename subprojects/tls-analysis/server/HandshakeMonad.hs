@@ -8,7 +8,7 @@ module HandshakeMonad (
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, decryptRsa, rsaPadding,
-	TH.Alert(..), TH.AlertLevel(..), TH.AlertDescription(..),
+	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Partner(..), handshakeHash, finishedHash, throwError ) where
 
 import Prelude hiding (read)
@@ -34,7 +34,7 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
 import qualified TlsHandle as TH (
-	TlsM, Alert(..), AlertLevel(..), AlertDescription(..),
+	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandle(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
@@ -42,10 +42,8 @@ import qualified TlsHandle as TH (
 	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
 
 throwError :: HandleLike h =>
-	TH.AlertLevel -> TH.AlertDescription -> String -> HandshakeM h g a
-throwError al ad m = do
---	h <- gets (TH.tlsHandle . fst)
-	E.throwError $ TH.Alert al ad m
+	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
+throwError al ad m = E.throwError $ TH.Alert al ad m
 
 type HandshakeM h g = StateT (TH.TlsHandle h g, SHA256.Ctx) (TH.TlsM h g)
 

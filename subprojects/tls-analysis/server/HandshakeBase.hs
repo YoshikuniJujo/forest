@@ -7,7 +7,7 @@ module HandshakeBase (
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	HM.ValidateHandle(..), HM.handshakeValidate,
-	HM.Alert(..), HM.AlertLevel(..), HM.AlertDescription(..),
+	HM.Alert(..), HM.AlertLevel(..), HM.AlertDesc(..),
 	ServerKeyExchange(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -61,7 +61,7 @@ import qualified HandshakeMonad as HM (
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, decryptRsa, rsaPadding,
-	Alert(..), AlertLevel(..), AlertDescription(..),
+	Alert(..), AlertLevel(..), AlertDesc(..),
 	Partner(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
 
@@ -71,12 +71,12 @@ readHandshake = do
 	hs <- case cnt of
 		CHandshake hs -> return hs
 		_ -> HM.throwError
-			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
+			HM.ALFatal HM.ADUnexpectedMessage
 			"HandshakeBase.readHandshake: not handshake"
 	case fromHandshake hs of
 		Just i -> return i
 		_ -> HM.throwError
-			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage $
+			HM.ALFatal HM.ADUnexpectedMessage $
 			"HandshakeBase.readHandshake: type mismatch " ++ show hs
 
 writeHandshake ::
@@ -99,7 +99,7 @@ getChangeCipherSpec = do
 	case cnt of
 		CCCSpec ChangeCipherSpec -> return ()
 		_ -> HM.throwError
-			HM.AlertLevelFatal HM.AlertDescriptionUnexpectedMessage
+			HM.ALFatal HM.ADUnexpectedMessage
 			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()

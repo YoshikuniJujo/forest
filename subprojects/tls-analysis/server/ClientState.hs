@@ -1,236 +1,136 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, TypeFamilies, PackageImports #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
 module ClientState (
-	HandshakeState,
-	ClientId,
-	newClientId,
-	getBuffer, setBuffer,
-	getWriteBuffer, setWriteBuffer,
-	setRandomGen, randomGen,
-	getClientSN, getServerSN, succClientSN, succServerSN,
-	initialTlsState,
-
-	ContentType(..),
-
-	Keys(..),
-	nullKeys,
+	HandshakeState, initState, ClientId, newClientId, Keys(..), nullKeys,
+	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-
-	Alert(..), AlertLevel(..), AlertDescription(..),
-	alertToByteString,
-	alertLevelToWord8,
-	alertDescriptionToWord8,
+	randomGen, setRandomGen,
+	getBuf, setBuf, getWBuf, setWBuf,
+	getClientSN, getServerSN, succClientSN, succServerSN,
 ) where
 
-import Prelude hiding (read)
+import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
+import Data.Maybe (fromJust)
+import Data.Word (Word8, Word64)
+import Data.String (IsString(..))
 
-import Data.Maybe
-import Data.Word
 import qualified Data.ByteString as BS
-
 import qualified Codec.Bytable as B
-import CipherSuite
 
-import "monads-tf" Control.Monad.Error.Class
-import Data.String
+import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
-data HandshakeState h gen = TlsClientState {
-	tlsRandomGen :: gen,
-	tlsNextClientId :: Int,
-	tlsClientStateList :: [(ClientId, TlsClientStateOne gen)] }
+data HandshakeState h g = HandshakeState {
+	randomGen :: g, nextClientId :: Int,
+	clientStates :: [(ClientId, StateOne g)] }
 
-setClientState :: ClientId -> TlsClientStateOne gen ->
-	HandshakeState h gen -> HandshakeState h gen
-setClientState cid cso cs = cs {
-	tlsClientStateList = (cid, cso) : tlsClientStateList cs }
-
-fromJust' :: String -> Maybe a -> a
-fromJust' _ (Just x) = x
-fromJust' msg _ = error msg
-
-getClientState :: ClientId -> HandshakeState h gen -> TlsClientStateOne gen
-getClientState cid = fromJust' "getClientState" . lookup cid . tlsClientStateList
-
-modifyClientState :: ClientId -> (TlsClientStateOne gen -> TlsClientStateOne gen) ->
-	HandshakeState h gen -> HandshakeState h gen
-modifyClientState cid f cs = let
-	cso = getClientState cid cs in
-	setClientState cid (f cso) cs
-
-data TlsClientStateOne gen = TlsClientStateOne {
-	tlsBuffer :: (ContentType, BS.ByteString),
-	tlsWriteBuffer :: (ContentType, BS.ByteString),
-	tlsClientSequenceNumber :: Word64,
-	tlsServerSequenceNumber :: Word64 }
+initState :: g -> HandshakeState h g
+initState g = HandshakeState{ randomGen = g, nextClientId = 0, clientStates = [] }
 
 data ClientId = ClientId Int deriving (Show, Eq)
 
-newClientId :: HandshakeState h gen -> (ClientId, HandshakeState h gen)
-newClientId s = (ClientId cid ,) s {
-	tlsNextClientId = succ cid,
-	tlsClientStateList = (ClientId cid, cs) : sl }
+newClientId :: HandshakeState h g -> (ClientId, HandshakeState h g)
+newClientId s = (ClientId i ,) s{
+	nextClientId = succ i,
+	clientStates = (ClientId i, so) : sos }
 	where
-	cid = tlsNextClientId s
-	cs = TlsClientStateOne {
-		tlsBuffer = (CTNull, ""),
-		tlsWriteBuffer = (CTNull, ""),
-		tlsClientSequenceNumber = 0,
-		tlsServerSequenceNumber = 0 }
-	sl = tlsClientStateList s
+	i = nextClientId s
+	so = StateOne {
+		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
+		clientSN = 0, serverSN = 0 }
+	sos = clientStates s
 
-getBuffer :: ClientId -> HandshakeState h gen -> (ContentType, BS.ByteString)
-getBuffer cid = tlsBuffer . fromJust' "getBuffer" . lookup cid . tlsClientStateList
+data StateOne g = StateOne {
+	rBuffer :: (ContentType, BS.ByteString),
+	wBuffer :: (ContentType, BS.ByteString),
+	clientSN :: Word64, serverSN :: Word64 }
 
-setBuffer ::
-	ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h gen)
-setBuffer cid = modifyClientState cid . sb
-	where sb bs st = st { tlsBuffer = bs }
+getClientState :: ClientId -> HandshakeState h g -> StateOne g
+getClientState i = fromJust' "getClientState" . lookup i . clientStates
 
-getWriteBuffer :: ClientId -> HandshakeState h gen -> (ContentType, BS.ByteString)
-getWriteBuffer cid = tlsWriteBuffer .
-	fromJust' "getWriteBuffer" . lookup cid . tlsClientStateList
+setClientState :: ClientId -> StateOne g -> Modify (HandshakeState h g)
+setClientState i so s = s { clientStates = (i, so) : clientStates s }
 
-setWriteBuffer ::
-	ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h gen)
-setWriteBuffer cid = modifyClientState cid . swb
-	where swb bs st = st { tlsWriteBuffer = bs }
+modifyClientState :: ClientId -> Modify (StateOne g) -> Modify (HandshakeState h g)
+modifyClientState i f s = setClientState i (f $ getClientState i s) s
 
-setRandomGen :: gen -> HandshakeState h gen -> HandshakeState h gen
-setRandomGen rg st = st { tlsRandomGen = rg }
-
-randomGen :: HandshakeState h gen -> gen
-randomGen = tlsRandomGen
-
-type Modify s = s -> s
-
-succClientSN, succServerSN ::
-	ClientId -> Modify (HandshakeState h gen)
-succClientSN cid = modifyClientState cid scsn
-	where scsn st@TlsClientStateOne { tlsClientSequenceNumber = s } =
-		st { tlsClientSequenceNumber = succ s }
-succServerSN cid = modifyClientState cid scsn
-	where scsn st@TlsClientStateOne { tlsServerSequenceNumber = s } =
-		st { tlsServerSequenceNumber = succ s }
-
-getClientSN, getServerSN ::
-	ClientId -> HandshakeState h gen -> Word64
-getClientSN cid =
-	tlsClientSequenceNumber . fromJust . lookup cid . tlsClientStateList
-getServerSN cid =
-	tlsServerSequenceNumber . fromJust . lookup cid . tlsClientStateList
-
-initialTlsState :: gen -> HandshakeState h gen
-initialTlsState g = TlsClientState {
-	tlsRandomGen = g,
-	tlsNextClientId = 0,
-	tlsClientStateList = [] }
-
-data ContentType
-	= CTCCSpec
-	| CTAlert
-	| CTHandshake
-	| CTAppData
-	| CTNull
-	| CTRaw Word8
+data Keys = Keys {
+	kCachedCS :: CipherSuite,
+	kClientCS :: CipherSuite, kServerCS :: CipherSuite,
+	kMasterSecret :: BS.ByteString,
+	kCWMacKey :: BS.ByteString, kSWMacKey :: BS.ByteString,
+	kCWKey :: BS.ByteString, kSWKey :: BS.ByteString }
 	deriving (Show, Eq)
-
-instance B.Bytable ContentType where
-	decode = Right . byteStringToContentType
-	encode = contentTypeToByteString
-
-byteStringToContentType :: BS.ByteString -> ContentType
-byteStringToContentType "" = error "Types.byteStringToContentType: empty"
-byteStringToContentType "\20" = CTCCSpec
-byteStringToContentType "\21" = CTAlert
-byteStringToContentType "\22" = CTHandshake
-byteStringToContentType "\23" = CTAppData
-byteStringToContentType bs = let [ct] = BS.unpack bs in CTRaw ct
-
-contentTypeToByteString :: ContentType -> BS.ByteString
-contentTypeToByteString CTCCSpec = BS.pack [20]
-contentTypeToByteString CTAlert = BS.pack [21]
-contentTypeToByteString CTHandshake = BS.pack [22]
-contentTypeToByteString CTAppData = BS.pack [23]
-contentTypeToByteString CTNull = BS.pack [0]
-contentTypeToByteString (CTRaw ct) = BS.pack [ct]
 
 nullKeys :: Keys
 nullKeys = Keys {
-	kCachedCipherSuite = CipherSuite KE_NULL BE_NULL,
-	kClientCipherSuite = CipherSuite KE_NULL BE_NULL,
-	kServerCipherSuite = CipherSuite KE_NULL BE_NULL,
-
+	kCachedCS = CipherSuite KE_NULL BE_NULL,
+	kClientCS = CipherSuite KE_NULL BE_NULL,
+	kServerCS = CipherSuite KE_NULL BE_NULL,
 	kMasterSecret = "",
-	kClientWriteMacKey = "",
-	kServerWriteMacKey = "",
-	kClientWriteKey = "",
-	kServerWriteKey = "" }
+	kCWMacKey = "", kSWMacKey = "", kCWKey = "", kSWKey = "" }
 
-data Keys = Keys {
-	kCachedCipherSuite :: CipherSuite,
-	kClientCipherSuite :: CipherSuite,
-	kServerCipherSuite :: CipherSuite,
-
-	kMasterSecret :: BS.ByteString,
-	kClientWriteMacKey :: BS.ByteString,
-	kServerWriteMacKey :: BS.ByteString,
-	kClientWriteKey :: BS.ByteString,
-	kServerWriteKey :: BS.ByteString }
+data ContentType
+	= CTCCSpec | CTAlert | CTHandshake | CTAppData | CTNull | CTRaw Word8
 	deriving (Show, Eq)
 
-data Alert
-	= Alert AlertLevel AlertDescription String
-	| NotDetected String
+instance B.Bytable ContentType where
+	encode CTNull = BS.pack [0]
+	encode CTCCSpec = BS.pack [20]
+	encode CTAlert = BS.pack [21]
+	encode CTHandshake = BS.pack [22]
+	encode CTAppData = BS.pack [23]
+	encode (CTRaw ct) = BS.pack [ct]
+	decode "\0" = Right CTNull
+	decode "\20" = Right CTCCSpec
+	decode "\21" = Right CTAlert
+	decode "\22" = Right CTHandshake
+	decode "\23" = Right CTAppData
+	decode bs | [ct] <- BS.unpack bs = Right $ CTRaw ct
+	decode _ = Left "ClientState.decodeCT"
+
+data Alert = Alert AlertLevel AlertDesc String | NotDetected String
 	deriving Show
 
-alertToByteString :: Alert -> BS.ByteString
-alertToByteString (Alert al ad _) = "\21\3\3\0\2" `BS.append`
-	BS.pack [alertLevelToWord8 al, alertDescriptionToWord8 ad]
-alertToByteString (NotDetected m) = error $ "alertToByteString: " ++ m
+data AlertLevel = ALWarning | ALFatal | ALRaw Word8 deriving Show
 
-data AlertLevel
-	= AlertLevelWarning
-	| AlertLevelFatal
-	| AlertLevelRaw Word8
+data AlertDesc
+	= ADCloseNotify            | ADUnexpectedMessage  | ADBadRecordMac
+	| ADUnsupportedCertificate | ADCertificateExpired | ADCertificateUnknown
+	| ADIllegalParameter       | ADUnknownCa          | ADDecodeError
+	| ADDecryptError           | ADProtocolVersion    | ADRaw Word8
 	deriving Show
-
-alertLevelToWord8 :: AlertLevel -> Word8
-alertLevelToWord8 AlertLevelWarning = 1
-alertLevelToWord8 AlertLevelFatal = 2
-alertLevelToWord8 (AlertLevelRaw al) = al
-
-data AlertDescription
-	= AlertDescriptionCloseNotify
-	| AlertDescriptionUnexpectedMessage
-	| AlertDescriptionBadRecordMac
-	| AlertDescriptionUnsupportedCertificate
-	| AlertDescriptionCertificateExpired
-	| AlertDescriptionCertificateUnknown
-	| AlertDescriptionIllegalParameter
-	| AlertDescriptionUnknownCa
-	| AlertDescriptionDecodeError
-	| AlertDescriptionDecryptError
-	| AlertDescriptionProtocolVersion
-	| AlertDescriptionRaw Word8
-	deriving Show
-
-alertDescriptionToWord8 :: AlertDescription -> Word8
-alertDescriptionToWord8 AlertDescriptionCloseNotify = 0
-alertDescriptionToWord8 AlertDescriptionUnexpectedMessage = 10
-alertDescriptionToWord8 AlertDescriptionBadRecordMac = 20
-alertDescriptionToWord8 AlertDescriptionUnsupportedCertificate = 43
-alertDescriptionToWord8 AlertDescriptionCertificateExpired = 45
-alertDescriptionToWord8 AlertDescriptionCertificateUnknown = 46
-alertDescriptionToWord8 AlertDescriptionIllegalParameter = 47
-alertDescriptionToWord8 AlertDescriptionUnknownCa = 48
-alertDescriptionToWord8 AlertDescriptionDecodeError = 50
-alertDescriptionToWord8 AlertDescriptionDecryptError = 51
-alertDescriptionToWord8 AlertDescriptionProtocolVersion = 70
-alertDescriptionToWord8 (AlertDescriptionRaw ad) = ad
 
 instance Error Alert where
 	strMsg = NotDetected
 
 instance IsString Alert where
 	fromString = NotDetected
+
+setRandomGen :: g -> HandshakeState h g -> HandshakeState h g
+setRandomGen rg st = st { randomGen = rg }
+
+getBuf :: ClientId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getBuf i = rBuffer . fromJust' "getBuf" . lookup i . clientStates
+
+setBuf :: ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setBuf i = modifyClientState i . \bs st -> st { rBuffer = bs }
+
+getWBuf :: ClientId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . clientStates
+
+setWBuf :: ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setWBuf i = modifyClientState i . \bs st -> st{ wBuffer = bs }
+
+getClientSN, getServerSN :: ClientId -> HandshakeState h g -> Word64
+getClientSN i = clientSN . fromJust . lookup i . clientStates
+getServerSN i = serverSN . fromJust . lookup i . clientStates
+
+succClientSN, succServerSN :: ClientId -> Modify (HandshakeState h g)
+succClientSN i = modifyClientState i $ \s -> s{ clientSN = succ $ clientSN s }
+succServerSN i = modifyClientState i $ \s -> s{ serverSN = succ $ serverSN s }
+
+type Modify s = s -> s
+
+fromJust' :: String -> Maybe a -> a
+fromJust' _ (Just x) = x
+fromJust' msg _ = error msg

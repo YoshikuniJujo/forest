@@ -35,7 +35,7 @@ import HandshakeBase (
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
-	AlertLevel(..), AlertDescription(..),
+	AlertLevel(..), AlertDesc(..),
 	ServerKeyExchange(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -77,8 +77,7 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Client
 	fok <- (==) `liftM` finishedHash Client `ap` readHandshake
-	unless fok $ throwError AlertLevelFatal
-		AlertDescriptionDecryptError
+	unless fok $ throwError ALFatal ADDecryptError
 		"TlsServer.openClient: wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake =<< finishedHash Server
@@ -111,15 +110,14 @@ clientHello cssv = do
 	merge sv cl = case find (`elem` cl) sv of
 		Just cs -> cs; _ -> CipherSuite RSA AES_128_CBC_SHA
 	chk cv css cms
-		| cv < version = throwError
-			AlertLevelFatal AlertDescriptionProtocolVersion $
+		| cv < version = throwError ALFatal ADProtocolVersion $
 			pmsg ++ "client version should 3.3 or more"
-		| CipherSuite RSA AES_128_CBC_SHA `notElem` css = throwError
-			AlertLevelFatal AlertDescriptionIllegalParameter $
-			pmsg ++ "TLS_RSA_AES_128_CBC_SHA must be supported"
-		| CompressionMethodNull `notElem` cms = throwError
-			AlertLevelFatal AlertDescriptionDecodeError $
-			pmsg ++ "compression method NULL must be supported"
+		| CipherSuite RSA AES_128_CBC_SHA `notElem` css =
+			throwError ALFatal ADIllegalParameter $
+				pmsg ++ "TLS_RSA_AES_128_CBC_SHA must be supported"
+		| CompressionMethodNull `notElem` cms =
+			throwError ALFatal ADDecodeError $
+				pmsg ++ "compression method NULL must be supported"
 		| otherwise = return ()
 		where pmsg = "TlsServer.clientHello: "
 
@@ -164,14 +162,13 @@ clientCertificate cs = do
 	where
 	chk cc = do
 		rs <- handshakeValidate cs cc
-		unless (null rs) $ throwError AlertLevelFatal
-			(selectAlert rs) $
+		unless (null rs) . throwError ALFatal (selectAlert rs) $
 			"TlsServer.clientCertificate: " ++ show rs
 	selectAlert rs
-		| X509.UnknownCA `elem` rs = AlertDescriptionUnknownCa
-		| X509.Expired `elem` rs = AlertDescriptionCertificateExpired
-		| X509.InFuture `elem` rs = AlertDescriptionCertificateExpired
-		| otherwise = AlertDescriptionCertificateUnknown
+		| X509.UnknownCA `elem` rs = ADUnknownCa
+		| X509.Expired `elem` rs = ADCertificateExpired
+		| X509.InFuture `elem` rs = ADCertificateExpired
+		| otherwise = ADCertificateUnknown
 	names cc = maybe id (:) <$> nms <*> ans $ crt cc
 	nms = (ASN1.asn1CharacterToString =<<) .
 		X509.getDnElement X509.DnCommonName . X509.certSubjectDN
@@ -219,11 +216,9 @@ certificateVerify (X509.PubKeyRSA pk) = do
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Rsa) -> return ()
-		_ -> throwError AlertLevelFatal
-			AlertDescriptionDecodeError $
+		_ -> throwError ALFatal ADDecodeError $
 			"TlsServer.certificateVEerify: not implement: " ++ show a
-	unless (RSA.ep pk s == hs0) $ throwError
-		AlertLevelFatal AlertDescriptionDecryptError
+	unless (RSA.ep pk s == hs0) $ throwError ALFatal ADDecryptError
 		"TlsServer.certificateVerify: client auth failed "
 certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	debugCipherSuite "ECDSA"
@@ -231,18 +226,16 @@ certificateVerify (X509.PubKeyECDSA ECC.SEC_p256r1 xy) = do
 	DigitallySigned a s <- readHandshake
 	case a of
 		(Sha256, Ecdsa) -> return ()
-		_ -> throwError
-			AlertLevelFatal AlertDescriptionDecodeError $
+		_ -> throwError ALFatal ADDecodeError $
 			"TlsServer.certificateverify: not implement: " ++ show a
 	unless (ECDSA.verify id
 		(ECDSA.PublicKey secp256r1 $ pnt xy)
 		(either error id $ B.decode s) hs0) $ throwError
-			AlertLevelFatal AlertDescriptionDecryptError
+			ALFatal ADDecryptError
 			"TlsServer.certificateverify: client auth failed"
 	where
 	pnt s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
 		(either error id $ B.decode x)
 		(either error id $ B.decode y)
-certificateVerify p = throwError
-	AlertLevelFatal AlertDescriptionUnsupportedCertificate $
+certificateVerify p = throwError ALFatal ADUnsupportedCertificate $
 	"TlsServer.certificateVerify: not implement: " ++ show p

@@ -1,11 +1,11 @@
 {-# LANGUAGE PackageImports #-}
 
 module TlsMonad (
-	TlsM, evalTlsM, CS.initialTlsState,
+	TlsM, evalTlsM, CS.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getClientSn, getServerSn, succClientSn, succServerSn,
-	CS.Alert(..), CS.AlertLevel(..), CS.AlertDescription(..),
+	CS.Alert(..), CS.AlertLevel(..), CS.AlertDesc(..),
 	CS.ContentType(..),
 	CS.CipherSuite(..), CS.KeyExchange(..), CS.BulkEncryption(..),
 	CS.ClientId, CS.newClientId, CS.Keys(..), CS.nullKeys ) where
@@ -21,11 +21,11 @@ import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 import qualified Data.ByteString as BS
 
 import qualified ClientState as CS (
-	HandshakeState, initialTlsState, ClientId, newClientId, Keys(..), nullKeys,
-	ContentType(..), Alert(..), AlertLevel(..), AlertDescription(..),
+	HandshakeState, initState, ClientId, newClientId, Keys(..), nullKeys,
+	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
-	setBuffer, getBuffer, setWriteBuffer, getWriteBuffer,
+	setBuf, getBuf, setWBuf, getWBuf,
 	getClientSN, getServerSN, succClientSN, succServerSN )
 
 type TlsM h g = ErrorT CS.Alert (StateT (CS.HandshakeState h g) (HandleMonad h))
@@ -38,11 +38,11 @@ data Partner = Server | Client deriving (Show, Eq)
 
 getBuf, getWBuf ::  HandleLike h =>
 	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
-getBuf = gets . CS.getBuffer; getWBuf = gets . CS.getWriteBuffer
+getBuf = gets . CS.getBuf; getWBuf = gets . CS.getWBuf
 
 setBuf, setWBuf :: HandleLike h =>
 	CS.ClientId -> (CS.ContentType, BS.ByteString) -> TlsM h g ()
-setBuf = (modify .) . CS.setBuffer; setWBuf = (modify .) . CS.setWriteBuffer
+setBuf = (modify .) . CS.setBuf; setWBuf = (modify .) . CS.setWBuf
 
 getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64
 getServerSn = gets . CS.getServerSN; getClientSn = gets . CS.getClientSN
