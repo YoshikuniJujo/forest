@@ -2,8 +2,6 @@
 
 module ClSecretKey (ClSecretKey(..)) where
 
-import Data.Maybe
-
 import qualified Data.X509 as X509
 import qualified Data.ByteString as BS
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
@@ -14,7 +12,12 @@ import Data.ASN1.BinaryEncoding
 import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.PubKey.RSA as RSA
 
+import qualified Crypto.Hash.SHA256 as SHA256
+import qualified Crypto.Types.PubKey.ECC as ECC
+
 import HandshakeBase
+
+import Ecdsa
 
 class ClSecretKey sk where
 	type SecPubKey sk
@@ -25,7 +28,11 @@ class ClSecretKey sk where
 instance ClSecretKey ECDSA.PrivateKey where
 	type SecPubKey ECDSA.PrivateKey = ()
 	getPubKey _ _ = ()
-	clSign sk _ = encodeSignature . fromJust . ECDSA.signWith 4649 sk id
+	clSign sk _ m = encodeSignature $ -- fromJust . ECDSA.signWith 4649 sk id
+		blindSign 1 id sk (generateKs (SHA256.hash, 64) q x m) m
+		where
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
+		x = ECDSA.private_d sk
 	clAlgorithm _ = (Sha256, Ecdsa)
 
 encodeSignature :: ECDSA.Signature -> BS.ByteString
