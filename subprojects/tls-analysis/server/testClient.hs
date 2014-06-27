@@ -12,7 +12,6 @@ import Control.Concurrent.STM
 import qualified Data.ByteString as BS
 import ReadFile
 import System.IO
-import TestServer
 import CommandLine
 import System.Environment
 
@@ -20,6 +19,8 @@ import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
+
+import TestServer
 
 -- import ForClientTest
 
