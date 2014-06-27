@@ -28,7 +28,7 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import TlsMonad (
 	TlsM, evalTlsM, initState, thlGet, thlPut, thlClose, thlDebug,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
-		getClientSn, getServerSn, succClientSn, succServerSn,
+		getReadSn, getWriteSn, succReadSn, succWriteSn,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PartnerId, newPartnerId, Keys(..), nullKeys )
@@ -118,7 +118,7 @@ decrypt t@TlsHandle{ keys = ks } ct e = do
 	let	CipherSuite _ be = kReadCS ks
 		wk = kReadKey ks
 		mk = kReadMacKey ks
-	sn <- updateSequenceNumber t Client
+	sn <- updateSequenceNumber t Read
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
@@ -156,7 +156,7 @@ encrypt t@TlsHandle{ keys = ks } ct p = do
 	let	CipherSuite _ be = kWriteCS ks
 		wk = kWriteKey ks
 		mk = kWriteMacKey ks
-	sn <- updateSequenceNumber t Server
+	sn <- updateSequenceNumber t Write
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
@@ -167,16 +167,16 @@ updateHash ::
 	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
 updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 
-updateSequenceNumber :: HandleLike h => TlsHandle h g -> Side -> TlsM h g Word64
-updateSequenceNumber t@TlsHandle{ keys = ks } p = do
-	(sn, cs) <- case p of
-		Client -> (, kReadCS ks) `liftM` getClientSn (clientId t)
-		Server -> (, kWriteCS ks) `liftM` getServerSn (clientId t)
+updateSequenceNumber :: HandleLike h => TlsHandle h g -> RW -> TlsM h g Word64
+updateSequenceNumber t@TlsHandle{ keys = ks } rw = do
+	(sn, cs) <- case rw of
+		Read -> (, kReadCS ks) `liftM` getReadSn (clientId t)
+		Write -> (, kWriteCS ks) `liftM` getWriteSn (clientId t)
 	case cs of
 		CipherSuite _ BE_NULL -> return ()
-		_ -> case p of
-			Client -> succClientSn $ clientId t
-			Server -> succServerSn $ clientId t
+		_ -> case rw of
+			Read -> succReadSn $ clientId t
+			Write -> succWriteSn $ clientId t
 	return sn
 
 generateKeys :: HandleLike h => Side -> CipherSuite ->

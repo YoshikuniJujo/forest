@@ -6,7 +6,7 @@ module State (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	getBuf, setBuf, getWBuf, setWBuf,
-	getClientSN, getServerSN, succClientSN, succServerSN,
+	getReadSN, getWriteSN, succReadSN, succWriteSN,
 ) where
 
 import "monads-tf" Control.Monad.Error.Class (Error(strMsg))
@@ -36,13 +36,13 @@ newPartnerId s = (PartnerId i ,) s{
 	i = nextPartnerId s
 	so = StateOne {
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
-		clientSN = 0, serverSN = 0 }
+		readSN = 0, writeSN = 0 }
 	sos = states s
 
 data StateOne g = StateOne {
 	rBuffer :: (ContentType, BS.ByteString),
 	wBuffer :: (ContentType, BS.ByteString),
-	clientSN :: Word64, serverSN :: Word64 }
+	readSN :: Word64, writeSN :: Word64 }
 
 getState :: PartnerId -> HandshakeState h g -> StateOne g
 getState i = fromJust' "getState" . lookup i . states
@@ -121,13 +121,13 @@ getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
 setWBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
 setWBuf i = modifyState i . \bs st -> st{ wBuffer = bs }
 
-getClientSN, getServerSN :: PartnerId -> HandshakeState h g -> Word64
-getClientSN i = clientSN . fromJust . lookup i . states
-getServerSN i = serverSN . fromJust . lookup i . states
+getReadSN, getWriteSN :: PartnerId -> HandshakeState h g -> Word64
+getReadSN i = readSN . fromJust . lookup i . states
+getWriteSN i = writeSN . fromJust . lookup i . states
 
-succClientSN, succServerSN :: PartnerId -> Modify (HandshakeState h g)
-succClientSN i = modifyState i $ \s -> s{ clientSN = succ $ clientSN s }
-succServerSN i = modifyState i $ \s -> s{ serverSN = succ $ serverSN s }
+succReadSN, succWriteSN :: PartnerId -> Modify (HandshakeState h g)
+succReadSN i = modifyState i $ \s -> s{ readSN = succ $ readSN s }
+succWriteSN i = modifyState i $ \s -> s{ writeSN = succ $ writeSN s }
 
 type Modify s = s -> s
 

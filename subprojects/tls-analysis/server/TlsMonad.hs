@@ -4,7 +4,7 @@ module TlsMonad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
-		getClientSn, getServerSn, succClientSn, succServerSn,
+		getReadSn, getWriteSn, succReadSn, succWriteSn,
 	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
 	S.ContentType(..),
 	S.CipherSuite(..), S.KeyExchange(..), S.BulkEncryption(..),
@@ -26,7 +26,7 @@ import qualified State as S (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
-	getClientSN, getServerSN, succClientSN, succServerSN )
+	getReadSN, getWriteSN, succReadSN, succWriteSN )
 
 type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
 
@@ -42,11 +42,11 @@ setBuf, setWBuf :: HandleLike h =>
 	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()
 setBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
 
-getServerSn, getClientSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
-getServerSn = gets . S.getServerSN; getClientSn = gets . S.getClientSN
+getWriteSn, getReadSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
+getWriteSn = gets . S.getWriteSN; getReadSn = gets . S.getReadSN
 
-succServerSn, succClientSn :: HandleLike h => S.PartnerId -> TlsM h g ()
-succServerSn = modify . S.succServerSN; succClientSn = modify . S.succClientSN
+succWriteSn, succReadSn :: HandleLike h => S.PartnerId -> TlsM h g ()
+succWriteSn = modify . S.succWriteSN; succReadSn = modify . S.succReadSN
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
 withRandom p = do
