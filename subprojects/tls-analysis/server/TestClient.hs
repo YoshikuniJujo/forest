@@ -20,15 +20,20 @@ import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
 import qualified Codec.Bytable as B
 import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
+	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
 	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
+	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
 	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
+	CipherSuite DHE_RSA AES_128_CBC_SHA256,
 	CipherSuite DHE_RSA AES_128_CBC_SHA,
+	CipherSuite RSA AES_128_CBC_SHA256,
 	CipherSuite RSA AES_128_CBC_SHA
  ]
 
@@ -69,8 +74,9 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 	generateKeys Client (cr, sr) pms
 	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
-			clSign rsk rcpk hs
+		Just _ -> writeHandshake
+			. DigitallySigned (clAlgorithm rsk)
+			$ clSign rsk rcpk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake =<< finishedHash Client
@@ -114,13 +120,23 @@ dheHandshake cr sr (rsk, rcc) crtS = do
 	ServerKeyExDhe edp pv ha sa sn <- readHandshake
 	let	v = RSA.ep pk sn
 		v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
-		Right [ASN1.Start ASN1.Sequence, ASN1.Start ASN1.Sequence,
-			ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
-			ASN1.End ASN1.Sequence,
-			ASN1.OctetString v'', ASN1.End ASN1.Sequence
-			] = ASN1.decodeASN1' ASN1.DER v'
+		v'' = case ha of
+			Sha1 -> let Right [ASN1.Start ASN1.Sequence,
+					ASN1.Start ASN1.Sequence,
+					ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
+					ASN1.End ASN1.Sequence,
+					ASN1.OctetString o, ASN1.End ASN1.Sequence
+					] = ASN1.decodeASN1' ASN1.DER v' in o
+			Sha256 -> let Right [ASN1.Start ASN1.Sequence,
+					ASN1.Start ASN1.Sequence,
+					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1], ASN1.Null,
+					ASN1.End ASN1.Sequence,
+					ASN1.OctetString o, ASN1.End ASN1.Sequence
+					] = ASN1.decodeASN1' ASN1.DER v' in o
+			_ -> error "bad"
 	debug v''
 	debug . SHA1.hash $ BS.concat [cr, sr, B.encode edp, B.encode pv]
+	debug . SHA256.hash $ BS.concat [cr, sr, B.encode edp, B.encode pv]
 	shd <- readHandshake
 	cReq <- case shd of
 		Left (CertificateRequest csa hsa dn) -> do
@@ -161,15 +177,26 @@ ecdheHandshake cr sr (rsk, rcc) crtS = do
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 	ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+	debug ha
 	let	v = RSA.ep pk sn
 		v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
-		Right [ASN1.Start ASN1.Sequence, ASN1.Start ASN1.Sequence,
-			ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
-			ASN1.End ASN1.Sequence,
-			ASN1.OctetString v'', ASN1.End ASN1.Sequence
-			] = ASN1.decodeASN1' ASN1.DER v'
+		v'' = case ha of
+			Sha1 -> let Right [ASN1.Start ASN1.Sequence,
+					ASN1.Start ASN1.Sequence,
+					ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
+					ASN1.End ASN1.Sequence,
+					ASN1.OctetString o, ASN1.End ASN1.Sequence
+					] = ASN1.decodeASN1' ASN1.DER v' in o
+			Sha256 -> let Right [ASN1.Start ASN1.Sequence,
+					ASN1.Start ASN1.Sequence,
+					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1], ASN1.Null,
+					ASN1.End ASN1.Sequence,
+					ASN1.OctetString o, ASN1.End ASN1.Sequence
+					] = ASN1.decodeASN1' ASN1.DER v' in o
+			_ -> error "bad"
 	debug v''
 	debug . SHA1.hash $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
+	debug . SHA256.hash $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
 	shd <- readHandshake
 	cReq <- case shd of
 		Left (CertificateRequest csa hsa dn) -> do
@@ -177,7 +204,6 @@ ecdheHandshake cr sr (rsk, rcc) crtS = do
 			return $ Just (csa, hsa, dn)
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
-	debug ha
 	debug sa
 	sv <- withRandom $ generateSecret cv
 	let cpv = B.encode $ calculatePublic cv sv
@@ -212,7 +238,12 @@ ecdsaHandshake cr sr (rsk, rcc) crtS = do
 	ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
 	let Right s = B.decode sn
 	debug ("here" :: String)
-	debug $ ECDSA.verify SHA1.hash
+	debug ha
+	let hash = case ha of
+		Sha1 -> SHA1.hash
+		Sha256 -> SHA256.hash
+		_ -> error "bad"
+	debug $ ECDSA.verify hash
 		(ECDSA.PublicKey secp256r1 $ point spnt) s $
 		BS.concat [cr, sr, B.encode cv, B.encode pnt]
 	shd <- readHandshake
@@ -222,7 +253,6 @@ ecdsaHandshake cr sr (rsk, rcc) crtS = do
 			return $ Just (csa, hsa, dn)
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
-	debug ha
 	debug sa
 	sv <- withRandom $ generateSecret cv
 	let cpv = B.encode $ calculatePublic cv sv
@@ -232,8 +262,9 @@ ecdsaHandshake cr sr (rsk, rcc) crtS = do
 	writeHandshake $ ClientKeyExchange cpv
 	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
-			clSign rsk rcpk hs
+		Just _ -> writeHandshake
+			. DigitallySigned (clAlgorithm rsk)
+			$ clSign rsk rcpk hs
 		_ -> return ()
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 	putChangeCipherSpec >> flushCipherSuite Server
