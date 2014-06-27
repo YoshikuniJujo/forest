@@ -97,10 +97,11 @@ dheHandshake :: (ValidateHandle h, CPRG g) =>
 	BS.ByteString -> BS.ByteString ->
 	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
-dheHandshake cr sr (rsk, rcc) _crtS = do
+dheHandshake cr sr (rsk, rcc) crtS = do
 	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-	X509.CertificateChain [ccc] <- readHandshake
+	cc@(X509.CertificateChain [ccc]) <- readHandshake
+	handshakeValidate crtS cc >>= debug
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 	ServerKeyExDhe edp pv ha sa sn <- readHandshake
