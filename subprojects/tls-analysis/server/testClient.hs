@@ -4,6 +4,7 @@ import Control.Applicative
 import Control.Concurrent.STM
 import Control.Concurrent
 import Data.HandleLike
+import System.IO
 import System.Environment
 import "crypto-random" Crypto.Random
 
@@ -12,14 +13,16 @@ import qualified Data.ByteString as BS
 import TestServer
 import TestClient
 import CommandLine
+import ReadFile
 
 main :: IO ()
 main = do
+	crtS <- readCertificateStore ["cacert.pem"]
 	(_prt, cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(cw, sw) <- getPair
 	_ <- forkIO $ server g0 sw cs rsa ec mcs
-	client g0 cw
+	client g0 cw crtS
 
 data ChanHandle = ChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
 
@@ -39,7 +42,7 @@ instance HandleLike ChanHandle where
 	hlClose _ = return ()
 
 instance ValidateHandle ChanHandle where
-	validate _ _ _ = return []
+	validate _ = validate (undefined :: Handle)
 
 getPair :: IO (ChanHandle, ChanHandle)
 getPair = do

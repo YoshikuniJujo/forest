@@ -12,6 +12,7 @@ import Data.HandleLike
 
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
@@ -19,20 +20,22 @@ cipherSuites = [
 	CipherSuite RSA AES_128_CBC_SHA
  ]
 
-client :: (HandleLike h, CPRG g) => g -> h -> HandleMonad h ()
-client g h = (`run` g) $ do
+client :: (ValidateHandle h, CPRG g) =>
+	g -> h -> X509.CertificateStore -> HandleMonad h ()
+client g h crtS = (`run` g) $ do
 	t <- execHandshakeM h $ do
 		cr <- randomByteString 32
 		writeHandshake $ ClientHello (3, 3) cr (SessionId "")
 			cipherSuites [CompressionMethodNull] Nothing
 		ServerHello _v sr _sid cs _cm _e <- readHandshake
-		X509.CertificateChain [cc] <- readHandshake
+		cc@(X509.CertificateChain [ccc]) <- readHandshake
 		ServerHelloDone <- readHandshake
 		setCipherSuite cs
+		handshakeValidate crtS cc >>= debug
 		debug cs
-		debug . X509.certSubjectDN . X509.signedObject $ X509.getSigned cc
+		debug . X509.certSubjectDN . X509.signedObject $ X509.getSigned ccc
 		let X509.PubKeyRSA pk =
-			X509.certPubKey . X509.signedObject $ X509.getSigned cc
+			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 		pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
 		epms <- encryptRsa pk pms
 		writeHandshake $ Epms epms
