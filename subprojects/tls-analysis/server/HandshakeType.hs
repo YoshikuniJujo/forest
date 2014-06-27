@@ -73,6 +73,13 @@ class HandshakeItem hi where
 	fromHandshake :: Handshake -> Maybe hi;
 	toHandshake :: hi -> Handshake
 
+instance (HandshakeItem l, HandshakeItem r) => HandshakeItem (Either l r) where
+	fromHandshake hs = let
+		l = fromHandshake hs
+		r = fromHandshake hs in maybe (Right <$> r) (Just . Left) l
+	toHandshake (Left l) = toHandshake l
+	toHandshake (Right r) = toHandshake r
+
 instance HandshakeItem ClientHello where
 	fromHandshake (HClientHello ch) = Just ch
 	fromHandshake _ = Nothing

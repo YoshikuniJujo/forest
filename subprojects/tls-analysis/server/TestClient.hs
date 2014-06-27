@@ -34,21 +34,30 @@ client g h (rsk, rcc) crtS = (`run` g) $ do
 			cipherSuites [CompressionMethodNull] Nothing
 		ServerHello _v sr _sid cs _cm _e <- readHandshake
 		cc@(X509.CertificateChain [ccc]) <- readHandshake
-		CertificateRequest _ _ _ <- readHandshake -- client certificate
-		ServerHelloDone <- readHandshake
+		shd <- readHandshake -- client certificate
+		cReq <- case shd of
+			Left (CertificateRequest sa hsa dn) -> do
+				ServerHelloDone <- readHandshake
+				return $ Just (sa, hsa, dn)
+			Right ServerHelloDone -> return Nothing
+			_ -> error "bad"
+--		debug cReq
 		setCipherSuite cs
 		handshakeValidate crtS cc >>= debug
 		debug cs
---		debug . X509.certSubjectDN . X509.signedObject $ X509.getSigned ccc
 		let X509.PubKeyRSA pk =
 			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 		pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
 		epms <- encryptRsa pk pms
-		writeHandshake rcc -- client certificate
+		case cReq of
+			Just _ -> writeHandshake rcc -- client certificate
+			_ -> return ()
 		writeHandshake $ Epms epms
 		generateKeys Client (cr, sr) pms
 		hs <- rsaPadding rcpk `liftM` handshakeHash
-		writeHandshake $ DigitallySigned (Sha256, Rsa) $ RSA.dp Nothing rsk hs -- client certificate
+		case cReq of
+			Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $ RSA.dp Nothing rsk hs -- client certificate
+			_ -> return ()
 		putChangeCipherSpec >> flushCipherSuite Server
 		writeHandshake =<< finishedHash Client
 		getChangeCipherSpec >> flushCipherSuite Client
