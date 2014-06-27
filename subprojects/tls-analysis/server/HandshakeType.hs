@@ -9,7 +9,7 @@ module HandshakeType (
 	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
-	ServerHelloDone(..), ClientKeyExchange(..),
+	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
 
 import Control.Applicative ((<$>))
@@ -118,6 +118,21 @@ instance HandshakeItem ClientKeyExchange where
 	fromHandshake (HClientKeyEx cke) = Just cke
 	fromHandshake _ = Nothing
 	toHandshake = HClientKeyEx
+
+data Epms = Epms BS.ByteString
+
+instance HandshakeItem Epms where
+	fromHandshake (HClientKeyEx cke) = ckeToEpms cke
+	fromHandshake _ = Nothing
+	toHandshake = HClientKeyEx . epmsToCke
+
+ckeToEpms :: ClientKeyExchange -> Maybe Epms
+ckeToEpms (ClientKeyExchange cke) = case B.runBytableM (B.take =<< B.take 2) cke of
+	Right (e, "") -> Just $ Epms e
+	_ -> Nothing
+
+epmsToCke :: Epms -> ClientKeyExchange
+epmsToCke (Epms epms) = ClientKeyExchange $ B.addLen (undefined :: Word16) epms
 
 data Finished = Finished BS.ByteString deriving (Show, Eq)
 

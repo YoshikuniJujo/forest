@@ -7,7 +7,7 @@ module HandshakeMonad (
 		setClientNames, checkName, clientName,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
-		generateKeys, decryptRsa, rsaPadding,
+		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
 	TH.Partner(..), handshakeHash, finishedHash, throwError ) where
 
@@ -106,17 +106,21 @@ tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 
-generateKeys :: HandleLike h =>
+generateKeys :: HandleLike h => TH.Partner ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
-generateKeys (cr, sr) pms = do
+generateKeys p (cr, sr) pms = do
 	t <- gets fst
-	k <- lift $ TH.generateKeys (TH.cipherSuite t) cr sr pms
+	k <- lift $ TH.generateKeys p (TH.cipherSuite t) cr sr pms
 	modify . first $ const t { TH.keys = k }
+
+encryptRsa :: (HandleLike h, CPRG g) =>
+	RSA.PublicKey -> BS.ByteString -> HandshakeM h g BS.ByteString
+encryptRsa pk p = either (E.throwError . strMsg . show) return =<<
+	withRandom (\g -> RSA.encrypt g pk p)
 
 decryptRsa :: (HandleLike h, CPRG g) =>
 	RSA.PrivateKey -> BS.ByteString -> HandshakeM h g BS.ByteString
-decryptRsa sk e =
-	either (E.throwError . strMsg . show) return =<<
+decryptRsa sk e = either (E.throwError . strMsg . show) return =<<
 	withRandom (\g -> RSA.decryptSafer g sk e)
 
 rsaPadding :: RSA.PublicKey -> BS.ByteString -> BS.ByteString

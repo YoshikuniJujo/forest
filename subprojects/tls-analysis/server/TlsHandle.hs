@@ -179,9 +179,9 @@ updateSequenceNumber t@TlsHandle{ keys = ks } p = do
 			Server -> succServerSn $ clientId t
 	return sn
 
-generateKeys :: HandleLike h => CipherSuite ->
+generateKeys :: HandleLike h => Partner -> CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
-generateKeys cs cr sr pms = do
+generateKeys p cs cr sr pms = do
 	let CipherSuite _ be = cs
 	kl <- case be of
 		AES_128_CBC_SHA -> return 20
@@ -189,12 +189,21 @@ generateKeys cs cr sr pms = do
 		_ -> throwError
 			"TlsServer.generateKeys: not implemented bulk encryption"
 	let (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
-	return Keys {
-		kCachedCS = cs,
-		kClientCS = CipherSuite KE_NULL BE_NULL,
-		kServerCS = CipherSuite KE_NULL BE_NULL,
-		kMasterSecret = ms,
-		kCWMacKey = cwmk, kSWMacKey = swmk, kCWKey = cwk, kSWKey = swk }
+	return $ case p of
+		Server -> Keys {
+			kCachedCS = cs,
+			kClientCS = CipherSuite KE_NULL BE_NULL,
+			kServerCS = CipherSuite KE_NULL BE_NULL,
+			kMasterSecret = ms,
+			kCWMacKey = cwmk, kSWMacKey = swmk,
+			kCWKey = cwk, kSWKey = swk }
+		Client -> Keys {
+			kCachedCS = cs,
+			kClientCS = CipherSuite KE_NULL BE_NULL,
+			kServerCS = CipherSuite KE_NULL BE_NULL,
+			kMasterSecret = ms,
+			kCWMacKey = swmk, kSWMacKey = cwmk,
+			kCWKey = swk, kSWKey = cwk }
 
 cipherSuite :: TlsHandle h g -> CipherSuite
 cipherSuite = kCachedCS . keys

@@ -42,7 +42,7 @@ import HandshakeBase (
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		setCipherSuite,
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
-	ClientKeyExchange(..),
+	ClientKeyExchange(..), Epms(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Partner(..), finishedHash,
@@ -182,15 +182,10 @@ clientCertificate cs = do
 rsaClientKeyExchange :: (HandleLike h, CPRG g) => RSA.PrivateKey ->
 	Version -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 rsaClientKeyExchange sk (cvj, cvn) rs = do
-	ClientKeyExchange cke <- readHandshake
-	epms <- case B.runBytableM (B.take =<< B.take 2) cke of
-		Right (e, "") -> return e
-		Left em -> E.throwError . strMsg $ pmsg ++ em
-		_ -> E.throwError . strMsg $ pmsg ++ " : more data"
-	generateKeys rs =<< mkpms epms `catchError` const
+	Epms epms <- readHandshake
+	generateKeys Server rs =<< mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
-	pmsg = "TlsServer.clientKeyExchange: "
 	mkpms epms = do
 		pms <- decryptRsa sk epms
 		unless (BS.length pms == 48) $ E.throwError "mkpms: length"
@@ -204,7 +199,7 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp))
 	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
-	generateKeys rs =<< case calculateShared dp sv <$> B.decode cke of
+	generateKeys Server rs =<< case calculateShared dp sv <$> B.decode cke of
 		Left em -> E.throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
 		Right pv -> return pv

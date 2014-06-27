@@ -15,8 +15,9 @@ module HandshakeBase (
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		HM.setCipherSuite,
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
-	ClientKeyExchange(..),
-		HM.generateKeys, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
+	ClientKeyExchange(..), Epms(..),
+		HM.generateKeys,
+		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
 	HM.Partner(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError ) where
@@ -54,7 +55,7 @@ import HandshakeType (
 	ServerKeyExchange(..),
 	certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
-	ServerHelloDone(..), ClientKeyExchange(..),
+	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified HandshakeMonad as HM (
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
@@ -63,7 +64,7 @@ import qualified HandshakeMonad as HM (
 		setClientNames, checkName, clientName,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
-		generateKeys, decryptRsa, rsaPadding,
+		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Partner(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
