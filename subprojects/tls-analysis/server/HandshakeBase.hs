@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module HandshakeBase (
+	debug,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
@@ -23,12 +24,14 @@ module HandshakeBase (
 import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (liftM, ap)
+import "monads-tf" Control.Monad.State (gets, lift)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
 import Numeric (readHex)
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
@@ -64,6 +67,11 @@ import qualified HandshakeMonad as HM (
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Partner(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
+
+debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
+debug x = do
+	h <- gets $ HM.tlsHandle . fst
+	lift . lift . lift . hlDebug h 5 . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
