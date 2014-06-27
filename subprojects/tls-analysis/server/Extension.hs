@@ -122,7 +122,16 @@ instance B.Bytable EcCurveType where
 	encode ExplicitChar2 = BS.pack [2]
 	encode NamedCurve = BS.pack [3]
 	encode (ECTRaw w) = BS.pack [w]
-	decode = undefined
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable EcCurveType where
+	parse = do
+		ct <- B.head
+		return $ case ct of
+			1 -> ExplicitPrime
+			2 -> ExplicitChar2
+			3 -> NamedCurve
+			w -> ECTRaw w
 
 instance B.Bytable ECC.CurveName where
 	encode ECC.SEC_p256r1 = B.encode (23 :: Word16)
@@ -134,15 +143,24 @@ instance B.Bytable ECC.CurveName where
 			(23 :: Word16) -> Right ECC.SEC_p256r1
 			(24 :: Word16) -> Right ECC.SEC_p384r1
 			(25 :: Word16) -> Right ECC.SEC_p521r1
-			_ -> Left "Extension: CurveName.decode: unknown curve"
+			n -> Left $ "Extension: CurveName.decode: unknown curve: " ++
+				show n
 		_ -> Left "Extension: CurveName.decode: bad format"
+
+instance B.Parsable ECC.CurveName where
+	parse = B.take 2
 
 instance B.Bytable ECC.Curve where
 	encode c
 		| c == ECC.getCurveByName ECC.SEC_p256r1 =
 			B.encode NamedCurve `BS.append` B.encode ECC.SEC_p256r1
 		| otherwise = error "TlsServer.encodeC: not implemented"
-	decode = undefined
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable ECC.Curve where
+	parse = ECC.getCurveByName <$> do
+		NamedCurve <- B.parse
+		B.parse
 
 data EcPointFormat = EPFUncompressed | EPFRaw Word8 deriving Show
 
@@ -157,12 +175,17 @@ instance B.Bytable ECC.Point where
 	encode (ECC.Point x y) =
 		B.addLen w8 $ 4 `BS.cons` B.encode x `BS.append` B.encode y
 	encode ECC.PointO = error "Extension: EC.Point.encode"
-	decode bs = case BS.uncons $ BS.tail bs of
-		Just (4, rest) -> Right $ let (x, y) = BS.splitAt 32 rest in
-			ECC.Point
-				(either error id $ B.decode x)
-				(either error id $ B.decode y)
-		_ -> Left "Extension: ECC.Point.decode"
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable ECC.Point where
+	parse = do
+		bs <- B.take =<< B.take 1
+		case BS.uncons bs of
+			Just (4, rest) -> return $ let (x, y) = BS.splitAt 32 rest in
+				ECC.Point
+					(either error id $ B.decode x)
+					(either error id $ B.decode y)
+			_ -> fail "Extension: ECC.Point.parse"
 
 w8 :: Word8; w8 = undefined
 w16 :: Word16; w16 = undefined

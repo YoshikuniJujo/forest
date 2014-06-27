@@ -6,7 +6,7 @@ module HandshakeType (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
-	ServerKeyExchange(..), ServerKeyExDhe(..),
+	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
@@ -20,6 +20,7 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.Types.PubKey.ECC as ECC
 
 import Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -93,11 +94,21 @@ data ServerKeyExchange = ServerKeyEx BS.ByteString BS.ByteString
 data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
 	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
 
+data ServerKeyExEcdhe = ServerKeyExEcdhe ECC.Curve ECC.Point
+	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+
 instance HandshakeItem ServerKeyExchange where
 	fromHandshake = undefined
 	toHandshake = HServerKeyEx . B.encode
 
 instance HandshakeItem ServerKeyExDhe where
+	toHandshake = HServerKeyEx . B.encode
+	fromHandshake (HServerKeyEx ske) =
+--		either (const Nothing) Just $ B.decode ske
+		either error Just $ B.decode ske
+	fromHandshake _ = Nothing
+
+instance HandshakeItem ServerKeyExEcdhe where
 	toHandshake = HServerKeyEx . B.encode
 	fromHandshake (HServerKeyEx ske) =
 --		either (const Nothing) Just $ B.decode ske
@@ -116,6 +127,12 @@ instance B.Bytable ServerKeyExDhe where
 		B.addLen (undefined :: Word16) sn ]
 	decode = B.evalBytableM B.parse
 
+instance B.Bytable ServerKeyExEcdhe where
+	encode (ServerKeyExEcdhe cv pnt ha sa sn) = BS.concat [
+		B.encode cv, B.encode pnt, B.encode ha, B.encode sa,
+		B.addLen (undefined :: Word16) sn ]
+	decode = B.evalBytableM B.parse
+
 instance B.Parsable ServerKeyExDhe where
 	parse = do
 		ps <- B.parse
@@ -124,6 +141,15 @@ instance B.Parsable ServerKeyExDhe where
 		sa <- B.parse
 		sn <- B.take =<< B.take 2
 		return $ ServerKeyExDhe ps pv ha sa sn
+
+instance B.Parsable ServerKeyExEcdhe where
+	parse = do
+		cv <- B.parse
+		pnt <- B.parse
+		ha <- B.parse
+		sa <- B.parse
+		sn <- B.take =<< B.take 2
+		return $ ServerKeyExEcdhe cv pnt ha sa sn
 
 instance HandshakeItem CertificateRequest where
 	fromHandshake (HCertificateReq cr) = Just cr
