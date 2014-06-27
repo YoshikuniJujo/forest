@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TestClient (client) where
@@ -24,6 +24,7 @@ import qualified Crypto.Hash.SHA256 as SHA256
 
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.DH as DH
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
@@ -95,88 +96,50 @@ client g h rsa crtS = (`run` g) $ do
 		setCipherSuite cs
 		case ke of
 			RSA -> rsaHandshake cr sr rsa crtS
-			DHE_RSA -> dheHandshake cr sr rsa crtS
-			ECDHE_RSA -> ecdheHandshake cr sr rsa crtS
+			DHE_RSA -> dheHandshake dhType cr sr rsa crtS
+			ECDHE_RSA -> dheHandshake curveType cr sr rsa crtS
 			ECDHE_ECDSA -> ecdsaHandshake cr sr rsa crtS
 			_ -> error "not implemented"
 	hlPut t request
 	hlGetContent t >>= hlDebug t 5
 	return ()
 
+dhType :: DH.Params
+dhType = undefined
+
+curveType :: ECC.Curve
+curveType = undefined
+
 request :: BS.ByteString
 request = "GET / HTTP/1.1\r\n\r\n"
 
-dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
-	BS.ByteString -> BS.ByteString ->
-	(sk, X509.CertificateChain) -> X509.CertificateStore ->
-	HandshakeM h g ()
-dheHandshake cr sr (rsk, rcc) crtS = do
-	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
-		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-	cc@(X509.CertificateChain [ccc]) <- readHandshake
-	handshakeValidate crtS cc >>= debug
-	let X509.PubKeyRSA pk =
-		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-	ServerKeyExDhe edp pv ha sa sn <- readHandshake
-	let	v = RSA.ep pk sn
-		v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
-		v'' = case ha of
-			Sha1 -> let Right [ASN1.Start ASN1.Sequence,
-					ASN1.Start ASN1.Sequence,
-					ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
-					ASN1.End ASN1.Sequence,
-					ASN1.OctetString o, ASN1.End ASN1.Sequence
-					] = ASN1.decodeASN1' ASN1.DER v' in o
-			Sha256 -> let Right [ASN1.Start ASN1.Sequence,
-					ASN1.Start ASN1.Sequence,
-					ASN1.OID [2, 16, 840, 1, 101, 3, 4, 2, 1], ASN1.Null,
-					ASN1.End ASN1.Sequence,
-					ASN1.OctetString o, ASN1.End ASN1.Sequence
-					] = ASN1.decodeASN1' ASN1.DER v' in o
-			_ -> error "bad"
-	debug v''
-	debug . SHA1.hash $ BS.concat [cr, sr, B.encode edp, B.encode pv]
-	debug . SHA256.hash $ BS.concat [cr, sr, B.encode edp, B.encode pv]
-	shd <- readHandshake
-	cReq <- case shd of
-		Left (CertificateRequest csa hsa dn) -> do
-			ServerHelloDone <- readHandshake
-			return $ Just (csa, hsa, dn)
-		Right ServerHelloDone -> return Nothing
-		_ -> error "bad"
-	debug ha
-	debug sa
-	sv <- withRandom $ generateSecret edp
-	let cpv = B.encode $ calculatePublic edp sv
-	case cReq of
-		Just _ -> writeHandshake rcc
-		_ -> return ()
-	writeHandshake $ ClientKeyExchange cpv
-	hs <- handshakeHash
-	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
-			clSign rsk rcpk hs
-		_ -> return ()
-	generateKeys Client (cr, sr) $ calculateShared edp sv pv
-	putChangeCipherSpec >> flushCipherSuite Server
-	writeHandshake =<< finishedHash Client
-	getChangeCipherSpec >> flushCipherSuite Client
-	fh <- finishedHash Server
-	rfh <- readHandshake
-	debug $ fh == rfh
+class (DhParam bs, B.Bytable bs, B.Bytable (Public bs)) => KeyEx bs where
+	getKeyEx :: (HandleLike h, CPRG g) => HandshakeM h g (bs, Public bs,
+		HashAlgorithm, SignatureAlgorithm, BS.ByteString)
 
-ecdheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
-	BS.ByteString -> BS.ByteString ->
+instance KeyEx ECC.Curve where
+	getKeyEx = do
+		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+		return (cv, pnt, ha, sa, sn)
+
+instance KeyEx DH.Params where
+	getKeyEx = do
+		ServerKeyExDhe ps pv ha sa sn <- readHandshake
+		return (ps, pv, ha, sa, sn)
+
+dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
+	ke -> BS.ByteString -> BS.ByteString ->
 	(sk, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
-ecdheHandshake cr sr (rsk, rcc) crtS = do
+dheHandshake t cr sr (rsk, rcc) crtS = do
 	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain [ccc]) <- readHandshake
 	handshakeValidate crtS cc >>= debug
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-	ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+	(cv, pnt, ha, sa, sn) <- getKeyEx
+	let _ = cv `asTypeOf` t
 	debug ha
 	let	v = RSA.ep pk sn
 		v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
