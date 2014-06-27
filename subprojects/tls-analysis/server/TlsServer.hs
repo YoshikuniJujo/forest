@@ -45,7 +45,7 @@ import HandshakeBase (
 	ClientKeyExchange(..), Epms(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
-	Partner(..), finishedHash,
+	Partner(..), RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, throwError )
 
 type Version = (Word8, Word8)
@@ -75,11 +75,11 @@ openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
 		_ -> \_ _ -> E.throwError
 			"TlsServer.openClient: not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
-	getChangeCipherSpec >> flushCipherSuite Client
+	getChangeCipherSpec >> flushCipherSuite Read
 	fok <- (==) `liftM` finishedHash Client `ap` readHandshake
 	unless fok $ throwError ALFatal ADDecryptError
 		"TlsServer.openClient: wrong finished hash"
-	putChangeCipherSpec >> flushCipherSuite Server
+	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->

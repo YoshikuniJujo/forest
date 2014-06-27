@@ -85,9 +85,9 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 			. DigitallySigned (clAlgorithm rsk)
 			$ clSign rsk rcpk hs
 		_ -> return ()
-	putChangeCipherSpec >> flushCipherSuite Server
+	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
-	getChangeCipherSpec >> flushCipherSuite Client
+	getChangeCipherSpec >> flushCipherSuite Read
 	fh <- finishedHash Server
 	rfh <- readHandshake
 	unless (fh == rfh) $ E.throwError "finish hash failure"
@@ -194,9 +194,9 @@ succeedHandshake t pk cc cr sr rsk rcc crtS = do
 			clSign rsk rcpk hs
 		_ -> return ()
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
-	putChangeCipherSpec >> flushCipherSuite Server
+	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
-	getChangeCipherSpec >> flushCipherSuite Client
+	getChangeCipherSpec >> flushCipherSuite Read
 	fh <- finishedHash Server
 	rfh <- readHandshake
 	unless (fh == rfh) $ E.throwError "finished hash failure"

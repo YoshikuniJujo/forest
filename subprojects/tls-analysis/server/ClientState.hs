@@ -55,7 +55,7 @@ modifyClientState i f s = setClientState i (f $ getClientState i s) s
 
 data Keys = Keys {
 	kCachedCS :: CipherSuite,
-	kClientCS :: CipherSuite, kServerCS :: CipherSuite,
+	kReadCS :: CipherSuite, kWriteCS :: CipherSuite,
 	kMasterSecret :: BS.ByteString,
 	kReadMacKey :: BS.ByteString, kWriteMacKey :: BS.ByteString,
 	kReadKey :: BS.ByteString, kWriteKey :: BS.ByteString }
@@ -64,8 +64,8 @@ data Keys = Keys {
 nullKeys :: Keys
 nullKeys = Keys {
 	kCachedCS = CipherSuite KE_NULL BE_NULL,
-	kClientCS = CipherSuite KE_NULL BE_NULL,
-	kServerCS = CipherSuite KE_NULL BE_NULL,
+	kReadCS = CipherSuite KE_NULL BE_NULL,
+	kWriteCS = CipherSuite KE_NULL BE_NULL,
 	kMasterSecret = "",
 	kReadMacKey = "", kWriteMacKey = "", kReadKey = "", kWriteKey = "" }
 

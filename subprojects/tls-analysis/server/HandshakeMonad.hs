@@ -9,7 +9,7 @@ module HandshakeMonad (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
-	TH.Partner(..), handshakeHash, finishedHash, throwError ) where
+	TH.Partner(..), TH.RW(..), handshakeHash, finishedHash, throwError ) where
 
 import Prelude hiding (read)
 
@@ -39,7 +39,7 @@ import qualified TlsHandle as TH (
 	TlsHandle(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-	Partner(..), finishedHash, handshakeHash, CipherSuite(..) )
+	Partner(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
@@ -89,7 +89,7 @@ clientName = listToMaybe . TH.clientNames
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite = modify . first . TH.setCipherSuite
 
-flushCipherSuite :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g ()
+flushCipherSuite :: (HandleLike h, CPRG g) => TH.RW -> HandshakeM h g ()
 flushCipherSuite p =
 	TH.flushCipherSuite p `liftM` gets fst >>= modify . first . const
 

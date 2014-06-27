@@ -3,7 +3,7 @@
 module TlsHandle (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), Partner(..), ContentType(..), CipherSuite(..),
+	TlsHandle(..), RW(..), Partner(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		handshakeHash, finishedHash ) where
@@ -113,9 +113,9 @@ read t n = do
 decrypt :: HandleLike h =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 decrypt t _ e
-	| Keys{ kClientCS = CipherSuite _ BE_NULL } <- keys t = return e
+	| Keys{ kReadCS = CipherSuite _ BE_NULL } <- keys t = return e
 decrypt t@TlsHandle{ keys = ks } ct e = do
-	let	CipherSuite _ be = kClientCS ks
+	let	CipherSuite _ be = kReadCS ks
 		wk = kReadKey ks
 		mk = kReadMacKey ks
 	sn <- updateSequenceNumber t Client
@@ -151,9 +151,9 @@ flush t = do
 encrypt :: (HandleLike h, CPRG g) =>
 	TlsHandle h g -> ContentType -> BS.ByteString -> TlsM h g BS.ByteString
 encrypt t _ p
-	| Keys{ kServerCS = CipherSuite _ BE_NULL } <- keys t = return p
+	| Keys{ kWriteCS = CipherSuite _ BE_NULL } <- keys t = return p
 encrypt t@TlsHandle{ keys = ks } ct p = do
-	let	CipherSuite _ be = kServerCS ks
+	let	CipherSuite _ be = kWriteCS ks
 		wk = kWriteKey ks
 		mk = kWriteMacKey ks
 	sn <- updateSequenceNumber t Server
@@ -170,8 +170,8 @@ updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 updateSequenceNumber :: HandleLike h => TlsHandle h g -> Partner -> TlsM h g Word64
 updateSequenceNumber t@TlsHandle{ keys = ks } p = do
 	(sn, cs) <- case p of
-		Client -> (, kClientCS ks) `liftM` getClientSn (clientId t)
-		Server -> (, kServerCS ks) `liftM` getServerSn (clientId t)
+		Client -> (, kReadCS ks) `liftM` getClientSn (clientId t)
+		Server -> (, kWriteCS ks) `liftM` getServerSn (clientId t)
 	case cs of
 		CipherSuite _ BE_NULL -> return ()
 		_ -> case p of
@@ -192,15 +192,15 @@ generateKeys p cs cr sr pms = do
 	return $ case p of
 		Client -> Keys {
 			kCachedCS = cs,
-			kClientCS = CipherSuite KE_NULL BE_NULL,
-			kServerCS = CipherSuite KE_NULL BE_NULL,
+			kReadCS = CipherSuite KE_NULL BE_NULL,
+			kWriteCS = CipherSuite KE_NULL BE_NULL,
 			kMasterSecret = ms,
 			kReadMacKey = swmk, kWriteMacKey = cwmk,
 			kReadKey = swk, kWriteKey = cwk }
 		Server -> Keys {
 			kCachedCS = cs,
-			kClientCS = CipherSuite KE_NULL BE_NULL,
-			kServerCS = CipherSuite KE_NULL BE_NULL,
+			kReadCS = CipherSuite KE_NULL BE_NULL,
+			kWriteCS = CipherSuite KE_NULL BE_NULL,
 			kMasterSecret = ms,
 			kReadMacKey = cwmk, kWriteMacKey = swmk,
 			kReadKey = cwk, kWriteKey = swk }
@@ -211,10 +211,12 @@ cipherSuite = kCachedCS . keys
 setCipherSuite :: CipherSuite -> TlsHandle h g -> TlsHandle h g
 setCipherSuite c t@TlsHandle{ keys = k } = t{ keys = k{ kCachedCS = c } }
 
-flushCipherSuite :: Partner -> TlsHandle h g -> TlsHandle h g
+data RW = Read | Write deriving Show
+
+flushCipherSuite :: RW -> TlsHandle h g -> TlsHandle h g
 flushCipherSuite p t@TlsHandle{ keys = ks } = case p of
-	Client -> t{ keys = ks { kClientCS = kCachedCS ks } }
-	Server -> t{ keys = ks { kServerCS = kCachedCS ks } }
+	Read -> t{ keys = ks { kReadCS = kCachedCS ks } }
+	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } }
 
 debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
 debugCipherSuite t a = thlDebug (tlsHandle t) 5 . BSC.pack

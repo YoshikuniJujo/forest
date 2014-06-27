@@ -20,7 +20,7 @@ module HandshakeBase (
 		HM.generateKeys,
 		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
-	HM.Partner(..), finishedHash,
+	HM.Partner(..), HM.RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError ) where
 
 import Control.Applicative
@@ -67,7 +67,7 @@ import qualified HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	Partner(..), handshakeHash, finishedHash, throwError )
+	Partner(..), RW(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
 
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
