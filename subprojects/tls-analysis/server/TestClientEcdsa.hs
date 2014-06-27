@@ -10,6 +10,11 @@ import "crypto-random" Crypto.Random
 import qualified Codec.Bytable as B
 import qualified Data.ByteString as BS
 
+import qualified Crypto.Hash.SHA1 as SHA1
+-- import qualified Crypto.Hash.SHA256 as SHA256
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Crypto.Types.PubKey.ECC as ECC
+
 cipherSuites :: [CipherSuite]
 cipherSuites = [
 	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
@@ -32,7 +37,12 @@ client g h _crtS = (`run` g) $ do
 			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 		debug scv
 		debug spnt
-		ServerKeyExEcdhe cv pnt ha sa _sn <- readHandshake
+		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+		let Right s = B.decode sn
+		debug ("here" :: String)
+		debug $ ECDSA.verify SHA1.hash
+			(ECDSA.PublicKey secp256r1 $ point spnt) s $
+			BS.concat [cr, sr, B.encode cv, B.encode pnt]
 		ServerHelloDone <- readHandshake
 --		debug cv
 --		debug pnt
@@ -54,3 +64,8 @@ client g h _crtS = (`run` g) $ do
 
 request :: BS.ByteString
 request = "GET / HTTP/1.1\r\n\r\n"
+
+point :: BS.ByteString -> ECC.Point
+point s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
+	(either error id $ B.decode x)
+	(either error id $ B.decode y)
