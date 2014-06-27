@@ -45,7 +45,7 @@ import HandshakeBase (
 	ClientKeyExchange(..), Epms(..),
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
-	Partner(..), RW(..), finishedHash,
+	Side(..), RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, throwError )
 
 type Version = (Word8, Word8)

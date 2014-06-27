@@ -20,7 +20,7 @@ module HandshakeBase (
 		HM.generateKeys,
 		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
 	DigitallySigned(..), HM.handshakeHash, HM.flushCipherSuite,
-	HM.Partner(..), HM.RW(..), finishedHash,
+	HM.Side(..), HM.RW(..), finishedHash,
 	DhParam(..), dh3072Modp, secp256r1, HM.throwError ) where
 
 import Control.Applicative
@@ -67,7 +67,7 @@ import qualified HandshakeMonad as HM (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
-	Partner(..), RW(..), handshakeHash, finishedHash, throwError )
+	Side(..), RW(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
 
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
@@ -227,5 +227,5 @@ instance DhParam ECC.Curve where
 secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 
-finishedHash :: (HandleLike h, CPRG g) => HM.Partner -> HM.HandshakeM h g Finished
+finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
 finishedHash = (Finished `liftM`) . HM.finishedHash

@@ -9,7 +9,7 @@ module HandshakeMonad (
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	TH.Alert(..), TH.AlertLevel(..), TH.AlertDesc(..),
-	TH.Partner(..), TH.RW(..), handshakeHash, finishedHash, throwError ) where
+	TH.Side(..), TH.RW(..), handshakeHash, finishedHash, throwError ) where
 
 import Prelude hiding (read)
 
@@ -39,7 +39,7 @@ import qualified TlsHandle as TH (
 	TlsHandle(..), ContentType(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
-	Partner(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
+	Side(..), RW(..), finishedHash, handshakeHash, CipherSuite(..) )
 
 throwError :: HandleLike h =>
 	TH.AlertLevel -> TH.AlertDesc -> String -> HandshakeM h g a
@@ -106,7 +106,7 @@ tlsPut :: (HandleLike h, CPRG g) =>
 	TH.ContentType -> BS.ByteString -> HandshakeM h g ()
 tlsPut ct bs = get >>= lift . (\t -> TH.tlsPut t ct bs) >>= put
 
-generateKeys :: HandleLike h => TH.Partner ->
+generateKeys :: HandleLike h => TH.Side ->
 	(BS.ByteString, BS.ByteString) -> BS.ByteString -> HandshakeM h g ()
 generateKeys p (cr, sr) pms = do
 	t <- gets fst
@@ -131,5 +131,5 @@ rsaPadding pk bs = case RSA.padSignature (RSA.public_size pk) $
 handshakeHash :: HandleLike h => HandshakeM h g BS.ByteString
 handshakeHash = get >>= lift . TH.handshakeHash
 
-finishedHash :: (HandleLike h, CPRG g) => TH.Partner -> HandshakeM h g BS.ByteString
+finishedHash :: (HandleLike h, CPRG g) => TH.Side -> HandshakeM h g BS.ByteString
 finishedHash p = get >>= lift . flip TH.finishedHash p

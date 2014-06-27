@@ -34,8 +34,6 @@ evalTlsM :: HandleLike h =>
 	TlsM h g a -> CS.HandshakeState h g -> HandleMonad h (Either CS.Alert a)
 evalTlsM = evalStateT . runErrorT
 
-data Partner = Server | Client deriving (Show, Eq)
-
 getBuf, getWBuf ::  HandleLike h =>
 	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
 getBuf = gets . CS.getBuf; getWBuf = gets . CS.getWBuf

@@ -3,7 +3,7 @@
 module TlsHandle (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
-	TlsHandle(..), RW(..), Partner(..), ContentType(..), CipherSuite(..),
+	TlsHandle(..), RW(..), Side(..), ContentType(..), CipherSuite(..),
 		newHandle, getContentType, tlsGet, tlsPut, generateKeys,
 		cipherSuite, setCipherSuite, flushCipherSuite, debugCipherSuite,
 		handshakeHash, finishedHash ) where
@@ -41,7 +41,7 @@ data TlsHandle h g = TlsHandle {
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
 
-data Partner = Server | Client deriving (Show, Eq)
+data Side = Server | Client deriving (Show, Eq)
 
 run :: HandleLike h => TlsM h g a -> g -> HandleMonad h a
 run m g = do
@@ -167,7 +167,7 @@ updateHash ::
 	HandleLike h => HandleHash h g -> BS.ByteString -> TlsM h g (HandleHash h g)
 updateHash (th, ctx') bs = return (th, SHA256.update ctx' bs)
 
-updateSequenceNumber :: HandleLike h => TlsHandle h g -> Partner -> TlsM h g Word64
+updateSequenceNumber :: HandleLike h => TlsHandle h g -> Side -> TlsM h g Word64
 updateSequenceNumber t@TlsHandle{ keys = ks } p = do
 	(sn, cs) <- case p of
 		Client -> (, kReadCS ks) `liftM` getClientSn (clientId t)
@@ -179,7 +179,7 @@ updateSequenceNumber t@TlsHandle{ keys = ks } p = do
 			Server -> succServerSn $ clientId t
 	return sn
 
-generateKeys :: HandleLike h => Partner -> CipherSuite ->
+generateKeys :: HandleLike h => Side -> CipherSuite ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> TlsM h g Keys
 generateKeys p cs cr sr pms = do
 	let CipherSuite _ be = cs
@@ -227,7 +227,7 @@ debugCipherSuite t a = thlDebug (tlsHandle t) 5 . BSC.pack
 handshakeHash :: HandleLike h => HandleHash h g -> TlsM h g BS.ByteString
 handshakeHash = return . SHA256.finalize . snd
 
-finishedHash :: HandleLike h => HandleHash h g -> Partner -> TlsM h g BS.ByteString
+finishedHash :: HandleLike h => HandleHash h g -> Side -> TlsM h g BS.ByteString
 finishedHash (t, ctx) partner = do
 	let ms = kMasterSecret $ keys t
 	sha256 <- handshakeHash (t, ctx)
