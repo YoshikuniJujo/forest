@@ -12,6 +12,6 @@ main :: IO ()
 main = do
 	(cw, sw) <- getPair
 	_ <- forkIO $ srv sw
-	(_rsk, _rcc, crtS) <- readFiles
+	(rsk, rcc, crtS) <- readFiles
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	client g cw crtS
+	client g cw (rsk, rcc) crtS
