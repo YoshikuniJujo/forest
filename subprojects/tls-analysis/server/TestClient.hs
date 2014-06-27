@@ -5,6 +5,7 @@ module TestClient (client) where
 
 import ClSecretKey
 import Control.Monad
+import qualified "monads-tf" Control.Monad.Error as E
 import "crypto-random" Crypto.Random
 import HandshakeBase
 import Data.HandleLike
@@ -64,7 +65,8 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 			return $ Just (sa, hsa, dn)
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
-	handshakeValidate crtS cc >>= debug
+	vr <- handshakeValidate crtS cc
+	unless (null vr) $ E.throwError "validate failure"
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
@@ -85,7 +87,7 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 	getChangeCipherSpec >> flushCipherSuite Client
 	fh <- finishedHash Server
 	rfh <- readHandshake
-	debug $ fh == rfh
+	unless (fh == rfh) $ E.throwError "finish hash failure"
 
 client :: (ValidateHandle h, CPRG g, ClSecretKey sk) => g -> h ->
 	(sk, X509.CertificateChain) ->
@@ -165,11 +167,12 @@ succeedHandshake ::
 succeedHandshake t pk cc cr sr rsk rcc crtS = do
 	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-	handshakeValidate crtS cc >>= debug
-	(cv, pnt, ha, sa, sn) <- getKeyEx
+	vr <- handshakeValidate crtS cc
+	unless (null vr) $ E.throwError "validate failure"
+	(cv, pnt, ha, _sa, sn) <- getKeyEx
 	let _ = cv `asTypeOf` t
-	debug ha
-	debug . verify ha pk sn $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
+	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode cv, B.encode pnt]) $
+		E.throwError "verify failure"
 	shd <- readHandshake
 	cReq <- case shd of
 		Left (CertificateRequest csa hsa dn) -> do
@@ -177,7 +180,6 @@ succeedHandshake t pk cc cr sr rsk rcc crtS = do
 			return $ Just (csa, hsa, dn)
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
-	debug sa
 	sv <- withRandom $ generateSecret cv
 	let cpv = B.encode $ calculatePublic cv sv
 	case cReq of
@@ -195,7 +197,7 @@ succeedHandshake t pk cc cr sr rsk rcc crtS = do
 	getChangeCipherSpec >> flushCipherSuite Client
 	fh <- finishedHash Server
 	rfh <- readHandshake
-	debug $ fh == rfh
+	unless (fh == rfh) $ E.throwError "finished hash failure"
 
 class Verify pk where
 	verify :: HashAlgorithm ->
