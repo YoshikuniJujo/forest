@@ -2,6 +2,7 @@
 
 module TestClientEcdsa (client) where
 
+import Control.Monad
 import HandshakeBase
 import Data.HandleLike
 import qualified Data.X509 as X509
@@ -15,6 +16,9 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 
+import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.PubKey.RSA as RSA
+
 cipherSuites :: [CipherSuite]
 cipherSuites = [
 	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
@@ -22,35 +26,51 @@ cipherSuites = [
 	CipherSuite RSA AES_128_CBC_SHA
 	]
 
-client :: (ValidateHandle h, CPRG g) =>
-	g -> h -> X509.CertificateStore -> HandleMonad h ()
-client g h _crtS = (`run` g) $ do
+client :: (ValidateHandle h, CPRG g) => g -> h ->
+	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
+	HandleMonad h ()
+client g h (rsk, rcc) crtS = (`run` g) $ do
 	t <- execHandshakeM h $ do
 		cr <- randomByteString 32
 		writeHandshake $ ClientHello (3, 3) cr (SessionId "")
 			cipherSuites [CompressionMethodNull] Nothing
 		ServerHello _v sr _sid cs _cm _e <- readHandshake
 		setCipherSuite cs
-		debug cs
-		X509.CertificateChain [ccc] <- readHandshake
-		let X509.PubKeyECDSA scv spnt =
+--		debug cs
+		let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+			X509.certPubKey . X509.signedObject $ X509.getSigned rccc
+		cc@(X509.CertificateChain [ccc]) <- readHandshake
+		handshakeValidate crtS cc >>= debug
+		let X509.PubKeyECDSA _scv spnt =
 			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-		debug scv
-		debug spnt
+--		debug scv
+--		debug spnt
 		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
 		let Right s = B.decode sn
 		debug ("here" :: String)
 		debug $ ECDSA.verify SHA1.hash
 			(ECDSA.PublicKey secp256r1 $ point spnt) s $
 			BS.concat [cr, sr, B.encode cv, B.encode pnt]
-		ServerHelloDone <- readHandshake
---		debug cv
---		debug pnt
+		shd <- readHandshake
+		cReq <- case shd of
+			Left (CertificateRequest csa hsa dn) -> do
+				ServerHelloDone <- readHandshake
+				return $ Just (csa, hsa, dn)
+			Right ServerHelloDone -> return Nothing
+			_ -> error "bad"
 		debug ha
 		debug sa
 		sv <- withRandom $ generateSecret cv
 		let cpv = B.encode $ calculatePublic cv sv
+		case cReq of
+			Just _ -> writeHandshake rcc
+			_ -> return ()
 		writeHandshake $ ClientKeyExchange cpv
+		hs <- rsaPadding rcpk `liftM` handshakeHash
+		case cReq of
+			Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
+				RSA.dp Nothing rsk hs
+			_ -> return ()
 		generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 		putChangeCipherSpec >> flushCipherSuite Server
 		writeHandshake =<< finishedHash Client
