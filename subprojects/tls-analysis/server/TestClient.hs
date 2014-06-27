@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TestClient (client) where
+module TestClient (
+	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
 
 import ClSecretKey
 import Control.Monad
@@ -104,8 +105,7 @@ client g h rsa crtS = (`run` g) $ do
 			ECDHE_ECDSA -> dheHandshake curveType cr sr rsa crtS
 			_ -> error "not implemented"
 	hlPut t request
-	hlGetContent t >>= hlDebug t 5
-	return ()
+	const () `liftM` hlGetContent t -- >>= hlDebug t 5
 
 dhType :: DH.Params
 dhType = undefined

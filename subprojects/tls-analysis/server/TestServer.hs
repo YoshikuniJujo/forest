@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, PackageImports #-}
 
-module TestServer (server, ValidateHandle(..)) where
+module TestServer (server, ValidateHandle(..), CipherSuite(..)) where
 
 import Control.Monad (liftM)
 import Data.Maybe (fromMaybe)
@@ -15,7 +15,7 @@ import qualified Crypto.PubKey.RSA as RSA
 
 import TlsServer (
 	run, openClient, clientName,
-	ValidateHandle(..), CipherSuite, SecretKey )
+	ValidateHandle(..), CipherSuite(..), SecretKey )
 
 server :: (ValidateHandle h, CPRG g, SecretKey sk) => g -> h ->
 	[CipherSuite] ->
@@ -24,8 +24,8 @@ server :: (ValidateHandle h, CPRG g, SecretKey sk) => g -> h ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
 server g h css rsa ec mcs = (`run` g) $ do
 	cl <- openClient h css rsa ec mcs
---	const () `liftM` doUntil BS.null (hlGetLine cl)
-	doUntil BS.null (hlGetLine cl) >>= mapM_ (hlDebug cl 0 . (`BS.append` "\n"))
+	const () `liftM` doUntil BS.null (hlGetLine cl)
+--	doUntil BS.null (hlGetLine cl) >>= mapM_ (hlDebug cl 0 . (`BS.append` "\n"))
 	hlPut cl . answer . fromMaybe "Anonym" $ clientName cl
 	hlClose cl
 

@@ -19,10 +19,10 @@ import TestServer
 import CommandLine
 import ReadFile
 
-srv :: ChanHandle -> IO ()
-srv sw = do
+srv :: ChanHandle -> [CipherSuite] -> IO ()
+srv sw cs = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	(_prt, cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
+	(_prt, _cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
 	server g sw cs rsa ec mcs
 
 readFiles :: IO (RSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
