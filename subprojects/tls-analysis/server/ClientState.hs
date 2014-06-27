@@ -57,8 +57,8 @@ data Keys = Keys {
 	kCachedCS :: CipherSuite,
 	kClientCS :: CipherSuite, kServerCS :: CipherSuite,
 	kMasterSecret :: BS.ByteString,
-	kCWMacKey :: BS.ByteString, kSWMacKey :: BS.ByteString,
-	kCWKey :: BS.ByteString, kSWKey :: BS.ByteString }
+	kReadMacKey :: BS.ByteString, kWriteMacKey :: BS.ByteString,
+	kReadKey :: BS.ByteString, kWriteKey :: BS.ByteString }
 	deriving (Show, Eq)
 
 nullKeys :: Keys
@@ -67,7 +67,7 @@ nullKeys = Keys {
 	kClientCS = CipherSuite KE_NULL BE_NULL,
 	kServerCS = CipherSuite KE_NULL BE_NULL,
 	kMasterSecret = "",
-	kCWMacKey = "", kSWMacKey = "", kCWKey = "", kSWKey = "" }
+	kReadMacKey = "", kWriteMacKey = "", kReadKey = "", kWriteKey = "" }
 
 data ContentType
 	= CTCCSpec | CTAlert | CTHandshake | CTAppData | CTNull | CTRaw Word8

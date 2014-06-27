@@ -116,8 +116,8 @@ decrypt t _ e
 	| Keys{ kClientCS = CipherSuite _ BE_NULL } <- keys t = return e
 decrypt t@TlsHandle{ keys = ks } ct e = do
 	let	CipherSuite _ be = kClientCS ks
-		wk = kCWKey ks
-		mk = kCWMacKey ks
+		wk = kReadKey ks
+		mk = kReadMacKey ks
 	sn <- updateSequenceNumber t Client
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
@@ -154,8 +154,8 @@ encrypt t _ p
 	| Keys{ kServerCS = CipherSuite _ BE_NULL } <- keys t = return p
 encrypt t@TlsHandle{ keys = ks } ct p = do
 	let	CipherSuite _ be = kServerCS ks
-		wk = kSWKey ks
-		mk = kSWMacKey ks
+		wk = kWriteKey ks
+		mk = kWriteMacKey ks
 	sn <- updateSequenceNumber t Server
 	hs <- case be of
 		AES_128_CBC_SHA -> return CT.hashSha1
@@ -190,20 +190,20 @@ generateKeys p cs cr sr pms = do
 			"TlsServer.generateKeys: not implemented bulk encryption"
 	let (ms, cwmk, swmk, cwk, swk) = CT.makeKeys kl cr sr pms
 	return $ case p of
-		Server -> Keys {
-			kCachedCS = cs,
-			kClientCS = CipherSuite KE_NULL BE_NULL,
-			kServerCS = CipherSuite KE_NULL BE_NULL,
-			kMasterSecret = ms,
-			kCWMacKey = cwmk, kSWMacKey = swmk,
-			kCWKey = cwk, kSWKey = swk }
 		Client -> Keys {
 			kCachedCS = cs,
 			kClientCS = CipherSuite KE_NULL BE_NULL,
 			kServerCS = CipherSuite KE_NULL BE_NULL,
 			kMasterSecret = ms,
-			kCWMacKey = swmk, kSWMacKey = cwmk,
-			kCWKey = swk, kSWKey = cwk }
+			kReadMacKey = swmk, kWriteMacKey = cwmk,
+			kReadKey = swk, kWriteKey = cwk }
+		Server -> Keys {
+			kCachedCS = cs,
+			kClientCS = CipherSuite KE_NULL BE_NULL,
+			kServerCS = CipherSuite KE_NULL BE_NULL,
+			kMasterSecret = ms,
+			kReadMacKey = cwmk, kWriteMacKey = swmk,
+			kReadKey = cwk, kWriteKey = swk }
 
 cipherSuite :: TlsHandle h g -> CipherSuite
 cipherSuite = kCachedCS . keys
