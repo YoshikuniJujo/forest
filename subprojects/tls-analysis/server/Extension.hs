@@ -100,11 +100,19 @@ instance B.Bytable NameType where
 instance B.Bytable DH.Params where
 	encode (DH.Params p g) =
 		BS.concat [B.addLen w16 $ B.encode p, B.addLen w16 $ B.encode g]
-	decode = B.evalBytableM $ DH.Params <$> B.take 2 <*> B.take 2
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable DH.Params where
+	parse = DH.Params
+		<$> (B.take =<< B.take 2)
+		<*> (B.take =<< B.take 2)
 
 instance B.Bytable DH.PublicNumber where
 	encode = B.addLen w16 . B.encode . \(DH.PublicNumber pn) -> pn
-	decode = B.evalBytableM $ fromInteger <$> (B.take =<< B.take 2)
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable DH.PublicNumber where
+	parse = fromInteger <$> (B.take =<< B.take 2)
 
 data EcCurveType = ExplicitPrime | ExplicitChar2 | NamedCurve | ECTRaw Word8
 	deriving Show

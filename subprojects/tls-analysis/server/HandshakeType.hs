@@ -6,7 +6,7 @@ module HandshakeType (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
-	ServerKeyExchange(..),
+	ServerKeyExchange(..), ServerKeyExDhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
@@ -19,6 +19,7 @@ import Data.Word.Word24 (Word24)
 import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Codec.Bytable as B
+import qualified Crypto.PubKey.DH as DH
 
 import Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
@@ -89,15 +90,40 @@ instance HandshakeItem X509.CertificateChain where
 data ServerKeyExchange = ServerKeyEx BS.ByteString BS.ByteString
 	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
 
+data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
+	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+
 instance HandshakeItem ServerKeyExchange where
 	fromHandshake = undefined
 	toHandshake = HServerKeyEx . B.encode
+
+instance HandshakeItem ServerKeyExDhe where
+	toHandshake = HServerKeyEx . B.encode
+	fromHandshake (HServerKeyEx ske) =
+--		either (const Nothing) Just $ B.decode ske
+		either error Just $ B.decode ske
+	fromHandshake _ = Nothing
 
 instance B.Bytable ServerKeyExchange where
 	decode = undefined
 	encode (ServerKeyEx ps pv ha sa sn) = BS.concat [
 		ps, pv, B.encode ha, B.encode sa,
 		B.addLen (undefined :: Word16) sn ]
+
+instance B.Bytable ServerKeyExDhe where
+	encode (ServerKeyExDhe ps pv ha sa sn) = BS.concat [
+		B.encode ps, B.encode pv, B.encode ha, B.encode sa,
+		B.addLen (undefined :: Word16) sn ]
+	decode = B.evalBytableM B.parse
+
+instance B.Parsable ServerKeyExDhe where
+	parse = do
+		ps <- B.parse
+		pv <- B.parse
+		ha <- B.parse
+		sa <- B.parse
+		sn <- B.take =<< B.take 2
+		return $ ServerKeyExDhe ps pv ha sa sn
 
 instance HandshakeItem CertificateRequest where
 	fromHandshake (HCertificateReq cr) = Just cr

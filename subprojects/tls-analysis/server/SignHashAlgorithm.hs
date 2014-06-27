@@ -24,6 +24,9 @@ instance B.Bytable HashAlgorithm where
 			5 -> Sha384; 6 -> Sha512; _ -> HARaw ha
 		_ -> Left "SignHashAlgorithm: Bytable.decode"
 
+instance B.Parsable HashAlgorithm where
+	parse = B.take 1
+
 data SignatureAlgorithm = Rsa | Dsa | Ecdsa | SARaw Word8 deriving Show
 
 instance B.Bytable SignatureAlgorithm where
@@ -35,3 +38,6 @@ instance B.Bytable SignatureAlgorithm where
 		[sa] -> Right $ case sa of
 			1 -> Rsa; 2 -> Dsa; 3 -> Ecdsa; _ -> SARaw sa
 		_ -> Left "Type.decodeSA"
+
+instance B.Parsable SignatureAlgorithm where
+	parse = B.take 1

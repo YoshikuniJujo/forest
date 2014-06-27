@@ -9,7 +9,8 @@ module HandshakeBase (
 		writeHandshake, putChangeCipherSpec,
 	HM.ValidateHandle(..), HM.handshakeValidate,
 	HM.Alert(..), HM.AlertLevel(..), HM.AlertDesc(..),
-	ServerKeyExchange(..), ServerHelloDone(..),
+	ServerKeyExchange(..), ServerKeyExDhe(..),
+	ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
@@ -52,7 +53,7 @@ import HandshakeType (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
-	ServerKeyExchange(..),
+	ServerKeyExchange(..), ServerKeyExDhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
@@ -108,8 +109,10 @@ getChangeCipherSpec = do
 	case cnt of
 		CCCSpec ChangeCipherSpec -> return ()
 		_ -> HM.throwError
-			HM.ALFatal HM.ADUnexpectedMessage
-			"HandshakeBase.getChangeCipherSpec: not change cipher spec"
+			HM.ALFatal HM.ADUnexpectedMessage $
+			"HandshakeBase.getChangeCipherSpec: " ++
+			"not change cipher spec: " ++
+			show cnt
 
 putChangeCipherSpec :: (HandleLike h, CPRG g) => HM.HandshakeM h g ()
 putChangeCipherSpec = uncurry HM.tlsPut . encodeContent $ CCCSpec ChangeCipherSpec
