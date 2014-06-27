@@ -1,8 +1,9 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TestClient (client) where
 
--- import Control.Applicative
+import ClSecretKey
 import Control.Monad
 import "crypto-random" Crypto.Random
 import HandshakeBase
@@ -12,7 +13,6 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
-import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.Prim as RSA
 
 import qualified Data.ASN1.Types as ASN1
@@ -41,13 +41,13 @@ hello = do
 	ServerHello _v sr _sid cs _cm _e <- readHandshake
 	return (cr, sr, cs)
 
-rsaHandshake :: (ValidateHandle h, CPRG g) =>
+rsaHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
  	BS.ByteString -> BS.ByteString ->
-	(RSA.PrivateKey, X509.CertificateChain) ->
+	(sk, X509.CertificateChain) ->
 	X509.CertificateStore ->
 	HandshakeM h g ()
 rsaHandshake cr sr (rsk, rcc) crtS = do
-	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain [ccc]) <- readHandshake
 	shd <- readHandshake
@@ -67,10 +67,10 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 		_ -> return ()
 	writeHandshake $ Epms epms
 	generateKeys Client (cr, sr) pms
-	hs <- rsaPadding rcpk `liftM` handshakeHash
+	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
-			RSA.dp Nothing rsk hs
+		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
+			clSign rsk rcpk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Server
 	writeHandshake =<< finishedHash Client
@@ -79,8 +79,8 @@ rsaHandshake cr sr (rsk, rcc) crtS = do
 	rfh <- readHandshake
 	debug $ fh == rfh
 
-client :: (ValidateHandle h, CPRG g) => g -> h ->
-	(RSA.PrivateKey, X509.CertificateChain) ->
+client :: (ValidateHandle h, CPRG g, ClSecretKey sk) => g -> h ->
+	(sk, X509.CertificateChain) ->
 	X509.CertificateStore ->
 	HandleMonad h ()
 client g h rsa crtS = (`run` g) $ do
@@ -100,12 +100,12 @@ client g h rsa crtS = (`run` g) $ do
 request :: BS.ByteString
 request = "GET / HTTP/1.1\r\n\r\n"
 
-dheHandshake :: (ValidateHandle h, CPRG g) =>
+dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
 	BS.ByteString -> BS.ByteString ->
-	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
+	(sk, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
 dheHandshake cr sr (rsk, rcc) crtS = do
-	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain [ccc]) <- readHandshake
 	handshakeValidate crtS cc >>= debug
@@ -136,10 +136,10 @@ dheHandshake cr sr (rsk, rcc) crtS = do
 		Just _ -> writeHandshake rcc
 		_ -> return ()
 	writeHandshake $ ClientKeyExchange cpv
-	hs <- rsaPadding rcpk `liftM` handshakeHash
+	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
-			RSA.dp Nothing rsk hs
+		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
+			clSign rsk rcpk hs
 		_ -> return ()
 	generateKeys Client (cr, sr) $ calculateShared edp sv pv
 	putChangeCipherSpec >> flushCipherSuite Server
@@ -149,12 +149,12 @@ dheHandshake cr sr (rsk, rcc) crtS = do
 	rfh <- readHandshake
 	debug $ fh == rfh
 
-ecdheHandshake :: (ValidateHandle h, CPRG g) =>
+ecdheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
 	BS.ByteString -> BS.ByteString ->
-	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
+	(sk, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
 ecdheHandshake cr sr (rsk, rcc) crtS = do
-	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain [ccc]) <- readHandshake
 	handshakeValidate crtS cc >>= debug
@@ -185,10 +185,10 @@ ecdheHandshake cr sr (rsk, rcc) crtS = do
 		Just _ -> writeHandshake rcc
 		_ -> return ()
 	writeHandshake $ ClientKeyExchange cpv
-	hs <- rsaPadding rcpk `liftM` handshakeHash
+	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
-			RSA.dp Nothing rsk hs
+		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
+			clSign rsk rcpk hs
 		_ -> return ()
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 	putChangeCipherSpec >> flushCipherSuite Server
@@ -198,11 +198,12 @@ ecdheHandshake cr sr (rsk, rcc) crtS = do
 	rfh <- readHandshake
 	debug $ fh == rfh
 
-ecdsaHandshake :: (ValidateHandle h, CPRG g) => BS.ByteString -> BS.ByteString ->
-	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
+ecdsaHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
+	BS.ByteString -> BS.ByteString ->
+	(sk, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
 ecdsaHandshake cr sr (rsk, rcc) crtS = do
-	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain [ccc]) <- readHandshake
 	handshakeValidate crtS cc >>= debug
@@ -229,10 +230,10 @@ ecdsaHandshake cr sr (rsk, rcc) crtS = do
 		Just _ -> writeHandshake rcc
 		_ -> return ()
 	writeHandshake $ ClientKeyExchange cpv
-	hs <- rsaPadding rcpk `liftM` handshakeHash
+	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
-			RSA.dp Nothing rsk hs
+		Just _ -> writeHandshake $ DigitallySigned (clAlgorithm rsk) $
+			clSign rsk rcpk hs
 		_ -> return ()
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 	putChangeCipherSpec >> flushCipherSuite Server

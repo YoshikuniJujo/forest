@@ -4,7 +4,7 @@ import Control.Applicative
 import Control.Concurrent
 import "crypto-random" Crypto.Random
 
-import TestClientClEcdsa
+import TestClient
 
 import ForClientTest
 

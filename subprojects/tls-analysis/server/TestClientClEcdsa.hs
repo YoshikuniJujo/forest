@@ -1,9 +1,9 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TestClientClEcdsa (client) where
 
--- import Control.Applicative
-import Data.Maybe
+import ClSecretKey
 import Control.Monad
 import "crypto-random" Crypto.Random
 import HandshakeBase
@@ -13,18 +13,12 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-
-import Data.ASN1.Encoding
-import Data.ASN1.Types
-import Data.ASN1.BinaryEncoding
-
 cipherSuites :: [CipherSuite]
 cipherSuites = [
 	CipherSuite RSA AES_128_CBC_SHA ]
 
-client :: (ValidateHandle h, CPRG g) => g -> h ->
-	(ECDSA.PrivateKey, X509.CertificateChain) ->
+client :: (ValidateHandle h, CPRG g, ClSecretKey sk) => g -> h ->
+	(sk, X509.CertificateChain) ->
 	X509.CertificateStore ->
 	HandleMonad h ()
 client g h (rsk, rcc) crtS = (`run` g) $ do
@@ -47,8 +41,7 @@ client g h (rsk, rcc) crtS = (`run` g) $ do
 		writeHandshake $ Epms epms
 		generateKeys Client (cr, sr) pms
 		hs <- handshakeHash
-		writeHandshake . DigitallySigned (Sha256, Ecdsa) . encodeSignature
-			. fromJust $ ECDSA.signWith 4649 rsk id hs
+		writeHandshake . DigitallySigned (Sha256, Ecdsa) $ clSign rsk undefined hs
 		putChangeCipherSpec >> flushCipherSuite Server
 		writeHandshake =<< finishedHash Client
 		getChangeCipherSpec >> flushCipherSuite Client
@@ -62,7 +55,3 @@ client g h (rsk, rcc) crtS = (`run` g) $ do
 
 request :: BS.ByteString
 request = "GET / HTTP/1.1\r\n\r\n"
-
-encodeSignature :: ECDSA.Signature -> BS.ByteString
-encodeSignature (ECDSA.Signature r s) =
-	encodeASN1' DER [Start Sequence, IntVal r, IntVal s, End Sequence]
