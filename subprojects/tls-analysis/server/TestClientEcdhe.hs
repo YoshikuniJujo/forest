@@ -25,60 +25,72 @@ cipherSuites = [
 	CipherSuite RSA AES_128_CBC_SHA
 	]
 
+hello :: (HandleLike h, CPRG g) =>
+	HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
+hello = do
+	cr <- randomByteString 32
+	writeHandshake $ ClientHello (3, 3) cr (SessionId "")
+		cipherSuites [CompressionMethodNull] Nothing
+	ServerHello _v sr _sid cs _cm _e <- readHandshake
+	return (cr, sr, cs)
+
+ecdheHandshake :: (ValidateHandle h, CPRG g) =>
+	BS.ByteString -> BS.ByteString ->
+	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
+	HandshakeM h g ()
+ecdheHandshake cr sr (rsk, rcc) crtS = do
+	let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
+		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
+	cc@(X509.CertificateChain [ccc]) <- readHandshake
+	handshakeValidate crtS cc >>= debug
+	let X509.PubKeyRSA pk =
+		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
+	ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+	let	v = RSA.ep pk sn
+		v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
+		Right [ASN1.Start ASN1.Sequence, ASN1.Start ASN1.Sequence,
+			ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
+			ASN1.End ASN1.Sequence,
+			ASN1.OctetString v'', ASN1.End ASN1.Sequence
+			] = ASN1.decodeASN1' ASN1.DER v'
+	debug v''
+	debug . SHA1.hash $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
+	shd <- readHandshake
+	cReq <- case shd of
+		Left (CertificateRequest csa hsa dn) -> do
+			ServerHelloDone <- readHandshake
+			return $ Just (csa, hsa, dn)
+		Right ServerHelloDone -> return Nothing
+		_ -> error "bad"
+	debug ha
+	debug sa
+	sv <- withRandom $ generateSecret cv
+	let cpv = B.encode $ calculatePublic cv sv
+	case cReq of
+		Just _ -> writeHandshake rcc
+		_ -> return ()
+	writeHandshake $ ClientKeyExchange cpv
+	hs <- rsaPadding rcpk `liftM` handshakeHash
+	case cReq of
+		Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
+			RSA.dp Nothing rsk hs
+		_ -> return ()
+	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
+	putChangeCipherSpec >> flushCipherSuite Server
+	writeHandshake =<< finishedHash Client
+	getChangeCipherSpec >> flushCipherSuite Client
+	fh <- finishedHash Server
+	rfh <- readHandshake
+	debug $ fh == rfh
+
 client :: (ValidateHandle h, CPRG g) => g -> h ->
 	(RSA.PrivateKey, X509.CertificateChain) -> X509.CertificateStore ->
 	HandleMonad h ()
-client g h (rsk, rcc) crtS = (`run` g) $ do
+client g h rsa crtS = (`run` g) $ do
 	t <- execHandshakeM h $ do
-		cr <- randomByteString 32
-		writeHandshake $ ClientHello (3, 3) cr (SessionId "")
-			cipherSuites [CompressionMethodNull] Nothing
-		ServerHello _v sr _sid cs _cm _e <- readHandshake
+		(cr, sr, cs) <- hello
 		setCipherSuite cs
-		debug cs
-		let X509.PubKeyRSA rcpk = let X509.CertificateChain [rccc] = rcc in
-			X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-		cc@(X509.CertificateChain [ccc]) <- readHandshake
-		handshakeValidate crtS cc >>= debug
-		let X509.PubKeyRSA pk =
-			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
-		let	v = RSA.ep pk sn
-			v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
-			Right [ASN1.Start ASN1.Sequence, ASN1.Start ASN1.Sequence,
-				ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
-				ASN1.End ASN1.Sequence,
-				ASN1.OctetString v'', ASN1.End ASN1.Sequence
-				] = ASN1.decodeASN1' ASN1.DER v'
-		debug v''
-		debug . SHA1.hash $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
-		shd <- readHandshake
-		cReq <- case shd of
-			Left (CertificateRequest csa hsa dn) -> do
-				ServerHelloDone <- readHandshake
-				return $ Just (csa, hsa, dn)
-			Right ServerHelloDone -> return Nothing
-			_ -> error "bad"
-		debug ha
-		debug sa
-		sv <- withRandom $ generateSecret cv
-		let cpv = B.encode $ calculatePublic cv sv
-		case cReq of
-			Just _ -> writeHandshake rcc
-			_ -> return ()
-		writeHandshake $ ClientKeyExchange cpv
-		hs <- rsaPadding rcpk `liftM` handshakeHash
-		case cReq of
-			Just _ -> writeHandshake $ DigitallySigned (Sha256, Rsa) $
-				RSA.dp Nothing rsk hs
-			_ -> return ()
-		generateKeys Client (cr, sr) $ calculateShared cv sv pnt
-		putChangeCipherSpec >> flushCipherSuite Server
-		writeHandshake =<< finishedHash Client
-		getChangeCipherSpec >> flushCipherSuite Client
-		fh <- finishedHash Server
-		rfh <- readHandshake
-		debug $ fh == rfh
+		ecdheHandshake cr sr rsa crtS
 	hlPut t request
 	hlGetContent t >>= hlDebug t 5
 	hlClose t
