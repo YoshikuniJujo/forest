@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, PackageImports #-}
 
-module ForClientTest (getPair, readFiles, srv) where
+module ForClientTest (getPair, readFiles, srv, readFilesEcdsa) where
 
 import Control.Applicative
 import Control.Concurrent.STM
@@ -13,6 +13,7 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import TestServer
 import CommandLine
@@ -28,6 +29,13 @@ readFiles :: IO (RSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
 readFiles = (,,)
 	<$> readRsaKey "clientFiles/yoshikuni.key"
 	<*> readCertificateChain "clientFiles/yoshikuni.crt"
+	<*> readCertificateStore ["cacert.pem"]
+
+readFilesEcdsa :: IO
+	(ECDSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
+readFilesEcdsa = (,,)
+	<$> readEcdsaKey "clientFiles/client_ecdsa.key"
+	<*> readCertificateChain "clientFiles/client_ecdsa.cert"
 	<*> readCertificateStore ["cacert.pem"]
 
 data ChanHandle = ChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
