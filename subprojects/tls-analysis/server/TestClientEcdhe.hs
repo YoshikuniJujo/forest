@@ -10,6 +10,13 @@ import "crypto-random" Crypto.Random
 import qualified Codec.Bytable as B
 import qualified Data.ByteString as BS
 
+import qualified Data.ASN1.Types as ASN1
+import qualified Data.ASN1.Encoding as ASN1
+import qualified Data.ASN1.BinaryEncoding as ASN1
+
+import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.Hash.SHA1 as SHA1
+
 cipherSuites :: [CipherSuite]
 cipherSuites = [
 	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
@@ -29,11 +36,17 @@ client g h _crtS = (`run` g) $ do
 		X509.CertificateChain [ccc] <- readHandshake
 		let X509.PubKeyRSA pk =
 			X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-		debug pk
-		ServerKeyExEcdhe cv pnt ha sa _sn <- readHandshake
+		ServerKeyExEcdhe cv pnt ha sa sn <- readHandshake
+		let	v = RSA.ep pk sn
+			v' = BS.tail . BS.dropWhile (== 255) $ BS.drop 2 v
+			Right [ASN1.Start ASN1.Sequence, ASN1.Start ASN1.Sequence,
+				ASN1.OID [1, 3, 14, 3, 2, 26], ASN1.Null,
+				ASN1.End ASN1.Sequence,
+				ASN1.OctetString v'', ASN1.End ASN1.Sequence
+				] = ASN1.decodeASN1' ASN1.DER v'
+		debug v''
+		debug . SHA1.hash $ BS.concat [cr, sr, B.encode cv, B.encode pnt]
 		ServerHelloDone <- readHandshake
-		debug cv
-		debug pnt
 		debug ha
 		debug sa
 		sv <- withRandom $ generateSecret cv
