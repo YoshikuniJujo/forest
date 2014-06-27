@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
-module TestClient (
-	client
-) where
+module TestClient (client) where
 
 -- import Control.Applicative
 import Control.Monad
