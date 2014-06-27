@@ -2,9 +2,11 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TestClient (
-	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
+	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ValidateHandle(..),
+	) where
 
-import ClSecretKey
+-- import ClSecretKey
 import Control.Monad
 import qualified "monads-tf" Control.Monad.Error as E
 import "crypto-random" Crypto.Random
@@ -215,3 +217,31 @@ point :: BS.ByteString -> ECC.Point
 point s = let (x, y) = BS.splitAt 32 $ BS.drop 1 s in ECC.Point
 	(either error id $ B.decode x)
 	(either error id $ B.decode y)
+
+class ClSecretKey sk where
+	type SecPubKey sk
+	getPubKey :: sk -> X509.PubKey -> SecPubKey sk
+	clSign :: sk -> SecPubKey sk -> BS.ByteString -> BS.ByteString
+	clAlgorithm :: sk -> (HashAlgorithm, SignatureAlgorithm)
+
+instance ClSecretKey ECDSA.PrivateKey where
+	type SecPubKey ECDSA.PrivateKey = ()
+	getPubKey _ _ = ()
+	clSign sk _ m = encodeSignature $ -- fromJust . ECDSA.signWith 4649 sk id
+		blindSign 1 id sk (generateKs (SHA256.hash, 64) q x m) m
+		where
+		q = ECC.ecc_n . ECC.common_curve $ ECDSA.private_curve sk
+		x = ECDSA.private_d sk
+	clAlgorithm _ = (Sha256, Ecdsa)
+
+encodeSignature :: ECDSA.Signature -> BS.ByteString
+encodeSignature (ECDSA.Signature r s) = ASN1.encodeASN1' ASN1.DER [
+	ASN1.Start ASN1.Sequence,
+		ASN1.IntVal r, ASN1.IntVal s, ASN1.End ASN1.Sequence]
+
+instance ClSecretKey RSA.PrivateKey where
+	type SecPubKey RSA.PrivateKey = RSA.PublicKey
+	getPubKey _ (X509.PubKeyRSA pk) = pk
+	getPubKey _ _ = error "bad"
+	clSign sk pk m = let pd = rsaPadding pk m in RSA.dp Nothing sk pd
+	clAlgorithm _ = (Sha256, Rsa)

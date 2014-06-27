@@ -6,8 +6,22 @@ import Control.Concurrent
 import "crypto-random" Crypto.Random
 
 import TestClient
+import Data.HandleLike
 
-import ForClientTest
+import Control.Concurrent.STM
+import qualified Data.ByteString as BS
+import ReadFile
+import System.IO
+import TestServer
+import CommandLine
+import System.Environment
+
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
+
+-- import ForClientTest
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
@@ -26,11 +40,11 @@ len = length cipherSuites - 1
 
 main :: IO ()
 main = do
-	forM_ (map (flip drop cipherSuites) [len, len - 1 .. 0]) rsa
+	forM_ (map (flip drop cipherSuites) [len, len - 1 .. 0]) runRsa
 	forM_ (map (flip drop cipherSuites) [len, len - 1 .. 0]) ecdsa
 
-rsa :: [CipherSuite] -> IO ()
-rsa cs = do
+runRsa :: [CipherSuite] -> IO ()
+runRsa cs = do
 	(cw, sw) <- getPair
 	_ <- forkIO $ srv sw cs
 	(rsk, rcc, crtS) <- readFiles
@@ -44,3 +58,48 @@ ecdsa cs = do
 	(rsk, rcc, crtS) <- readFilesEcdsa
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	client g cw (rsk, rcc) crtS
+
+srv :: ChanHandle -> [CipherSuite] -> IO ()
+srv sw cs = do
+	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+	(_prt, _cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
+	server g sw cs rsa ec mcs
+
+readFiles :: IO (RSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
+readFiles = (,,)
+	<$> readRsaKey "clientFiles/yoshikuni.key"
+	<*> readCertificateChain "clientFiles/yoshikuni.crt"
+	<*> readCertificateStore ["cacert.pem"]
+
+readFilesEcdsa :: IO
+	(ECDSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
+readFilesEcdsa = (,,)
+	<$> readEcdsaKey "clientFiles/client_ecdsa.key"
+	<*> readCertificateChain "clientFiles/client_ecdsa.cert"
+	<*> readCertificateStore ["cacert.pem"]
+
+data ChanHandle = ChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
+
+instance HandleLike ChanHandle where
+	type HandleMonad ChanHandle = IO
+	hlPut (ChanHandle _ w) = atomically . writeTChan w
+	hlGet h@(ChanHandle r _) n = do
+		bs <- atomically $ readTChan r
+		let l = BS.length bs
+		if l < n
+			then (bs `BS.append`) <$> hlGet h (n - l)
+			else atomically $ do
+				let (x, y) = BS.splitAt n bs
+				unGetTChan r y
+				return x
+	hlDebug _ _ = BS.putStr
+	hlClose _ = return ()
+
+instance ValidateHandle ChanHandle where
+	validate _ = validate (undefined :: Handle)
+
+getPair :: IO (ChanHandle, ChanHandle)
+getPair = do
+	c1 <- newTChanIO
+	c2 <- newTChanIO
+	return (ChanHandle c1 c2, ChanHandle c2 c1)

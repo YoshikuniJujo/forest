@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
 
 module HandshakeBase (
-	debug,
+	debug, generateKs, blindSign,
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
