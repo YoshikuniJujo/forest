@@ -1,14 +1,14 @@
 {-# LANGUAGE PackageImports #-}
 
 module TlsMonad (
-	TlsM, evalTlsM, CS.initState,
+	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
 		getClientSn, getServerSn, succClientSn, succServerSn,
-	CS.Alert(..), CS.AlertLevel(..), CS.AlertDesc(..),
-	CS.ContentType(..),
-	CS.CipherSuite(..), CS.KeyExchange(..), CS.BulkEncryption(..),
-	CS.ClientId, CS.newClientId, CS.Keys(..), CS.nullKeys ) where
+	S.Alert(..), S.AlertLevel(..), S.AlertDesc(..),
+	S.ContentType(..),
+	S.CipherSuite(..), S.KeyExchange(..), S.BulkEncryption(..),
+	S.PartnerId, S.newPartnerId, S.Keys(..), S.nullKeys ) where
 
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
@@ -20,38 +20,38 @@ import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 
-import qualified ClientState as CS (
-	HandshakeState, initState, ClientId, newClientId, Keys(..), nullKeys,
+import qualified State as S (
+	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
 	setBuf, getBuf, setWBuf, getWBuf,
 	getClientSN, getServerSN, succClientSN, succServerSN )
 
-type TlsM h g = ErrorT CS.Alert (StateT (CS.HandshakeState h g) (HandleMonad h))
+type TlsM h g = ErrorT S.Alert (StateT (S.HandshakeState h g) (HandleMonad h))
 
 evalTlsM :: HandleLike h => 
-	TlsM h g a -> CS.HandshakeState h g -> HandleMonad h (Either CS.Alert a)
+	TlsM h g a -> S.HandshakeState h g -> HandleMonad h (Either S.Alert a)
 evalTlsM = evalStateT . runErrorT
 
 getBuf, getWBuf ::  HandleLike h =>
-	CS.ClientId -> TlsM h g (CS.ContentType, BS.ByteString)
-getBuf = gets . CS.getBuf; getWBuf = gets . CS.getWBuf
+	S.PartnerId -> TlsM h g (S.ContentType, BS.ByteString)
+getBuf = gets . S.getBuf; getWBuf = gets . S.getWBuf
 
 setBuf, setWBuf :: HandleLike h =>
-	CS.ClientId -> (CS.ContentType, BS.ByteString) -> TlsM h g ()
-setBuf = (modify .) . CS.setBuf; setWBuf = (modify .) . CS.setWBuf
+	S.PartnerId -> (S.ContentType, BS.ByteString) -> TlsM h g ()
+setBuf = (modify .) . S.setBuf; setWBuf = (modify .) . S.setWBuf
 
-getServerSn, getClientSn :: HandleLike h => CS.ClientId -> TlsM h g Word64
-getServerSn = gets . CS.getServerSN; getClientSn = gets . CS.getClientSN
+getServerSn, getClientSn :: HandleLike h => S.PartnerId -> TlsM h g Word64
+getServerSn = gets . S.getServerSN; getClientSn = gets . S.getClientSN
 
-succServerSn, succClientSn :: HandleLike h => CS.ClientId -> TlsM h g ()
-succServerSn = modify . CS.succServerSN; succClientSn = modify . CS.succClientSN
+succServerSn, succClientSn :: HandleLike h => S.PartnerId -> TlsM h g ()
+succServerSn = modify . S.succServerSN; succClientSn = modify . S.succClientSN
 
 withRandom :: HandleLike h => (gen -> (a, gen)) -> TlsM h gen a
 withRandom p = do
-	(x, g') <- p `liftM` gets CS.randomGen
-	modify $ CS.setRandomGen g'
+	(x, g') <- p `liftM` gets S.randomGen
+	modify $ S.setRandomGen g'
 	return x
 
 randomByteString :: (HandleLike h, CPRG g) => Int -> TlsM h g BS.ByteString

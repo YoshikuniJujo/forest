@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module ClientState (
-	HandshakeState, initState, ClientId, newClientId, Keys(..), nullKeys,
+module State (
+	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	randomGen, setRandomGen,
@@ -20,38 +20,38 @@ import qualified Codec.Bytable as B
 import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 data HandshakeState h g = HandshakeState {
-	randomGen :: g, nextClientId :: Int,
-	clientStates :: [(ClientId, StateOne g)] }
+	randomGen :: g, nextPartnerId :: Int,
+	states :: [(PartnerId, StateOne g)] }
 
 initState :: g -> HandshakeState h g
-initState g = HandshakeState{ randomGen = g, nextClientId = 0, clientStates = [] }
+initState g = HandshakeState{ randomGen = g, nextPartnerId = 0, states = [] }
 
-data ClientId = ClientId Int deriving (Show, Eq)
+data PartnerId = PartnerId Int deriving (Show, Eq)
 
-newClientId :: HandshakeState h g -> (ClientId, HandshakeState h g)
-newClientId s = (ClientId i ,) s{
-	nextClientId = succ i,
-	clientStates = (ClientId i, so) : sos }
+newPartnerId :: HandshakeState h g -> (PartnerId, HandshakeState h g)
+newPartnerId s = (PartnerId i ,) s{
+	nextPartnerId = succ i,
+	states = (PartnerId i, so) : sos }
 	where
-	i = nextClientId s
+	i = nextPartnerId s
 	so = StateOne {
 		rBuffer = (CTNull, ""), wBuffer = (CTNull, ""),
 		clientSN = 0, serverSN = 0 }
-	sos = clientStates s
+	sos = states s
 
 data StateOne g = StateOne {
 	rBuffer :: (ContentType, BS.ByteString),
 	wBuffer :: (ContentType, BS.ByteString),
 	clientSN :: Word64, serverSN :: Word64 }
 
-getClientState :: ClientId -> HandshakeState h g -> StateOne g
-getClientState i = fromJust' "getClientState" . lookup i . clientStates
+getState :: PartnerId -> HandshakeState h g -> StateOne g
+getState i = fromJust' "getState" . lookup i . states
 
-setClientState :: ClientId -> StateOne g -> Modify (HandshakeState h g)
-setClientState i so s = s { clientStates = (i, so) : clientStates s }
+setState :: PartnerId -> StateOne g -> Modify (HandshakeState h g)
+setState i so s = s { states = (i, so) : states s }
 
-modifyClientState :: ClientId -> Modify (StateOne g) -> Modify (HandshakeState h g)
-modifyClientState i f s = setClientState i (f $ getClientState i s) s
+modifyState :: PartnerId -> Modify (StateOne g) -> Modify (HandshakeState h g)
+modifyState i f s = setState i (f $ getState i s) s
 
 data Keys = Keys {
 	kCachedCS :: CipherSuite,
@@ -86,7 +86,7 @@ instance B.Bytable ContentType where
 	decode "\22" = Right CTHandshake
 	decode "\23" = Right CTAppData
 	decode bs | [ct] <- BS.unpack bs = Right $ CTRaw ct
-	decode _ = Left "ClientState.decodeCT"
+	decode _ = Left "State.decodeCT"
 
 data Alert = Alert AlertLevel AlertDesc String | NotDetected String
 	deriving Show
@@ -109,25 +109,25 @@ instance IsString Alert where
 setRandomGen :: g -> HandshakeState h g -> HandshakeState h g
 setRandomGen rg st = st { randomGen = rg }
 
-getBuf :: ClientId -> HandshakeState h g -> (ContentType, BS.ByteString)
-getBuf i = rBuffer . fromJust' "getBuf" . lookup i . clientStates
+getBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getBuf i = rBuffer . fromJust' "getBuf" . lookup i . states
 
-setBuf :: ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
-setBuf i = modifyClientState i . \bs st -> st { rBuffer = bs }
+setBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setBuf i = modifyState i . \bs st -> st { rBuffer = bs }
 
-getWBuf :: ClientId -> HandshakeState h g -> (ContentType, BS.ByteString)
-getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . clientStates
+getWBuf :: PartnerId -> HandshakeState h g -> (ContentType, BS.ByteString)
+getWBuf i = wBuffer . fromJust' "getWriteBuffer" . lookup i . states
 
-setWBuf :: ClientId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
-setWBuf i = modifyClientState i . \bs st -> st{ wBuffer = bs }
+setWBuf :: PartnerId -> (ContentType, BS.ByteString) -> Modify (HandshakeState h g)
+setWBuf i = modifyState i . \bs st -> st{ wBuffer = bs }
 
-getClientSN, getServerSN :: ClientId -> HandshakeState h g -> Word64
-getClientSN i = clientSN . fromJust . lookup i . clientStates
-getServerSN i = serverSN . fromJust . lookup i . clientStates
+getClientSN, getServerSN :: PartnerId -> HandshakeState h g -> Word64
+getClientSN i = clientSN . fromJust . lookup i . states
+getServerSN i = serverSN . fromJust . lookup i . states
 
-succClientSN, succServerSN :: ClientId -> Modify (HandshakeState h g)
-succClientSN i = modifyClientState i $ \s -> s{ clientSN = succ $ clientSN s }
-succServerSN i = modifyClientState i $ \s -> s{ serverSN = succ $ serverSN s }
+succClientSN, succServerSN :: PartnerId -> Modify (HandshakeState h g)
+succClientSN i = modifyState i $ \s -> s{ clientSN = succ $ clientSN s }
+succServerSN i = modifyState i $ \s -> s{ serverSN = succ $ serverSN s }
 
 type Modify s = s -> s
 

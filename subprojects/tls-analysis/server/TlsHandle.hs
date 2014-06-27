@@ -31,12 +31,12 @@ import TlsMonad (
 		getClientSn, getServerSn, succClientSn, succServerSn,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	ContentType(..), CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	ClientId, newClientId, Keys(..), nullKeys )
+	PartnerId, newPartnerId, Keys(..), nullKeys )
 import qualified CryptoTools as CT (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash )
 
 data TlsHandle h g = TlsHandle {
-	clientId :: ClientId,
+	clientId :: PartnerId,
 	tlsHandle :: h, keys :: Keys, clientNames :: [String] }
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
@@ -53,7 +53,7 @@ run m g = do
 newHandle :: HandleLike h => h -> TlsM h g (TlsHandle h g)
 newHandle h = do
 	s <- get
-	let (i, s') = newClientId s
+	let (i, s') = newPartnerId s
 	put s'
 	return TlsHandle {
 		clientId = i, tlsHandle = h, keys = nullKeys, clientNames = [] }
