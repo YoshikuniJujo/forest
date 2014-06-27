@@ -7,7 +7,7 @@ module HandshakeType (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	ServerKeyExchange(..),
-	certificateRequest, ClientCertificateType(..),
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
@@ -25,7 +25,7 @@ import Hello (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..) )
 import Certificate (
-	CertificateRequest, certificateRequest, ClientCertificateType(..),
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..) )
 
 data Handshake

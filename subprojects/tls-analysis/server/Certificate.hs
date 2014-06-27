@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Certificate (
-	CertificateRequest, certificateRequest, ClientCertificateType(..),
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..)) where
 
 import Control.Applicative ((<$>), (<*>))

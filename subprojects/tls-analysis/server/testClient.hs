@@ -18,11 +18,13 @@ import ReadFile
 main :: IO ()
 main = do
 	crtS <- readCertificateStore ["cacert.pem"]
+	rsk <- readRsaKey "clientFiles/yoshikuni.key"
+	rcc <- readCertificateChain "clientFiles/yoshikuni.crt"
 	(_prt, cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(cw, sw) <- getPair
 	_ <- forkIO $ server g0 sw cs rsa ec mcs
-	client g0 cw crtS
+	client g0 cw (rsk, rcc) crtS
 
 data ChanHandle = ChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
 

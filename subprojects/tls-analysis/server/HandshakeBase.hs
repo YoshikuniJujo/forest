@@ -14,7 +14,7 @@ module HandshakeBase (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
 		HM.setCipherSuite,
-	certificateRequest, ClientCertificateType(..), SecretKey(..),
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..), Epms(..),
 		HM.generateKeys,
 		HM.encryptRsa, HM.decryptRsa, HM.rsaPadding, HM.debugCipherSuite,
@@ -53,7 +53,7 @@ import HandshakeType (
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
 	ServerKeyExchange(..),
-	certificateRequest, ClientCertificateType(..),
+	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 		SignatureAlgorithm(..), HashAlgorithm(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
