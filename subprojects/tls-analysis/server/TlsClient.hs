@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module TlsClient (
-	openServer, ValidateHandle(..), ClSecretKey(..),
+	run, openServer, ValidateHandle(..), ClSecretKey(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
 
 -- import ClSecretKey

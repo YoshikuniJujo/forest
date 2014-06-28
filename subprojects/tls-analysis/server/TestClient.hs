@@ -8,7 +8,7 @@ module TestClient (
 import TlsClient
 import Control.Monad
 import "crypto-random" Crypto.Random
-import HandshakeBase
+-- import HandshakeBase
 import Data.HandleLike
 
 import qualified Data.ByteString as BS
