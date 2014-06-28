@@ -74,11 +74,11 @@ rsaHandshake cr sr (csk, rcc) crtS = do
 	unless (null vr) $ E.throwError "validate failure"
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-	cReq <- clientCertificate rcc
+	cReq <- clientCertificate (csk, rcc)
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
 	generateKeys Client (cr, sr) pms
 	writeHandshake . Epms =<< encryptRsa pk pms
-	finishHandshake cReq csk rcc
+	finishHandshake cReq
 
 dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
 	ke -> BS.ByteString -> BS.ByteString ->
@@ -104,18 +104,19 @@ succeedHandshake t pk cc cr sr csk rcc crtS = do
 	let _ = cv `asTypeOf` t
 	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode cv, B.encode pnt]) $
 		E.throwError "verify failure"
-	cReq <- clientCertificate rcc
+	cReq <- clientCertificate (csk, rcc)
 	sv <- withRandom $ generateSecret cv
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic cv sv
-	finishHandshake cReq csk rcc
+	finishHandshake cReq
 
-clientCertificate :: (HandleLike h, CPRG g) => X509.CertificateChain ->
-	HandshakeM h g (Maybe (
-		[ClientCertificateType],
-		[(HashAlgorithm, SignatureAlgorithm)],
-		[X509.DistinguishedName]))
-clientCertificate rcc = do
+clientCertificate :: (HandleLike h, CPRG g) =>
+	(sk, X509.CertificateChain) ->
+	HandshakeM h g (Maybe (sk, X509.CertificateChain))
+--		[ClientCertificateType],
+--		[(HashAlgorithm, SignatureAlgorithm)],
+--		[X509.DistinguishedName]))
+clientCertificate (sk, rcc) = do
 	shd <- readHandshake
 	cReq <- case shd of
 		Left (CertificateRequest csa hsa dn) -> do
@@ -124,19 +125,22 @@ clientCertificate rcc = do
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
 	case cReq of
-		Just _ -> writeHandshake rcc
-		_ -> return ()
-	return cReq
+		Just _ -> do
+			writeHandshake rcc
+			return $ Just (sk, rcc)
+		_ -> return Nothing
 
 finishHandshake :: (HandleLike h, CPRG g, ClSecretKey sk) =>
-	Maybe t -> sk -> X509.CertificateChain -> HandshakeM h g ()
-finishHandshake cReq csk rcc = do
-	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
-		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
+	Maybe (sk, X509.CertificateChain) -> HandshakeM h g ()
+finishHandshake cReq = do
 	hs <- handshakeHash
 	case cReq of
-		Just _ -> writeHandshake . DigitallySigned (clAlgorithm csk) $
-			clSign csk rcpk hs
+		Just (csk, rcc) -> do
+			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
+				getPubKey csk . X509.certPubKey .
+					X509.signedObject $ X509.getSigned rccc
+			writeHandshake . DigitallySigned (clAlgorithm csk) $
+				clSign csk rcpk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
