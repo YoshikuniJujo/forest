@@ -2,7 +2,7 @@
 	TupleSections #-}
 
 module HandshakeBase (
-	debug, generateKs, blindSign,
+	debug, generateKs, blindSign, CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
 	HM.TlsHandle, HM.setClientNames, HM.checkName, HM.clientName,
@@ -70,6 +70,8 @@ import qualified HandshakeMonad as HM (
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError )
 import Ecdsa (blindSign, generateKs)
+
+import CertSecretKey
 
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
 debug x = do

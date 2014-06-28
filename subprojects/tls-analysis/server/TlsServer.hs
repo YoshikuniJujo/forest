@@ -2,7 +2,7 @@
 	PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TlsServer (
+module TlsServer ( CertSecretKey(..),
 	run, openClient, checkName, clientName,
 	ValidateHandle(..), SecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
@@ -46,19 +46,20 @@ import HandshakeBase (
 		generateKeys, decryptRsa, rsaPadding, debugCipherSuite,
 	DigitallySigned(..), handshakeHash, flushCipherSuite,
 	Side(..), RW(..), finishedHash,
-	DhParam(..), dh3072Modp, secp256r1, throwError )
+	DhParam(..), dh3072Modp, secp256r1, throwError,
+	CertSecretKey(..) )
 
 type Version = (Word8, Word8)
 
 version :: Version
 version = (3, 3)
 
-openClient :: (ValidateHandle h, CPRG g, SecretKey sk) => h ->
+openClient :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] ->
-	(RSA.PrivateKey, X509.CertificateChain) ->
-	(sk, X509.CertificateChain) ->
+	(CertSecretKey, X509.CertificateChain) ->
+	(CertSecretKey, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
-openClient h cssv (rsk, rcc) (esk, ecc) mcs = execHandshakeM h $ do
+openClient h cssv (RsaKey rsk, rcc) (EcdsaKey esk, ecc) mcs = execHandshakeM h $ do
 	(cs@(CipherSuite ke be), cr, cv) <- clientHello cssv
 	sr <- serverHello cs rcc ecc
 	setCipherSuite cs

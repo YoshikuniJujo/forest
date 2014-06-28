@@ -15,8 +15,6 @@ import System.IO
 import CommandLine
 import System.Environment
 
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
@@ -50,7 +48,7 @@ runRsa cs = do
 	_ <- forkIO $ srv sw cs
 	(rsk, rcc, crtS) <- readFiles
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	client g cw [(RsaKey rsk, rcc)] crtS
+	client g cw [(rsk, rcc)] crtS
 
 ecdsa :: [CipherSuite] -> IO ()
 ecdsa cs = do
@@ -58,7 +56,7 @@ ecdsa cs = do
 	_ <- forkIO $ srv sw cs
 	(rsk, rcc, crtS) <- readFilesEcdsa
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	client g cw [(EcdsaKey rsk, rcc)] crtS
+	client g cw [(rsk, rcc)] crtS
 
 srv :: ChanHandle -> [CipherSuite] -> IO ()
 srv sw cs = do
@@ -66,16 +64,16 @@ srv sw cs = do
 	(_prt, _cs, rsa, ec, mcs, _td) <- readOptions =<< getArgs
 	server g sw cs rsa ec mcs
 
-readFiles :: IO (RSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
+readFiles :: IO (CertSecretKey, X509.CertificateChain, X509.CertificateStore)
 readFiles = (,,)
-	<$> readRsaKey "clientFiles/yoshikuni.key"
+	<$> readKey "clientFiles/yoshikuni.key"
 	<*> readCertificateChain "clientFiles/yoshikuni.crt"
 	<*> readCertificateStore ["cacert.pem"]
 
 readFilesEcdsa :: IO
-	(ECDSA.PrivateKey, X509.CertificateChain, X509.CertificateStore)
+	(CertSecretKey, X509.CertificateChain, X509.CertificateStore)
 readFilesEcdsa = (,,)
-	<$> readEcdsaKey "clientFiles/client_ecdsa.key"
+	<$> readKey "clientFiles/client_ecdsa.key"
 	<*> readCertificateChain "clientFiles/client_ecdsa.cert"
 	<*> readCertificateStore ["cacert.pem"]
 

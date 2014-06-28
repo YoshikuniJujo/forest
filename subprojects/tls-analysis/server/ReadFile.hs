@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections #-}
 
 module ReadFile (
-	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore) where
+	CertSecretKey, readKey, readCertificateChain, readCertificateStore) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Arrow ((***))
@@ -18,20 +18,26 @@ import qualified Data.X509.File as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
-import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-readRsaKey :: FilePath -> IO RSA.PrivateKey
+import CertSecretKey
+
+readKey :: FilePath -> IO CertSecretKey
+readKey fp = do
+	rk <- readRsaKey fp
+	maybe (readEcdsaKey fp) return rk
+
+readRsaKey :: FilePath -> IO (Maybe CertSecretKey)
 readRsaKey fp = do
 	ks <- X509.readKeyFile fp
 	case ks of
-		[X509.PrivKeyRSA sk] -> return sk
-		_ -> error "ReadFile.readRsaKey: not single RSA key"
+		[X509.PrivKeyRSA sk] -> return . Just $ RsaKey sk
+		_ -> return Nothing -- error "ReadFile.readRsaKey: not single RSA key"
 
-readEcdsaKey :: FilePath -> IO ECDSA.PrivateKey
-readEcdsaKey = (either error id . decodeEcdsaKey <$>) . BS.readFile
+readEcdsaKey :: FilePath -> IO CertSecretKey
+readEcdsaKey = (EcdsaKey . either error id . decodeEcdsaKey <$>) . BS.readFile
 
 readCertificateChain :: FilePath -> IO X509.CertificateChain
 readCertificateChain = (X509.CertificateChain <$>) . X509.readSignedObject

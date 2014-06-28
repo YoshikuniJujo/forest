@@ -5,7 +5,6 @@ module TlsClient ( CertSecretKey(..),
 	run, openServer, ValidateHandle(..), ClSecretKey(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
 
--- import ClSecretKey
 import Control.Monad
 import Data.List
 import qualified "monads-tf" Control.Monad.Error as E
@@ -110,9 +109,6 @@ succeedHandshake t pk cc cr sr crt crtS = do
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic cv sv
 	finishHandshake cReq
-
-data CertSecretKey = RsaKey RSA.PrivateKey | EcdsaKey ECDSA.PrivateKey
-	deriving Show
 
 clientCertificate :: (HandleLike h, CPRG g) =>
 	[(CertSecretKey, X509.CertificateChain)] ->

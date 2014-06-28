@@ -10,20 +10,18 @@ import Data.Maybe (fromMaybe)
 import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..), PortNumber)
-import ReadFile (
-	readRsaKey, readEcdsaKey, readCertificateChain, readCertificateStore)
+import ReadFile ( CertSecretKey,
+	readKey, readCertificateChain, readCertificateStore)
 import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Crypto.PubKey.RSA as RSA
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 readOptions :: [String] -> IO (
 	PortID,
 	[CipherSuite],
-	(RSA.PrivateKey, X509.CertificateChain),
-	(ECDSA.PrivateKey, X509.CertificateChain),
+	(CertSecretKey, X509.CertificateChain),
+	(CertSecretKey, X509.CertificateChain),
 	Maybe X509.CertificateStore,
 	FilePath )
 readOptions args = do
@@ -38,8 +36,8 @@ readOptions args = do
 		rcf = "localhost.crt" `fromMaybe` optRsaCertFile opts
 		ekf = "localhost_ecdsa.key" `fromMaybe` optEcKeyFile opts
 		ecf = "localhost_ecdsa.cert" `fromMaybe` optEcCertFile opts
-	rsa <- (,) <$> readRsaKey rkf <*> readCertificateChain rcf
-	ec <- (,) <$> readEcdsaKey ekf <*> readCertificateChain ecf
+	rsa <- (,) <$> readKey rkf <*> readCertificateChain rcf
+	ec <- (,) <$> readKey ekf <*> readCertificateChain ecf
 	mcs <- if optDisableClientCert opts then return Nothing else Just <$>
 		readCertificateStore ["cacert.pem"]
 	return (prt, css, rsa, ec, mcs, td)

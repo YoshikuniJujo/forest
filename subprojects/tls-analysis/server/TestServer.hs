@@ -11,16 +11,15 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
-import qualified Crypto.PubKey.RSA as RSA
 
-import TlsServer (
+import TlsServer ( CertSecretKey(..),
 	run, openClient, clientName,
-	ValidateHandle(..), CipherSuite(..), SecretKey )
+	ValidateHandle(..), CipherSuite(..) )
 
-server :: (ValidateHandle h, CPRG g, SecretKey sk) => g -> h ->
+server :: (ValidateHandle h, CPRG g)  => g -> h ->
 	[CipherSuite] ->
-	(RSA.PrivateKey, X509.CertificateChain) ->
-	(sk, X509.CertificateChain) ->
+	(CertSecretKey, X509.CertificateChain) ->
+	(CertSecretKey, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
 server g h css rsa ec mcs = (`run` g) $ do
 	cl <- openClient h css rsa ec mcs
