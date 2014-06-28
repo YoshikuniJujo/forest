@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports,
+	TupleSections #-}
 
 module HandshakeBase (
 	debug, generateKs, blindSign,
@@ -217,12 +218,19 @@ dh3072Modp = DH.Params p 2
 instance DhParam ECC.Curve where
 	type Secret ECC.Curve = Integer
 	type Public ECC.Curve = ECC.Point
-	generateSecret _ =
-		first (either error id . B.decode) . cprgGenerate 32
+	generateSecret c = getRangedInteger 32 1 (n - 1)
+		-- first (either error id . B.decode) . cprgGenerate 64
+		where
+		n = ECC.ecc_n $ ECC.common_curve c
 	calculatePublic cv sn =
 		ECC.pointMul cv sn . ECC.ecc_g $ ECC.common_curve cv
 	calculateShared cv sn pp =
 		let ECC.Point x _ = ECC.pointMul cv sn pp in B.encode x
+
+getRangedInteger :: CPRG g => Int -> Integer -> Integer -> g -> (Integer, g)
+getRangedInteger b mn mx g = let
+	(n, g') = first (either error id . B.decode) $ cprgGenerate b g in
+	if mn <= n && n <= mx then (n, g') else getRangedInteger b mn mx g'
 
 secp256r1 :: ECC.Curve
 secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
