@@ -54,13 +54,30 @@ type Version = (Word8, Word8)
 version :: Version
 version = (3, 3)
 
+filterCS :: [(CertSecretKey, X509.CertificateChain)] ->
+	[CipherSuite] -> [CipherSuite]
+filterCS crts cs = case find isEcdsa crts of
+	Just _ -> cs
+	_ -> filter (not . isEcdsaCS) cs
+
+isEcdsa :: (CertSecretKey, X509.CertificateChain) -> Bool
+isEcdsa (EcdsaKey _, _) = True
+isEcdsa _ = False
+
+isRsa :: (CertSecretKey, X509.CertificateChain) -> Bool
+isRsa (RsaKey _, _) = True
+isRsa _ = False
+
+isEcdsaCS :: CipherSuite -> Bool
+isEcdsaCS (CipherSuite ECDHE_ECDSA _) = True
+isEcdsaCS _ = False
+
 openClient :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] ->
-	(CertSecretKey, X509.CertificateChain) ->
-	(CertSecretKey, X509.CertificateChain) ->
+	[(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
-openClient h cssv (RsaKey rsk, rcc) (EcdsaKey esk, ecc) mcs = execHandshakeM h $ do
-	(cs@(CipherSuite ke be), cr, cv) <- clientHello cssv
+openClient h cssv crts mcs = execHandshakeM h $ do
+	(cs@(CipherSuite ke be), cr, cv) <- clientHello $ filterCS crts cssv
 	sr <- serverHello cs rcc ecc
 	setCipherSuite cs
 	ha <- case be of
@@ -82,6 +99,9 @@ openClient h cssv (RsaKey rsk, rcc) (EcdsaKey esk, ecc) mcs = execHandshakeM h $
 		"TlsServer.openClient: wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
+	where
+	Just (RsaKey rsk, rcc) = find isRsa crts
+	Just (EcdsaKey esk, ecc) = find isEcdsa crts
 
 rsaKeyExchange :: (ValidateHandle h, CPRG g) => RSA.PrivateKey -> Version ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
