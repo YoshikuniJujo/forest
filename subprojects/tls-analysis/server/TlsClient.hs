@@ -1,51 +1,54 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
-module TlsClient ( CertSecretKey(..),
-	run, openServer, ValidateHandle(..), ClSecretKey(..),
+module TlsClient (
+	run, openServer, ValidateHandle(..), CertSecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
 
-import Control.Monad
-import Data.List
+import Control.Monad (unless, liftM)
+import Data.List (find, intersect)
+import Data.HandleLike (HandleLike)
+import "crypto-random" Crypto.Random (CPRG)
+
 import qualified "monads-tf" Control.Monad.Error as E
-import "crypto-random" Crypto.Random
-import HandshakeBase
-import Data.HandleLike
-
 import qualified Data.ByteString as BS
-import qualified Data.X509 as X509
-import qualified Data.X509.CertificateStore as X509
-
-import qualified Crypto.PubKey.RSA.Prim as RSA
-import qualified Crypto.PubKey.RSA as RSA
-
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
 import qualified Data.ASN1.BinaryEncoding as ASN1
+import qualified Data.X509 as X509
+import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
-
-import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
-import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.DH as DH
+import qualified Crypto.PubKey.RSA as RSA
+import qualified Crypto.PubKey.RSA.Prim as RSA
+import qualified Crypto.Types.PubKey.ECC as ECC
+import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-cipherSuites :: [CipherSuite]
-cipherSuites = [
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
-	CipherSuite DHE_RSA AES_128_CBC_SHA256,
-	CipherSuite DHE_RSA AES_128_CBC_SHA,
-	CipherSuite RSA AES_128_CBC_SHA256,
-	CipherSuite RSA AES_128_CBC_SHA ]
+import HandshakeBase (
+	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
+		withRandom, randomByteString,
+	TlsHandle,
+		readHandshake, getChangeCipherSpec,
+		writeHandshake, putChangeCipherSpec,
+	ValidateHandle(..), handshakeValidate,
+	ServerKeyExEcdhe(..), ServerKeyExDhe(..), ServerHelloDone(..),
+	ClientHello(..), ServerHello(..), SessionId(..),
+		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		setCipherSuite,
+	CertificateRequest(..), ClientCertificateType(..),
+	ClientKeyExchange(..), Epms(..),
+		generateKeys, encryptRsa, rsaPadding,
+	DigitallySigned(..), handshakeHash, flushCipherSuite,
+	Side(..), RW(..), finishedHash,
+	DhParam(..), secp256r1, generateKs, blindSign )
 
-openServer :: (ValidateHandle h, CPRG g) =>
-	h -> [(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
+openServer :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
+	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandle h g)
-openServer h crt crtS = execHandshakeM h $ do
-	(cr, sr, cs@(CipherSuite ke _)) <- hello
+openServer h cscl crt crtS = execHandshakeM h $ do
+	(cr, sr, cs@(CipherSuite ke _)) <- hello cscl
 	setCipherSuite cs
 	case ke of
 		RSA -> rsaHandshake cr sr crt crtS
@@ -55,13 +58,16 @@ openServer h crt crtS = execHandshakeM h $ do
 		_ -> error "not implemented"
 
 hello :: (HandleLike h, CPRG g) =>
-	HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
-hello = do
+	[CipherSuite] -> HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
+hello cscl = do
 	cr <- randomByteString 32
 	writeHandshake $ ClientHello (3, 3) cr (SessionId "")
-		cipherSuites [CompressionMethodNull] Nothing
+		cscl' [CompressionMethodNull] Nothing
 	ServerHello _v sr _sid cs _cm _e <- readHandshake
 	return (cr, sr, cs)
+	where
+	cscl' = if b `elem` cscl then cscl else cscl ++ [b]
+	b = CipherSuite RSA AES_128_CBC_SHA
 
 rsaHandshake :: (ValidateHandle h, CPRG g) =>
  	BS.ByteString -> BS.ByteString ->
@@ -126,6 +132,31 @@ clientCertificate crt = do
 		Right ServerHelloDone -> return Nothing
 		_ -> error "bad"
 
+finishHandshake :: (HandleLike h, CPRG g) =>
+	Maybe (CertSecretKey, X509.CertificateChain) -> HandshakeM h g ()
+finishHandshake cReq = do
+	hs <- handshakeHash
+	case cReq of
+		Just (RsaKey csk, rcc) -> do
+			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
+				getPubKey csk . X509.certPubKey .
+					X509.signedObject $ X509.getSigned rccc
+			writeHandshake . DigitallySigned (clAlgorithm csk) $
+				clSign csk rcpk hs
+		Just (EcdsaKey csk, rcc) -> do
+			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
+				getPubKey csk . X509.certPubKey .
+					X509.signedObject $ X509.getSigned rccc
+			writeHandshake . DigitallySigned (clAlgorithm csk) $
+				clSign csk rcpk hs
+		_ -> return ()
+	putChangeCipherSpec >> flushCipherSuite Write
+	writeHandshake =<< finishedHash Client
+	getChangeCipherSpec >> flushCipherSuite Read
+	fh <- finishedHash Server
+	rfh <- readHandshake
+	unless (fh == rfh) $ E.throwError "finished hash failure"
+
 certIsOk :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
 	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
 certIsOk cct hsa dn (k, c) = checkKey cct hsa k && checkCert cct hsa dn c
@@ -157,31 +188,6 @@ checkPubKey _ _ _ = False
 
 checkIssuer :: [X509.DistinguishedName] -> [X509.DistinguishedName] -> Bool
 checkIssuer = ((not . null) .) . intersect
-
-finishHandshake :: (HandleLike h, CPRG g) =>
-	Maybe (CertSecretKey, X509.CertificateChain) -> HandshakeM h g ()
-finishHandshake cReq = do
-	hs <- handshakeHash
-	case cReq of
-		Just (RsaKey csk, rcc) -> do
-			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
-				getPubKey csk . X509.certPubKey .
-					X509.signedObject $ X509.getSigned rccc
-			writeHandshake . DigitallySigned (clAlgorithm csk) $
-				clSign csk rcpk hs
-		Just (EcdsaKey csk, rcc) -> do
-			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
-				getPubKey csk . X509.certPubKey .
-					X509.signedObject $ X509.getSigned rccc
-			writeHandshake . DigitallySigned (clAlgorithm csk) $
-				clSign csk rcpk hs
-		_ -> return ()
-	putChangeCipherSpec >> flushCipherSuite Write
-	writeHandshake =<< finishedHash Client
-	getChangeCipherSpec >> flushCipherSuite Read
-	fh <- finishedHash Server
-	rfh <- readHandshake
-	unless (fh == rfh) $ E.throwError "finished hash failure"
 
 dhType :: DH.Params
 dhType = undefined

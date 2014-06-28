@@ -2,9 +2,9 @@
 	PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TlsServer ( CertSecretKey(..),
+module TlsServer (
 	run, openClient, checkName, clientName,
-	ValidateHandle(..), SecretKey,
+	ValidateHandle(..), CertSecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
 
 import Control.Applicative ((<$>), (<*>))

@@ -12,7 +12,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
-import TlsServer ( CertSecretKey(..),
+import TlsServer ( CertSecretKey,
 	run, openClient, clientName,
 	ValidateHandle(..), CipherSuite(..) )
 
