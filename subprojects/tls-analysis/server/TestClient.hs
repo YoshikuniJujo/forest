@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TestClient (
+module TestClient ( CertSecretKey(..),
 	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..) ) where
 
@@ -15,8 +15,8 @@ import qualified Data.ByteString as BS
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
-client :: (ValidateHandle h, CPRG g, ClSecretKey sk) => g -> h ->
-	(sk, X509.CertificateChain) ->
+client :: (ValidateHandle h, CPRG g) => g -> h ->
+	[(CertSecretKey, X509.CertificateChain)] ->
 	X509.CertificateStore ->
 	HandleMonad h ()
 client g h crt crtS = (`run` g) $ do

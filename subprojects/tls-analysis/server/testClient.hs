@@ -50,7 +50,7 @@ runRsa cs = do
 	_ <- forkIO $ srv sw cs
 	(rsk, rcc, crtS) <- readFiles
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	client g cw (rsk, rcc) crtS
+	client g cw [(RsaKey rsk, rcc)] crtS
 
 ecdsa :: [CipherSuite] -> IO ()
 ecdsa cs = do
@@ -58,7 +58,7 @@ ecdsa cs = do
 	_ <- forkIO $ srv sw cs
 	(rsk, rcc, crtS) <- readFilesEcdsa
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	client g cw (rsk, rcc) crtS
+	client g cw [(EcdsaKey rsk, rcc)] crtS
 
 srv :: ChanHandle -> [CipherSuite] -> IO ()
 srv sw cs = do

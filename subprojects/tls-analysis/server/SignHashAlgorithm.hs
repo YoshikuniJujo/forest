@@ -27,7 +27,7 @@ instance B.Bytable HashAlgorithm where
 instance B.Parsable HashAlgorithm where
 	parse = B.take 1
 
-data SignatureAlgorithm = Rsa | Dsa | Ecdsa | SARaw Word8 deriving Show
+data SignatureAlgorithm = Rsa | Dsa | Ecdsa | SARaw Word8 deriving (Show, Eq)
 
 instance B.Bytable SignatureAlgorithm where
 	encode Rsa = "\x01"

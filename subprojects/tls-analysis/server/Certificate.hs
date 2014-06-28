@@ -64,7 +64,8 @@ instance B.Bytable CertificateRequest where
 			either (fail . show) (return . fst) $ ASN1.fromASN1 a1
 		return $ CertificateRequest t a n
 
-data ClientCertificateType = CTRsaSign | CTEcdsaSign | CTRaw Word8 deriving Show
+data ClientCertificateType = CTRsaSign | CTEcdsaSign | CTRaw Word8
+	deriving (Show, Eq)
 
 instance B.Bytable ClientCertificateType where
 	encode CTRsaSign = "\x01"
