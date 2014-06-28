@@ -12,7 +12,7 @@ module HandshakeType (
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
 import Data.Word.Word24 (Word24)
 
@@ -144,19 +144,18 @@ instance B.Parsable ServerKeyExDhe where
 	parse = do
 		ps <- B.parse
 		pv <- B.parse
-		ha <- B.parse
-		sa <- B.parse
-		sn <- B.take =<< B.take 2
+		(ha, sa, sn) <- hasasn
 		return $ ServerKeyExDhe ps pv ha sa sn
 
 instance B.Parsable ServerKeyExEcdhe where
 	parse = do
 		cv <- B.parse
 		pnt <- B.parse
-		ha <- B.parse
-		sa <- B.parse
-		sn <- B.take =<< B.take 2
+		(ha, sa, sn) <- hasasn
 		return $ ServerKeyExEcdhe cv pnt ha sa sn
+
+hasasn :: B.BytableM (HashAlgorithm, SignatureAlgorithm, BS.ByteString)
+hasasn = (,,) <$> B.parse <*> B.parse <*> (B.take =<< B.take 2)
 
 instance HandshakeItem CertificateRequest where
 	fromHandshake (HCertificateReq cr) = Just cr

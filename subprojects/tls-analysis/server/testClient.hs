@@ -41,8 +41,8 @@ len = length cipherSuites - 1
 
 main :: IO ()
 main = do
-	forM_ (map (flip drop cipherSuites) [len, len - 1 .. 0]) runRsa
-	forM_ (map (flip drop cipherSuites) [len, len - 1 .. 0]) ecdsa
+	forM_ (map (`drop` cipherSuites) [len, len - 1 .. 0]) runRsa
+	forM_ (map (`drop` cipherSuites) [len, len - 1 .. 0]) ecdsa
 
 runRsa :: [CipherSuite] -> IO ()
 runRsa cs = do
