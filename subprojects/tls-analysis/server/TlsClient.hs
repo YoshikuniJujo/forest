@@ -57,9 +57,9 @@ rsaHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
 	X509.CertificateStore ->
 	HandshakeM h g ()
 rsaHandshake cr sr (rsk, rcc) crtS = do
-	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
+	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-	cc@(X509.CertificateChain [ccc]) <- readHandshake
+	cc@(X509.CertificateChain (ccc : _)) <- readHandshake
 	shd <- readHandshake
 	cReq <- case shd of
 		Left (CertificateRequest sa hsa dn) -> do
@@ -146,7 +146,7 @@ dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
 	(sk, X509.CertificateChain) -> X509.CertificateStore ->
 	HandshakeM h g ()
 dheHandshake t cr sr (rsk, rcc) crtS = do
-	cc@(X509.CertificateChain [ccc]) <- readHandshake
+	cc@(X509.CertificateChain (ccc : _)) <- readHandshake
 	case X509.certPubKey . X509.signedObject $ X509.getSigned ccc of
 		X509.PubKeyRSA pk -> succeedHandshake t pk cc cr sr rsk rcc crtS
 		X509.PubKeyECDSA _cv pnt -> succeedHandshake t
@@ -159,7 +159,7 @@ succeedHandshake ::
 	bs -> pk -> X509.CertificateChain -> BS.ByteString -> BS.ByteString ->
 	sk -> X509.CertificateChain -> X509.CertificateStore -> HandshakeM h g ()
 succeedHandshake t pk cc cr sr rsk rcc crtS = do
-	let rcpk = let X509.CertificateChain [rccc] = rcc in getPubKey rsk .
+	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey rsk .
 		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	vr <- handshakeValidate crtS cc
 	unless (null vr) $ E.throwError "validate failure"
