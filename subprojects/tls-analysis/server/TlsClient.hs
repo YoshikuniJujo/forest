@@ -69,8 +69,6 @@ rsaHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
 	X509.CertificateStore ->
 	HandshakeM h g ()
 rsaHandshake cr sr (csk, rcc) crtS = do
-	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
-		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	cc@(X509.CertificateChain (ccc : _)) <- readHandshake
 	vr <- handshakeValidate crtS cc
 	unless (null vr) $ E.throwError "validate failure"
@@ -79,9 +77,8 @@ rsaHandshake cr sr (csk, rcc) crtS = do
 	cReq <- clientCertificate rcc
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
 	generateKeys Client (cr, sr) pms
-	epms <- encryptRsa pk pms
-	writeHandshake $ Epms epms
-	finishHandshake cReq csk rcpk
+	writeHandshake . Epms =<< encryptRsa pk pms
+	finishHandshake cReq csk rcc
 
 dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
 	ke -> BS.ByteString -> BS.ByteString ->
@@ -101,8 +98,6 @@ succeedHandshake ::
 	bs -> pk -> X509.CertificateChain -> BS.ByteString -> BS.ByteString ->
 	sk -> X509.CertificateChain -> X509.CertificateStore -> HandshakeM h g ()
 succeedHandshake t pk cc cr sr csk rcc crtS = do
-	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
-		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	vr <- handshakeValidate crtS cc
 	unless (null vr) $ E.throwError "validate failure"
 	(cv, pnt, ha, _sa, sn) <- getKeyEx
@@ -112,9 +107,8 @@ succeedHandshake t pk cc cr sr csk rcc crtS = do
 	cReq <- clientCertificate rcc
 	sv <- withRandom $ generateSecret cv
 	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
-	let cpv = B.encode $ calculatePublic cv sv
-	writeHandshake $ ClientKeyExchange cpv
-	finishHandshake cReq csk rcpk
+	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic cv sv
+	finishHandshake cReq csk rcc
 
 clientCertificate :: (HandleLike h, CPRG g) => X509.CertificateChain ->
 	HandshakeM h g (Maybe (
@@ -135,8 +129,10 @@ clientCertificate rcc = do
 	return cReq
 
 finishHandshake :: (HandleLike h, CPRG g, ClSecretKey sk) =>
-	Maybe t -> sk -> SecPubKey sk -> HandshakeM h g ()
-finishHandshake cReq csk rcpk = do
+	Maybe t -> sk -> X509.CertificateChain -> HandshakeM h g ()
+finishHandshake cReq csk rcc = do
+	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
+		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
 	hs <- handshakeHash
 	case cReq of
 		Just _ -> writeHandshake . DigitallySigned (clAlgorithm csk) $
