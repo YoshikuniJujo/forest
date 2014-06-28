@@ -39,8 +39,20 @@ cipherSuites = [
 	CipherSuite DHE_RSA AES_128_CBC_SHA256,
 	CipherSuite DHE_RSA AES_128_CBC_SHA,
 	CipherSuite RSA AES_128_CBC_SHA256,
-	CipherSuite RSA AES_128_CBC_SHA
- ]
+	CipherSuite RSA AES_128_CBC_SHA ]
+
+openServer :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
+	h -> (sk, X509.CertificateChain) -> X509.CertificateStore ->
+	TlsM h g (TlsHandle h g)
+openServer h crt crtS = execHandshakeM h $ do
+	(cr, sr, cs@(CipherSuite ke _)) <- hello
+	setCipherSuite cs
+	case ke of
+		RSA -> rsaHandshake cr sr crt crtS
+		DHE_RSA -> dheHandshake dhType cr sr crt crtS
+		ECDHE_RSA -> dheHandshake curveType cr sr crt crtS
+		ECDHE_ECDSA -> dheHandshake curveType cr sr crt crtS
+		_ -> error "not implemented"
 
 hello :: (HandleLike h, CPRG g) =>
 	HandshakeM h g (BS.ByteString, BS.ByteString, CipherSuite)
@@ -64,21 +76,63 @@ rsaHandshake cr sr (csk, rcc) crtS = do
 	unless (null vr) $ E.throwError "validate failure"
 	let X509.PubKeyRSA pk =
 		X509.certPubKey . X509.signedObject $ X509.getSigned ccc
-	shd <- readHandshake
-	cReq <- case shd of
-		Left (CertificateRequest sa hsa dn) -> do
-			ServerHelloDone <- readHandshake
-			return $ Just (sa, hsa, dn)
-		Right ServerHelloDone -> return Nothing
-		_ -> error "bad"
-	case cReq of
-		Just _ -> writeHandshake rcc
-		_ -> return ()
+	cReq <- clientCertificate rcc
 	pms <- ("\x03\x03" `BS.append`) `liftM` randomByteString 46
 	generateKeys Client (cr, sr) pms
 	epms <- encryptRsa pk pms
 	writeHandshake $ Epms epms
 	finishHandshake cReq csk rcpk
+
+dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
+	ke -> BS.ByteString -> BS.ByteString ->
+	(sk, X509.CertificateChain) -> X509.CertificateStore ->
+	HandshakeM h g ()
+dheHandshake t cr sr (csk, rcc) crtS = do
+	cc@(X509.CertificateChain (ccc : _)) <- readHandshake
+	case X509.certPubKey . X509.signedObject $ X509.getSigned ccc of
+		X509.PubKeyRSA pk -> succeedHandshake t pk cc cr sr csk rcc crtS
+		X509.PubKeyECDSA _cv pnt -> succeedHandshake t
+			(ECDSA.PublicKey secp256r1 $ point pnt)
+			cc cr sr csk rcc crtS
+		_ -> error "not implemented"
+
+succeedHandshake ::
+	(ValidateHandle h, CPRG g, ClSecretKey sk, Verify pk, KeyEx bs) =>
+	bs -> pk -> X509.CertificateChain -> BS.ByteString -> BS.ByteString ->
+	sk -> X509.CertificateChain -> X509.CertificateStore -> HandshakeM h g ()
+succeedHandshake t pk cc cr sr csk rcc crtS = do
+	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
+		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
+	vr <- handshakeValidate crtS cc
+	unless (null vr) $ E.throwError "validate failure"
+	(cv, pnt, ha, _sa, sn) <- getKeyEx
+	let _ = cv `asTypeOf` t
+	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode cv, B.encode pnt]) $
+		E.throwError "verify failure"
+	cReq <- clientCertificate rcc
+	sv <- withRandom $ generateSecret cv
+	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
+	let cpv = B.encode $ calculatePublic cv sv
+	writeHandshake $ ClientKeyExchange cpv
+	finishHandshake cReq csk rcpk
+
+clientCertificate :: (HandleLike h, CPRG g) => X509.CertificateChain ->
+	HandshakeM h g (Maybe (
+		[ClientCertificateType],
+		[(HashAlgorithm, SignatureAlgorithm)],
+		[X509.DistinguishedName]))
+clientCertificate rcc = do
+	shd <- readHandshake
+	cReq <- case shd of
+		Left (CertificateRequest csa hsa dn) -> do
+			ServerHelloDone <- readHandshake
+			return $ Just (csa, hsa, dn)
+		Right ServerHelloDone -> return Nothing
+		_ -> error "bad"
+	case cReq of
+		Just _ -> writeHandshake rcc
+		_ -> return ()
+	return cReq
 
 finishHandshake :: (HandleLike h, CPRG g, ClSecretKey sk) =>
 	Maybe t -> sk -> SecPubKey sk -> HandshakeM h g ()
@@ -94,19 +148,6 @@ finishHandshake cReq csk rcpk = do
 	fh <- finishedHash Server
 	rfh <- readHandshake
 	unless (fh == rfh) $ E.throwError "finished hash failure"
-
-openServer :: (ValidateHandle h, CPRG g, ClSecretKey sk) =>
-	h -> (sk, X509.CertificateChain) -> X509.CertificateStore ->
-	TlsM h g (TlsHandle h g)
-openServer h crt crtS = execHandshakeM h $ do
-	(cr, sr, cs@(CipherSuite ke _)) <- hello
-	setCipherSuite cs
-	case ke of
-		RSA -> rsaHandshake cr sr crt crtS
-		DHE_RSA -> dheHandshake dhType cr sr crt crtS
-		ECDHE_RSA -> dheHandshake curveType cr sr crt crtS
-		ECDHE_ECDSA -> dheHandshake curveType cr sr crt crtS
-		_ -> error "not implemented"
 
 dhType :: DH.Params
 dhType = undefined
@@ -144,48 +185,6 @@ rsaVerify ha pk sn m = let
 		ASN1.OctetString o, ASN1.End ASN1.Sequence ] =
 		ASN1.decodeASN1' ASN1.DER up in
 	oid == oid0 && o == hs m
-
-dheHandshake :: (ValidateHandle h, CPRG g, ClSecretKey sk, KeyEx ke) =>
-	ke -> BS.ByteString -> BS.ByteString ->
-	(sk, X509.CertificateChain) -> X509.CertificateStore ->
-	HandshakeM h g ()
-dheHandshake t cr sr (csk, rcc) crtS = do
-	cc@(X509.CertificateChain (ccc : _)) <- readHandshake
-	case X509.certPubKey . X509.signedObject $ X509.getSigned ccc of
-		X509.PubKeyRSA pk -> succeedHandshake t pk cc cr sr csk rcc crtS
-		X509.PubKeyECDSA _cv pnt -> succeedHandshake t
-			(ECDSA.PublicKey secp256r1 $ point pnt)
-			cc cr sr csk rcc crtS
-		_ -> error "not implemented"
-
-succeedHandshake ::
-	(ValidateHandle h, CPRG g, ClSecretKey sk, Verify pk, KeyEx bs) =>
-	bs -> pk -> X509.CertificateChain -> BS.ByteString -> BS.ByteString ->
-	sk -> X509.CertificateChain -> X509.CertificateStore -> HandshakeM h g ()
-succeedHandshake t pk cc cr sr csk rcc crtS = do
-	let rcpk = let X509.CertificateChain (rccc : _) = rcc in getPubKey csk .
-		X509.certPubKey . X509.signedObject $ X509.getSigned rccc
-	vr <- handshakeValidate crtS cc
-	unless (null vr) $ E.throwError "validate failure"
-	(cv, pnt, ha, _sa, sn) <- getKeyEx
-	let _ = cv `asTypeOf` t
-	unless (verify ha pk sn $ BS.concat [cr, sr, B.encode cv, B.encode pnt]) $
-		E.throwError "verify failure"
-	shd <- readHandshake
-	cReq <- case shd of
-		Left (CertificateRequest csa hsa dn) -> do
-			ServerHelloDone <- readHandshake
-			return $ Just (csa, hsa, dn)
-		Right ServerHelloDone -> return Nothing
-		_ -> error "bad"
-	case cReq of
-		Just _ -> writeHandshake rcc
-		_ -> return ()
-	sv <- withRandom $ generateSecret cv
-	generateKeys Client (cr, sr) $ calculateShared cv sv pnt
-	let cpv = B.encode $ calculatePublic cv sv
-	writeHandshake $ ClientKeyExchange cpv
-	finishHandshake cReq csk rcpk
 
 class Verify pk where
 	verify :: HashAlgorithm ->
