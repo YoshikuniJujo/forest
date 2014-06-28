@@ -85,14 +85,16 @@ instance HandleLike ChanHandle where
 	type HandleMonad ChanHandle = IO
 	hlPut (ChanHandle _ w) = atomically . writeTChan w
 	hlGet h@(ChanHandle r _) n = do
-		bs <- atomically $ readTChan r
-		let l = BS.length bs
-		if l < n
-			then (bs `BS.append`) <$> hlGet h (n - l)
-			else atomically $ do
-				let (x, y) = BS.splitAt n bs
-				unGetTChan r y
-				return x
+		(b, l, bs) <- atomically $ do
+			bs <- readTChan r
+			let l = BS.length bs
+			if l < n
+				then return (True, l, bs)
+				else do	let (x, y) = BS.splitAt n bs
+					unGetTChan r y
+					return (False, l, x)
+		if b	then (bs `BS.append`) <$> hlGet h (n - l)
+			else return bs
 	hlDebug _ _ = BS.putStr
 	hlClose _ = return ()
 
