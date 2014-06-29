@@ -172,10 +172,13 @@ instance B.Bytable EcPointFormat where
 		_ -> Left "Extension: Bytable.decode"
 
 instance B.Bytable ECC.Point where
-	encode (ECC.Point x y) =
-		B.addLen w8 $ 4 `BS.cons` B.encode x `BS.append` B.encode y
+	encode (ECC.Point x y) = B.addLen w8 $
+		4 `BS.cons` padd 32 0 (B.encode x) `BS.append` B.encode y
 	encode ECC.PointO = error "Extension: EC.Point.encode"
 	decode = B.evalBytableM B.parse
+
+padd :: Int -> Word8 -> BS.ByteString -> BS.ByteString
+padd n w s = BS.replicate (n - BS.length s) w `BS.append` s
 
 instance B.Parsable ECC.Point where
 	parse = do
