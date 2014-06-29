@@ -173,7 +173,8 @@ instance B.Bytable EcPointFormat where
 
 instance B.Bytable ECC.Point where
 	encode (ECC.Point x y) = B.addLen w8 $
-		4 `BS.cons` padd 32 0 (B.encode x) `BS.append` B.encode y
+		4 `BS.cons` padd 32 0 (B.encode x) `BS.append`
+			padd 32 0 (B.encode y)
 	encode ECC.PointO = error "Extension: EC.Point.encode"
 	decode = B.evalBytableM B.parse
 
