@@ -68,9 +68,9 @@ encrypt (hs, _) k mk sn p m g = (, g') $
 decrypt :: (Hash, Int) ->
 	BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else if BS.null enc
-	then Left $ "CryptoTools.decrypt: enc is null\n"
-	else Left $ "CryptoTools.decrypt: bad MAC:" ++
+decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else Left $ if BS.null enc
+	then "CryptoTools.decrypt: enc is null\n"
+	else "CryptoTools.decrypt: bad MAC:" ++
 		"\n\tsn: " ++ show sn ++
 		"\n\tplain: " ++ BSC.unpack pln ++
 		"\n\tExpected: " ++ BSC.unpack em ++

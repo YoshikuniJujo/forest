@@ -29,7 +29,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase ( debug,
+import HandshakeBase ( -- debug,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, setClientNames, checkName, clientName,
 		readHandshake, getChangeCipherSpec,
@@ -118,7 +118,7 @@ dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk, Show (Secret dp),
 	HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange ha dp ssk rs mcs = do
 	sv <- withRandom $ generateSecret dp
-	debug sv
+--	debug sv
 	serverKeyExchange ha dp sv ssk rs
 	return const
 		`ap` requestAndCertificate mcs
@@ -208,7 +208,7 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 	Epms epms <- readHandshake
 	pms <- mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
-	debug pms
+--	debug pms
 	generateKeys Server rs pms
 --	generateKeys Server rs =<< mkpms epms `catchError` const
 --		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
@@ -228,12 +228,12 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp),
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
 	let Right pv = B.decode cke
-	debug pv
+--	debug pv
 	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
 		Left em -> E.throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
-		Right sh -> do
-			debug sh
+		Right sh -> -- do
+--			debug sh
 			return sh
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
