@@ -11,6 +11,7 @@ import Data.Word (Word8, Word16, Word64)
 import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Crypto.Hash.SHA256 as SHA256
@@ -67,10 +68,13 @@ encrypt (hs, _) k mk sn p m g = (, g') $
 decrypt :: (Hash, Int) ->
 	BS.ByteString -> BS.ByteString -> Word64 ->
 	BS.ByteString -> BS.ByteString -> Either String BS.ByteString
-decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else Left $
-	"CryptoTools.decrypt: bad MAC:" ++
-		"\n\tExpected: " ++ show em ++
-		"\n\tRecieved: " ++ show rm ++
+decrypt (hs, ml) k mk sn p enc = if rm == em then Right b else if BS.null enc
+	then Left $ "CryptoTools.decrypt: enc is null\n"
+	else Left $ "CryptoTools.decrypt: bad MAC:" ++
+		"\n\tsn: " ++ show sn ++
+		"\n\tplain: " ++ BSC.unpack pln ++
+		"\n\tExpected: " ++ BSC.unpack em ++
+		"\n\tRecieved: " ++ BSC.unpack rm ++
 		"\n\tml: " ++ show ml ++ "\n"
 	where
 	pln = uncurry (AES.decryptCBC $ AES.initAES k) $ BS.splitAt 16 enc

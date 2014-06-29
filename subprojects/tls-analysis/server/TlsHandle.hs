@@ -123,7 +123,7 @@ decrypt t@TlsHandle{ keys = ks } ct e = do
 		AES_128_CBC_SHA -> return CT.hashSha1
 		AES_128_CBC_SHA256 -> return CT.hashSha256
 		_ -> throwError "TlsHandle.decrypt: not implement bulk encryption"
-	either (throwError . strMsg . show) return $
+	either (throwError . strMsg) return $
 		CT.decrypt hs wk mk sn (B.encode ct `BS.append` "\x03\x03") e
 
 tlsPut :: (HandleLike h, CPRG g) =>

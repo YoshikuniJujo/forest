@@ -29,7 +29,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase (
+import HandshakeBase ( debug,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, setClientNames, checkName, clientName,
 		readHandshake, getChangeCipherSpec,
@@ -110,13 +110,15 @@ rsaKeyExchange rsk cv rs mcs = return const
 	`ap` requestAndCertificate mcs
 	`ap` rsaClientKeyExchange rsk cv rs
 
-dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk,
+dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk, Show (Secret dp),
+		Show (Public dp),
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
 	HashAlgorithm -> dp -> sk ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange ha dp ssk rs mcs = do
 	sv <- withRandom $ generateSecret dp
+	debug sv
 	serverKeyExchange ha dp sv ssk rs
 	return const
 		`ap` requestAndCertificate mcs
@@ -204,8 +206,12 @@ rsaClientKeyExchange :: (HandleLike h, CPRG g) => RSA.PrivateKey ->
 	Version -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 rsaClientKeyExchange sk (cvj, cvn) rs = do
 	Epms epms <- readHandshake
-	generateKeys Server rs =<< mkpms epms `catchError` const
+	pms <- mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
+	debug pms
+	generateKeys Server rs pms
+--	generateKeys Server rs =<< mkpms epms `catchError` const
+--		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
 		pms <- decryptRsa sk epms
@@ -216,14 +222,19 @@ rsaClientKeyExchange sk (cvj, cvn) rs = do
 			_ -> E.throwError "mkpms: never occur"
 		return pms
 
-dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp)) =>
+dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp),
+	Show (Public dp)) =>
 	dp -> Secret dp -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
-	generateKeys Server rs =<< case calculateShared dp sv <$> B.decode cke of
+	let Right pv = B.decode cke
+	debug pv
+	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
 		Left em -> E.throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
-		Right pv -> return pv
+		Right sh -> do
+			debug sh
+			return sh
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pk) = do

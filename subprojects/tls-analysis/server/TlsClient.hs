@@ -25,7 +25,7 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase (
+import HandshakeBase ( debug,
 	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
@@ -85,7 +85,8 @@ rsaHandshake cr sr crts ca = do
 	writeHandshake . Epms =<< encryptRsa pk pms
 	finishHandshake crt
 
-dheHandshake :: (ValidateHandle h, CPRG g, KeyEx ke) =>
+dheHandshake :: (ValidateHandle h, CPRG g, KeyEx ke, Show (Secret ke),
+	Show (Public ke)) =>
 	ke -> BS.ByteString -> BS.ByteString ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
@@ -99,7 +100,8 @@ dheHandshake t cr sr crts ca = do
 	where ek cv pnt = ECDSA.PublicKey (ECC.getCurveByName cv) (point pnt)
 
 succeedHandshake ::
-	(ValidateHandle h, CPRG g, Verify pk, KeyEx ke) =>
+	(ValidateHandle h, CPRG g, Verify pk, KeyEx ke, Show (Secret ke),
+		Show (Public ke)) =>
 	ke -> pk -> BS.ByteString -> BS.ByteString -> X509.CertificateChain ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	HandshakeM h g ()
@@ -113,7 +115,12 @@ succeedHandshake t pk cr sr cc crts ca = do
 		E.throwError "TlsClient.succeedHandshake: verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
-	generateKeys Client (cr, sr) $ calculateShared ps sv pv
+	debug sv
+	let sh = calculateShared ps sv pv
+	debug pv
+	debug sh
+	generateKeys Client (cr, sr) sh
+--	generateKeys Client (cr, sr) $ calculateShared ps sv pv
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 
