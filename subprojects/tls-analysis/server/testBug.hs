@@ -47,7 +47,7 @@ len :: Int
 len = length ecdhe - 2
 
 main :: IO ()
-main = forM_ [1 .. 50] $ \i -> do
+main = forM_ [1 .. 10] $ \i -> do
 	print i
 	forM_ (map (`drop` ecdhe) [len, len - 1 .. 0]) runRsa
 	forM_ (map (`drop` ecdhe) [len, len - 1 .. 0]) ecdsa

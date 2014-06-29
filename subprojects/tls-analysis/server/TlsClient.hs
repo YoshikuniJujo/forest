@@ -4,12 +4,13 @@ module TlsClient (
 	run, openServer, ValidateHandle(..), CertSecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
 
-import Control.Monad (unless, liftM)
+import Control.Monad (unless, liftM, ap)
 import Data.List (find, intersect)
 import Data.HandleLike (HandleLike)
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified "monads-tf" Control.Monad.Error as E
+import qualified "monads-tf" Control.Monad.Error.Class as E
 import qualified Data.ByteString as BS
 import qualified Data.ASN1.Types as ASN1
 import qualified Data.ASN1.Encoding as ASN1
@@ -25,7 +26,7 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase ( -- debug,
+import HandshakeBase (
 	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,
@@ -115,12 +116,7 @@ succeedHandshake t pk cr sr cc crts ca = do
 		E.throwError "TlsClient.succeedHandshake: verify failure"
 	crt <- clientCertificate crts
 	sv <- withRandom $ generateSecret ps
---	debug sv
-	let sh = calculateShared ps sv pv
---	debug pv
---	debug sh
-	generateKeys Client (cr, sr) sh
---	generateKeys Client (cr, sr) $ calculateShared ps sv pv
+	generateKeys Client (cr, sr) $ calculateShared ps sv pv
 	writeHandshake . ClientKeyExchange . B.encode $ calculatePublic ps sv
 	finishHandshake crt
 
@@ -130,72 +126,61 @@ clientCertificate :: (HandleLike h, CPRG g) =>
 clientCertificate crts = do
 	shd <- readHandshake
 	case shd of
-		Left (CertificateRequest csa hsa dn) -> do
+		Left (CertificateRequest ca hsa dn) -> do
 			ServerHelloDone <- readHandshake
-			case find (certIsOk csa hsa dn) crts of
+			case find (isMatchedCert ca hsa dn) crts of
 				Just (sk, rcc) -> do
 					writeHandshake rcc
 					return $ Just (sk, rcc)
-				_ -> error "no certificate"
+				_ -> E.throwError . E.strMsg $
+					"TlsClient.clientCertificate: " ++
+						"no certificate"
 		Right ServerHelloDone -> return Nothing
-		_ -> error "bad"
+		_ -> E.throwError "TlsClient.clientCertificate"
+
+isMatchedCert :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
+	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
+isMatchedCert cct hsa dn (k, c) = checkKey k && checkCert c
+	where
+	checkKey (RsaKey _) =
+		CTRsaSign `elem` cct || Rsa `elem` map snd hsa
+	checkKey (EcdsaKey _) =
+		CTEcdsaSign `elem` cct || Ecdsa `elem` map snd hsa
+	checkCert (X509.CertificateChain cs@(co : _)) =
+		checkPubKey (pk co) && not (null $ intersect dn $ map issuer cs)
+	checkCert _ = error "TlsClient.certIsOk: empty certificate chain"
+	obj = X509.signedObject . X509.getSigned
+	issuer = X509.certIssuerDN . obj
+	pk = X509.certPubKey . obj
+	checkPubKey (X509.PubKeyRSA _) =
+		CTRsaSign `elem` cct || Rsa `elem` map snd hsa
+	checkPubKey (X509.PubKeyECDSA _ _) =
+		CTEcdsaSign `elem` cct || Ecdsa `elem` map snd hsa
+	checkPubKey _ = False
 
 finishHandshake :: (HandleLike h, CPRG g) =>
 	Maybe (CertSecretKey, X509.CertificateChain) -> HandshakeM h g ()
 finishHandshake crt = do
 	hs <- handshakeHash
 	case crt of
-		Just (RsaKey csk, rcc) -> do
-			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
-				getPubKey csk . X509.certPubKey .
-					X509.signedObject $ X509.getSigned rccc
-			writeHandshake . DigitallySigned (clAlgorithm csk) $
-				clSign csk rcpk hs
-		Just (EcdsaKey csk, rcc) -> do
-			let rcpk = let X509.CertificateChain (rccc : _) = rcc in
-				getPubKey csk . X509.certPubKey .
-					X509.signedObject $ X509.getSigned rccc
-			writeHandshake . DigitallySigned (clAlgorithm csk) $
-				clSign csk rcpk hs
+		Just (RsaKey sk, cc) -> do
+			let pk = let X509.CertificateChain (c : _) = cc in
+				getPubKey sk . X509.certPubKey .
+					X509.signedObject $ X509.getSigned c
+			writeHandshake . DigitallySigned (clAlgorithm sk) $
+				clSign sk pk hs
+		Just (EcdsaKey sk, cc) -> do
+			let pk = let X509.CertificateChain (c : _) = cc in
+				getPubKey sk . X509.certPubKey .
+					X509.signedObject $ X509.getSigned c
+			writeHandshake . DigitallySigned (clAlgorithm sk) $
+				clSign sk pk hs
 		_ -> return ()
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Client
 	getChangeCipherSpec >> flushCipherSuite Read
-	fh <- finishedHash Server
-	rfh <- readHandshake
-	unless (fh == rfh) $ E.throwError "finished hash failure"
-
-certIsOk :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
-	[X509.DistinguishedName] -> (CertSecretKey, X509.CertificateChain) -> Bool
-certIsOk cct hsa dn (k, c) = checkKey cct hsa k && checkCert cct hsa dn c
-
-checkKey :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
-	CertSecretKey -> Bool
-checkKey cct hsa (RsaKey _) =
-	CTRsaSign `elem` cct || Rsa `elem` map snd hsa
-checkKey cct hsa (EcdsaKey _) =
-	CTEcdsaSign `elem` cct || Ecdsa `elem` map snd hsa
-
-checkCert :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
-	[X509.DistinguishedName] -> X509.CertificateChain -> Bool
-checkCert cct hsa dn (X509.CertificateChain cs@(co : _)) =
-	checkPubKey cct hsa (pk co) && checkIssuer dn (map issuer cs)
-	where
-	obj = X509.signedObject . X509.getSigned
-	issuer = X509.certIssuerDN . obj
-	pk = X509.certPubKey . obj
-checkCert _ _ _ _ = error "empty certificate chain"
-
-checkPubKey :: [ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
-	X509.PubKey -> Bool
-checkPubKey cct hsa (X509.PubKeyRSA _) =
-	CTRsaSign `elem` cct || Rsa `elem` map snd hsa
-checkPubKey cct hsa (X509.PubKeyECDSA _ _) =
-	CTEcdsaSign `elem` cct || Ecdsa `elem` map snd hsa
-checkPubKey _ _ _ = False
-
-checkIssuer :: [X509.DistinguishedName] -> [X509.DistinguishedName] -> Bool
-checkIssuer = ((not . null) .) . intersect
+	(==) `liftM` finishedHash Server `ap` readHandshake >>= flip unless
+		(E.throwError "TlsClient.finishHandshake: finished hash failure")
 
 dhType :: DH.Params
 dhType = undefined
