@@ -17,6 +17,9 @@ description:
 	under construction
 
 extra-source-files:
+    examples/simpleServer.hs
+
+extra-source-files:
 
 source-repository	head
     type:	git
