@@ -2,7 +2,7 @@
 	PackageImports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module TlsServer (
+module Network.PeyoTLS.Server (
 	run, openClient, checkName, clientName,
 	ValidateHandle(..), CertSecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
@@ -29,7 +29,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase ( -- debug,
+import Network.PeyoTLS.HandshakeBase ( -- debug,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, setClientNames, checkName, clientName,
 		readHandshake, getChangeCipherSpec,

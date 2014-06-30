@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports,
 	TupleSections #-}
 
-module HandshakeBase (
+module Network.PeyoTLS.HandshakeBase (
 	debug, generateKs, blindSign, CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
@@ -49,7 +49,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-import HandshakeType (
+import Network.PeyoTLS.HandshakeType (
 	Handshake, HandshakeItem(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -59,7 +59,7 @@ import HandshakeType (
 		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
-import qualified HandshakeMonad as HM (
+import qualified Network.PeyoTLS.HandshakeMonad as HM (
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TlsHandle(..), ContentType(..),
@@ -69,9 +69,9 @@ import qualified HandshakeMonad as HM (
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
 	Alert(..), AlertLevel(..), AlertDesc(..),
 	Side(..), RW(..), handshakeHash, finishedHash, throwError )
-import Ecdsa (blindSign, generateKs)
+import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
-import CertSecretKey
+import Network.PeyoTLS.CertSecretKey
 
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
 debug x = do

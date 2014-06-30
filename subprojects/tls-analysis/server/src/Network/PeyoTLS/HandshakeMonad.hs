@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module HandshakeMonad (
+module Network.PeyoTLS.HandshakeMonad (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
@@ -33,7 +33,7 @@ import qualified Crypto.PubKey.HashDescr as HD
 import qualified Crypto.PubKey.RSA as RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
 
-import qualified TlsHandle as TH (
+import qualified Network.PeyoTLS.TlsHandle as TH (
 	TlsM, Alert(..), AlertLevel(..), AlertDesc(..),
 		run, withRandom, randomByteString,
 	TlsHandle(..), ContentType(..),

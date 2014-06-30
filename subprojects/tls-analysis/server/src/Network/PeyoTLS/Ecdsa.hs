@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Ecdsa (blindSign, generateKs) where
+module Network.PeyoTLS.Ecdsa (blindSign, generateKs) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (mapMaybe)

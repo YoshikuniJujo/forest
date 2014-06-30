@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections #-}
 
-module ReadFile (
+module Network.PeyoTLS.ReadFile (
 	CertSecretKey, readKey, readCertificateChain, readCertificateStore) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -22,7 +22,7 @@ import qualified Crypto.PubKey.ECC.Prim as ECC
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 
-import CertSecretKey
+import Network.PeyoTLS.CertSecretKey
 
 readKey :: FilePath -> IO CertSecretKey
 readKey fp = do

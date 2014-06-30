@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
 
-module State (
+module Network.PeyoTLS.State (
 	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
@@ -17,7 +17,8 @@ import Data.String (IsString(..))
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 
-import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+import Network.PeyoTLS.CipherSuite (
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 data HandshakeState h g = HandshakeState {
 	randomGen :: g, nextPartnerId :: Int,

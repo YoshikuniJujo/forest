@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
-module TlsClient (
+module Network.PeyoTLS.Client (
 	run, openServer, ValidateHandle(..), CertSecretKey,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
 
@@ -27,7 +27,7 @@ import qualified Crypto.PubKey.RSA.Prim as RSA
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import HandshakeBase (
+import Network.PeyoTLS.HandshakeBase (
 	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,

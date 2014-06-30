@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, PackageImports, TupleSections #-}
 
-module CryptoTools (
+module Network.PeyoTLS.CryptoTools (
 	makeKeys, encrypt, decrypt, hashSha1, hashSha256, finishedHash) where
 
 import Prelude hiding (splitAt, take)

@@ -1,0 +1,55 @@
+build-type:	Simple
+cabal-version:	>= 1.8
+
+name:		peyotls
+version:	0.0.0.0
+stability:	Experimental
+author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
+maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
+homepage:	https://github.com/YoshikuniJujo/forest/
+
+license:	BSD3
+license-file:	LICENSE
+
+category:	Network
+synopsis:	Pretty Easy YOshikuni-made TLS library
+description:
+	under construction
+
+extra-source-files:
+
+source-repository	head
+    type:	git
+    location:	git://github.com/YoshikuniJujo/forest.git
+
+source-repository	this
+    type:	git
+    location:	git://github.com/YoshikuniJujo/forest.git
+    tag:	peyotls-0.0.0.0
+
+library
+    hs-source-dirs:	src
+    exposed-modules:
+        Network.PeyoTLS.Client, Network.PeyoTLS.Server, Network.PeyoTLS.ReadFile
+    other-modules:
+        Network.PeyoTLS.HandshakeBase,
+        Network.PeyoTLS.HandshakeType,
+            Network.PeyoTLS.Hello, Network.PeyoTLS.Extension,
+                Network.PeyoTLS.CipherSuite, Network.PeyoTLS.HashSignAlgorithm,
+            Network.PeyoTLS.Certificate,
+        Network.PeyoTLS.HandshakeMonad,
+            Network.PeyoTLS.TlsHandle,
+                Network.PeyoTLS.TlsMonad, Network.PeyoTLS.State,
+                Network.PeyoTLS.CryptoTools,
+        Network.PeyoTLS.Ecdsa, Network.PeyoTLS.CertSecretKey
+    build-depends:
+        base == 4.*, word24 == 1.0.*, bytestring == 0.10.*, monads-tf == 0.1.*,
+        asn1-encoding == 0.8.*, asn1-types == 0.2.*,
+        pem == 0.2.*, x509 == 1.4.*, x509-store == 1.4.*, x509-validation == 1.5.*,
+        crypto-numbers == 0.2.*, crypto-random == 0.0.*,
+        cryptohash == 0.11.*,
+        crypto-pubkey == 0.2.*, crypto-pubkey-types == 0.4.*,
+        cipher-aes == 0.2.*,
+        bytable == 0.0.0.*, handle-like == 0.0.0.*
+    ghc-options:	-Wall
+    extensions:		PatternGuards, DoAndIfThenElse

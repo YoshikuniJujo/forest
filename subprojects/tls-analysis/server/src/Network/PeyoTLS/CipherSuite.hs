@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
+module Network.PeyoTLS.CipherSuite (
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
 
 import Data.Word (Word8)
 

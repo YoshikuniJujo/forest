@@ -10,7 +10,7 @@ import Data.HandleLike
 
 import Control.Concurrent.STM
 import qualified Data.ByteString as BS
-import ReadFile
+import Network.PeyoTLS.ReadFile
 import System.IO
 import CommandLine
 import System.Environment

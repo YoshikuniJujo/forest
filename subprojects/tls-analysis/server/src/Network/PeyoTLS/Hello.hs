@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Hello (
+module Network.PeyoTLS.Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
@@ -13,8 +13,9 @@ import Numeric (showHex)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 
-import Extension (Extension, SignAlg(..), HashAlg(..))
-import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+import Network.PeyoTLS.Extension (Extension, SignAlg(..), HashAlg(..))
+import Network.PeyoTLS.CipherSuite (
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 data ClientHello
 	= ClientHello (Word8, Word8) BS.ByteString SessionId

@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
-module TlsMonad (
+module Network.PeyoTLS.TlsMonad (
 	TlsM, evalTlsM, S.initState,
 		thlGet, thlPut, thlClose, thlDebug, thlError,
 		withRandom, randomByteString, getBuf, setBuf, getWBuf, setWBuf,
@@ -20,7 +20,7 @@ import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 
-import qualified State as S (
+import qualified Network.PeyoTLS.State as S (
 	HandshakeState, initState, PartnerId, newPartnerId, Keys(..), nullKeys,
 	ContentType(..), Alert(..), AlertLevel(..), AlertDesc(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),

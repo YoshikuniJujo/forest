@@ -10,9 +10,9 @@ import Data.Maybe (fromMaybe)
 import System.Console.GetOpt (getOpt, ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Exit (exitFailure)
 import Network (PortID(..), PortNumber)
-import ReadFile ( CertSecretKey,
+import Network.PeyoTLS.ReadFile ( CertSecretKey,
 	readKey, readCertificateChain, readCertificateStore)
-import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
+import Network.PeyoTLS.Server (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509

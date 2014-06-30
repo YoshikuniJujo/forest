@@ -5,7 +5,7 @@ module TestClient ( CertSecretKey,
 	client, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	ValidateHandle(..) ) where
 
-import TlsClient
+import Network.PeyoTLS.Client
 import Control.Monad
 import "crypto-random" Crypto.Random
 import Data.HandleLike
