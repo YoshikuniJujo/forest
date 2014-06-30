@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	run, openServer, ValidateHandle(..), CertSecretKey,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..) ) where
+	run, open, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
@@ -46,10 +46,10 @@ import Network.PeyoTLS.HandshakeBase (
 	Side(..), RW(..), finishedHash,
 	DhParam(..), generateKs, blindSign )
 
-openServer :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
+open :: (ValidateHandle h, CPRG g) => h -> [CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] -> X509.CertificateStore ->
 	TlsM h g (TlsHandle h g)
-openServer h cscl crts ca = execHandshakeM h $ do
+open h cscl crts ca = execHandshakeM h $ do
 	(cr, sr, cs@(CipherSuite ke _)) <- hello cscl
 	setCipherSuite cs
 	case ke of

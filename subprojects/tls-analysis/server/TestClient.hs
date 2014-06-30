@@ -30,7 +30,7 @@ client :: (ValidateHandle h, CPRG g) => g -> h ->
 	X509.CertificateStore ->
 	HandleMonad h ()
 client g h crt crtS = (`run` g) $ do
-	t <- openServer h cipherSuites crt crtS
+	t <- open h cipherSuites crt crtS
 	hlPut t request
 	const () `liftM` hlGetContent t
 

@@ -3,9 +3,9 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Server (
-	run, openClient, checkName, clientName,
-	ValidateHandle(..), CertSecretKey,
-	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
+	run, open, clientNames,
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
@@ -31,7 +31,7 @@ import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeBase ( -- debug,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
-	TlsHandle, setClientNames, checkName, clientName,
+	TlsHandle, setClientNames, clientNames,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
@@ -72,11 +72,11 @@ isEcdsaCS :: CipherSuite -> Bool
 isEcdsaCS (CipherSuite ECDHE_ECDSA _) = True
 isEcdsaCS _ = False
 
-openClient :: (ValidateHandle h, CPRG g) => h ->
+open :: (ValidateHandle h, CPRG g) => h ->
 	[CipherSuite] ->
 	[(CertSecretKey, X509.CertificateChain)] ->
 	Maybe X509.CertificateStore -> TlsM h g (TlsHandle h g)
-openClient h cssv crts mcs = execHandshakeM h $ do
+open h cssv crts mcs = execHandshakeM h $ do
 	(cs@(CipherSuite ke be), cr, cv) <- clientHello $ filterCS crts cssv
 	sr <- serverHello cs rcc ecc
 	setCipherSuite cs
@@ -84,19 +84,19 @@ openClient h cssv crts mcs = execHandshakeM h $ do
 		AES_128_CBC_SHA -> return Sha1
 		AES_128_CBC_SHA256 -> return Sha256
 		_ -> E.throwError
-			"TlsServer.openClient: not implemented bulk encryption type"
+			"TlsServer.open: not implemented bulk encryption type"
 	mpk <- (\kep -> kep (cr, sr) mcs) $ case ke of
 		RSA -> rsaKeyExchange rsk cv
 		DHE_RSA -> dhKeyExchange ha dh3072Modp rsk
 		ECDHE_RSA -> dhKeyExchange ha secp256r1 rsk
 		ECDHE_ECDSA -> dhKeyExchange ha secp256r1 esk
 		_ -> \_ _ -> E.throwError
-			"TlsServer.openClient: not implemented key exchange type"
+			"TlsServer.open: not implemented key exchange type"
 	maybe (return ()) certificateVerify mpk
 	getChangeCipherSpec >> flushCipherSuite Read
 	fok <- (==) `liftM` finishedHash Client `ap` readHandshake
 	unless fok $ throwError ALFatal ADDecryptError
-		"TlsServer.openClient: wrong finished hash"
+		"TlsServer.open: wrong finished hash"
 	putChangeCipherSpec >> flushCipherSuite Write
 	writeHandshake =<< finishedHash Server
 	where

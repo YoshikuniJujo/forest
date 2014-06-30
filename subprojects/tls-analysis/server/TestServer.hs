@@ -3,7 +3,7 @@
 module TestServer (server, ValidateHandle(..), CipherSuite(..)) where
 
 import Control.Monad (liftM)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
@@ -13,7 +13,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
 import Network.PeyoTLS.Server ( CertSecretKey,
-	run, openClient, clientName,
+	run, open, clientNames,
 	ValidateHandle(..), CipherSuite(..) )
 
 server :: (ValidateHandle h, CPRG g)  => g -> h ->
@@ -22,9 +22,9 @@ server :: (ValidateHandle h, CPRG g)  => g -> h ->
 	(CertSecretKey, X509.CertificateChain) ->
 	Maybe X509.CertificateStore -> HandleMonad h ()
 server g h css rsa ec mcs = (`run` g) $ do
-	cl <- openClient h css [rsa, ec] mcs
+	cl <- open h css [rsa, ec] mcs
 	const () `liftM` doUntil BS.null (hlGetLine cl)
-	hlPut cl . answer . fromMaybe "Anonym" $ clientName cl
+	hlPut cl . answer . fromMaybe "Anonym" . listToMaybe $ clientNames cl
 	hlClose cl
 
 answer :: String -> BS.ByteString

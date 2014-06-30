@@ -4,7 +4,7 @@ module Network.PeyoTLS.HandshakeMonad (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
-		setClientNames, checkName, clientName,
+		setClientNames,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
@@ -19,7 +19,6 @@ import "monads-tf" Control.Monad.Trans (lift)
 import "monads-tf" Control.Monad.State (StateT, execStateT, get, gets, put, modify)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
 import "monads-tf" Control.Monad.Error.Class (strMsg)
-import Data.Maybe (listToMaybe)
 import Data.HandleLike (HandleLike(..))
 import System.IO (Handle)
 import "crypto-random" Crypto.Random (CPRG)
@@ -79,12 +78,6 @@ handshakeValidate cs cc =
 
 setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
 setClientNames n = do t <- gets fst; modify . first $ const t { TH.clientNames = n }
-
-checkName :: TH.TlsHandle h g -> String -> Bool
-checkName tc n = n `elem` TH.clientNames tc
-
-clientName :: TH.TlsHandle h g -> Maybe String
-clientName = listToMaybe . TH.clientNames
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite = modify . first . TH.setCipherSuite
