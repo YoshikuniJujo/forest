@@ -45,4 +45,4 @@ instance HandleLike TestHandle where
 			"\n\tACTUAL  : " ++ show bs ++ "\n"
 	hlGet (TestHandle cl _) = BS.hGet cl
 	hlClose (TestHandle cl sv) = hClose `mapM_` [cl, sv]
-	hlDebug _ n | n > 3 = BS.putStr | otherwise = const $ return ()
+	hlDebug _ n | n >= "moderate" = BS.putStr | otherwise = const $ return ()

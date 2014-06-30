@@ -219,7 +219,7 @@ flushCipherSuite p t@TlsHandle{ keys = ks } = case p of
 	Write -> t{ keys = ks { kWriteCS = kCachedCS ks } }
 
 debugCipherSuite :: HandleLike h => TlsHandle h g -> String -> TlsM h g ()
-debugCipherSuite t a = thlDebug (tlsHandle t) 5 . BSC.pack
+debugCipherSuite t a = thlDebug (tlsHandle t) "moderate" . BSC.pack
 	. (++ (" - VERIFY WITH " ++ a ++ "\n")) . lenSpace 50
 	. show . kCachedCS $ keys t
 	where lenSpace n str = str ++ replicate (n - length str) ' '

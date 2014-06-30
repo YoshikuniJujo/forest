@@ -76,7 +76,7 @@ import CertSecretKey
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
 debug x = do
 	h <- gets $ HM.tlsHandle . fst
-	lift . lift . lift . hlDebug h 5 . BSC.pack . (++ "\n") $ show x
+	lift . lift . lift . hlDebug h "moderate" . BSC.pack . (++ "\n") $ show x
 
 readHandshake :: (HandleLike h, CPRG g, HandshakeItem hi) => HM.HandshakeM h g hi
 readHandshake = do
