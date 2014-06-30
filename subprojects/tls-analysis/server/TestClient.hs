@@ -16,14 +16,14 @@ import qualified Data.X509.CertificateStore as X509
 
 cipherSuites :: [CipherSuite]
 cipherSuites = [
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA256,
-	CipherSuite ECDHE_RSA AES_128_CBC_SHA,
-	CipherSuite DHE_RSA AES_128_CBC_SHA256,
-	CipherSuite DHE_RSA AES_128_CBC_SHA,
-	CipherSuite RSA AES_128_CBC_SHA256,
-	CipherSuite RSA AES_128_CBC_SHA ]
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+	"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+	"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+	"TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+	"TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+	"TLS_RSA_WITH_AES_128_CBC_SHA256",
+	"TLS_RSA_WITH_AES_128_CBC_SHA" ]
 
 client :: (ValidateHandle h, CPRG g) => g -> h ->
 	[(CertSecretKey, X509.CertificateChain)] ->

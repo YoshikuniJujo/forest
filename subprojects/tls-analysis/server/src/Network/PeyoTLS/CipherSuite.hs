@@ -3,7 +3,9 @@
 module Network.PeyoTLS.CipherSuite (
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..)) where
 
+import Control.Arrow (first, (***))
 import Data.Word (Word8)
+import Data.String (IsString(..))
 
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
@@ -60,3 +62,11 @@ encodeCipherSuite (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256) = "\xc0\x23"
 encodeCipherSuite (CipherSuite ECDHE_RSA AES_128_CBC_SHA256) = "\xc0\x27"
 encodeCipherSuite (CipherSuiteRaw w1 w2) = BS.pack [w1, w2]
 encodeCipherSuite _ = error "CipherSuite.encodeCipherSuite: unknown cipher suite"
+
+separateByWith :: String -> (String, String)
+separateByWith "" = error "CipherSuite: parse error"
+separateByWith ('_' : 'W' : 'I' : 'T' : 'H' : '_' : be) = ("", be)
+separateByWith (k : r) = (k :) `first` separateByWith r
+
+instance IsString CipherSuite where
+	fromString = uncurry CipherSuite . (read *** read) . separateByWith . drop 4
