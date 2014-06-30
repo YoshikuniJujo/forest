@@ -11,7 +11,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.String
 
-class (Monad (HandleMonad h), IsString (DebugLevel h)) =>
+class (Monad (HandleMonad h),
+	IsString (DebugLevel h), Ord (DebugLevel h)) =>
 	HandleLike h where
 	type HandleMonad h
 	type DebugLevel h
@@ -40,7 +41,8 @@ class (Monad (HandleMonad h), IsString (DebugLevel h)) =>
 hlPutStrLn :: HandleLike h => h -> BS.ByteString -> HandleMonad h ()
 hlPutStrLn h = hlPut h . (`BS.append` "\n")
 
-data Priority = Low | Moderate | High | Critical deriving (Show, Read, Enum)
+data Priority = Low | Moderate | High | Critical
+	deriving (Show, Read, Eq, Ord, Enum)
 
 instance IsString Priority where
 	fromString s = case takeWhile (/= ':') s of
