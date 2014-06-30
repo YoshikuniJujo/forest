@@ -15,14 +15,20 @@ data CipherSuite
 	| CipherSuiteRaw Word8 Word8
 	deriving (Show, Read, Eq)
 
-data KeyExchange = RSA | DHE_RSA | ECDHE_RSA | ECDHE_ECDSA | ECDHE_PSK | KE_NULL
+data KeyExchange
+	= RSA
+	| DHE_RSA
+	| ECDHE_RSA
+	| ECDHE_ECDSA
+--	| ECDHE_PSK
+	| KE_NULL
 	deriving (Show, Read, Eq)
 
 data BulkEncryption
 	= AES_128_CBC_SHA
 	| AES_128_CBC_SHA256
-	| CAMELLIA_128_CBC_SHA
-	| NULL_SHA
+--	| CAMELLIA_128_CBC_SHA
+--	| NULL_SHA
 	| BE_NULL
 	deriving (Show, Read, Eq)
 
@@ -37,9 +43,9 @@ decodeCipherSuite bs = case BS.unpack bs of
 		(0x00, 0x00) -> CipherSuite KE_NULL BE_NULL
 		(0x00, 0x2f) -> CipherSuite RSA AES_128_CBC_SHA
 		(0x00, 0x33) -> CipherSuite DHE_RSA AES_128_CBC_SHA
-		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
+--		(0x00, 0x39) -> CipherSuite ECDHE_PSK NULL_SHA
 		(0x00, 0x3c) -> CipherSuite RSA AES_128_CBC_SHA256
-		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
+--		(0x00, 0x45) -> CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA
 		(0x00, 0x67) -> CipherSuite DHE_RSA AES_128_CBC_SHA256
 		(0xc0, 0x09) -> CipherSuite ECDHE_ECDSA AES_128_CBC_SHA
 		(0xc0, 0x13) -> CipherSuite ECDHE_RSA AES_128_CBC_SHA
@@ -52,9 +58,9 @@ encodeCipherSuite :: CipherSuite -> BS.ByteString
 encodeCipherSuite (CipherSuite KE_NULL BE_NULL) = "\x00\x00"
 encodeCipherSuite (CipherSuite RSA AES_128_CBC_SHA) = "\x00\x2f"
 encodeCipherSuite (CipherSuite DHE_RSA AES_128_CBC_SHA) = "\x00\x33"
-encodeCipherSuite (CipherSuite ECDHE_PSK NULL_SHA) = "\x00\x39"
+-- encodeCipherSuite (CipherSuite ECDHE_PSK NULL_SHA) = "\x00\x39"
 encodeCipherSuite (CipherSuite RSA AES_128_CBC_SHA256) = "\x00\x3c"
-encodeCipherSuite (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
+-- encodeCipherSuite (CipherSuite DHE_RSA CAMELLIA_128_CBC_SHA) = "\x00\x45"
 encodeCipherSuite (CipherSuite DHE_RSA AES_128_CBC_SHA256) = "\x00\x67"
 encodeCipherSuite (CipherSuite ECDHE_ECDSA AES_128_CBC_SHA) = "\xc0\x09"
 encodeCipherSuite (CipherSuite ECDHE_RSA AES_128_CBC_SHA) = "\xc0\x13"
