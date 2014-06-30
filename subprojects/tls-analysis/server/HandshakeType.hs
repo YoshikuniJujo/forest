@@ -8,7 +8,7 @@ module HandshakeType (
 		CompressionMethod(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
-		SignatureAlgorithm(..), HashAlgorithm(..),
+		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) ) where
 
@@ -25,7 +25,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-	CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..) )
+	CompressionMethod(..), HashAlg(..), SignAlg(..) )
 import Certificate (
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
 	ClientKeyExchange(..), DigitallySigned(..) )
@@ -96,13 +96,13 @@ instance HandshakeItem X509.CertificateChain where
 	toHandshake = HCertificate
 
 data ServerKeyExchange = ServerKeyEx BS.ByteString BS.ByteString
-	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+	HashAlg SignAlg BS.ByteString deriving Show
 
 data ServerKeyExDhe = ServerKeyExDhe DH.Params DH.PublicNumber
-	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+	HashAlg SignAlg BS.ByteString deriving Show
 
 data ServerKeyExEcdhe = ServerKeyExEcdhe ECC.Curve ECC.Point
-	HashAlgorithm SignatureAlgorithm BS.ByteString deriving Show
+	HashAlg SignAlg BS.ByteString deriving Show
 
 instance HandshakeItem ServerKeyExchange where
 	fromHandshake = undefined
@@ -154,7 +154,7 @@ instance B.Parsable ServerKeyExEcdhe where
 		(ha, sa, sn) <- hasasn
 		return $ ServerKeyExEcdhe cv pnt ha sa sn
 
-hasasn :: B.BytableM (HashAlgorithm, SignatureAlgorithm, BS.ByteString)
+hasasn :: B.BytableM (HashAlg, SignAlg, BS.ByteString)
 hasasn = (,,) <$> B.parse <*> B.parse <*> (B.take =<< B.take 2)
 
 instance HandshakeItem CertificateRequest where

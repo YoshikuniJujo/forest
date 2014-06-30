@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Extension (Extension, SignatureAlgorithm(..), HashAlgorithm(..)) where
+module Extension (Extension, SignAlg(..), HashAlg(..)) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Bits (shiftL, (.|.))
@@ -12,7 +12,7 @@ import qualified Codec.Bytable as B
 import qualified Crypto.Types.PubKey.DH as DH
 import qualified Crypto.Types.PubKey.ECC as ECC
 
-import SignHashAlgorithm(SignatureAlgorithm(..), HashAlgorithm(..))
+import HashSignAlgorithm(HashAlg(..), SignAlg(..))
 
 data Extension
 	= ESName [ServerName]

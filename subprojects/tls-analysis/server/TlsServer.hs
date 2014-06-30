@@ -39,7 +39,7 @@ import HandshakeBase ( -- debug,
 	ServerKeyExchange(..), ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		CompressionMethod(..), HashAlg(..), SignAlg(..),
 		setCipherSuite,
 	certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..), Epms(..),
@@ -113,7 +113,7 @@ rsaKeyExchange rsk cv rs mcs = return const
 dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk, Show (Secret dp),
 		Show (Public dp),
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
-	HashAlgorithm -> dp -> sk ->
+	HashAlg -> dp -> sk ->
 	(BS.ByteString, BS.ByteString) -> Maybe X509.CertificateStore ->
 	HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange ha dp ssk rs mcs = do
@@ -157,7 +157,7 @@ serverHello _ _ _ = E.throwError "TlsServer.serverHello: never occur"
 
 serverKeyExchange :: (HandleLike h, CPRG g, SecretKey sk,
 		DhParam dp, B.Bytable dp, B.Bytable (Public dp)) =>
-	HashAlgorithm -> dp -> Secret dp -> sk ->
+	HashAlg -> dp -> Secret dp -> sk ->
 	(BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 serverKeyExchange ha dp sv ssk (cr, sr) = do
 	bl <- withRandom $ generateBlinder ssk

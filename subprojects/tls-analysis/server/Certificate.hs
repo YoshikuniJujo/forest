@@ -17,7 +17,7 @@ import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Codec.Bytable as B
 
-import SignHashAlgorithm (SignatureAlgorithm, HashAlgorithm)
+import HashSignAlgorithm (HashAlg, SignAlg)
 
 instance B.Bytable X509.CertificateChain where
 	decode = B.evalBytableM B.parse
@@ -35,12 +35,11 @@ instance B.Parsable X509.CertificateChain where
 
 data CertificateRequest
 	= CertificateRequest [ClientCertificateType]
-		[(HashAlgorithm, SignatureAlgorithm)] [X509.DistinguishedName]
+		[(HashAlg, SignAlg)] [X509.DistinguishedName]
 	| CertificateRequestRaw BS.ByteString
 	deriving Show
 
-certificateRequest ::
-	[ClientCertificateType] -> [(HashAlgorithm, SignatureAlgorithm)] ->
+certificateRequest :: [ClientCertificateType] -> [(HashAlg, SignAlg)] ->
 	X509.CertificateStore -> CertificateRequest
 certificateRequest t a = CertificateRequest t a
 	. map (X509.certIssuerDN . X509.signedObject . X509.getSigned)
@@ -83,7 +82,7 @@ instance B.Bytable ClientKeyExchange where
 	encode (ClientKeyExchange epms) = epms
 
 data DigitallySigned
-	= DigitallySigned (HashAlgorithm, SignatureAlgorithm) BS.ByteString
+	= DigitallySigned (HashAlg, SignAlg) BS.ByteString
 	| DigitallySignedRaw BS.ByteString
 	deriving Show
 

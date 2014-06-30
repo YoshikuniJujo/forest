@@ -4,7 +4,7 @@ module Hello (
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 		CompressionMethod(..),
-		SignatureAlgorithm(..), HashAlgorithm(..) ) where
+		SignAlg(..), HashAlg(..) ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Word (Word8, Word16)
@@ -13,7 +13,7 @@ import Numeric (showHex)
 import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 
-import Extension (Extension, SignatureAlgorithm(..), HashAlgorithm(..))
+import Extension (Extension, SignAlg(..), HashAlg(..))
 import CipherSuite (CipherSuite(..), KeyExchange(..), BulkEncryption(..))
 
 data ClientHello

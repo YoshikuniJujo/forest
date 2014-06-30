@@ -14,7 +14,7 @@ module HandshakeBase (
 	ServerHelloDone(..),
 	ClientHello(..), ServerHello(..), SessionId(..),
 		CipherSuite(..), KeyExchange(..), BulkEncryption(..),
-		CompressionMethod(..), HashAlgorithm(..), SignatureAlgorithm(..),
+		CompressionMethod(..), HashAlg(..), SignAlg(..),
 		HM.setCipherSuite,
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..), SecretKey(..),
 	ClientKeyExchange(..), Epms(..),
@@ -56,7 +56,7 @@ import HandshakeType (
 		CompressionMethod(..),
 	ServerKeyExchange(..), ServerKeyExDhe(..), ServerKeyExEcdhe(..),
 	CertificateRequest(..), certificateRequest, ClientCertificateType(..),
-		SignatureAlgorithm(..), HashAlgorithm(..),
+		SignAlg(..), HashAlg(..),
 	ServerHelloDone(..), ClientKeyExchange(..), Epms(..),
 	DigitallySigned(..), Finished(..) )
 import qualified HandshakeMonad as HM (
@@ -140,8 +140,8 @@ encodeContent (CHandshake hss) = (HM.CTHandshake, B.encode hss)
 class SecretKey sk where
 	type Blinder sk
 	generateBlinder :: CPRG g => sk -> g -> (Blinder sk, g)
-	sign :: HashAlgorithm -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
-	signatureAlgorithm :: sk -> SignatureAlgorithm
+	sign :: HashAlg -> Blinder sk -> sk -> BS.ByteString -> BS.ByteString
+	signatureAlgorithm :: sk -> SignAlg
 
 instance SecretKey RSA.PrivateKey where
 	type Blinder RSA.PrivateKey = RSA.Blinder
@@ -239,21 +239,3 @@ secp256r1 = ECC.getCurveByName ECC.SEC_p256r1
 
 finishedHash :: (HandleLike h, CPRG g) => HM.Side -> HM.HandshakeM h g Finished
 finishedHash = (Finished `liftM`) . HM.finishedHash
-
-{-
--- bug1 = 33292481687918504682586994429785316229913835532049287503901091415247882299869
-
--- bug2 = 108879534210434604472200289449493552282388724751394244865126424394145622575717
-
-numA, numB :: Integer
-numA = 19894103601883059899665709869801282957206989520927472206439915724259360495446
-numB = 75657690562904034751213426725420836753773169209339604702808093110791523269455
-
-pA, pB :: ECC.Point
-pA = ECC.Point 90741019515501001455795144805143593394300305318370739057992192334436694756251 42230739340702334598663894538906545848513467505253845442209901323233999225
-pB = ECC.Point 112536995998032882201084009735307697236567274303334597049742293851624607105176 94653653616580974150976817977611389831172969692675555486005277480365298359381
-
-sA, sB :: BS.ByteString
-sA = "\180\199\219\194\STX\b(XZW\241BJR(?\NUL62oT\156\SUB\f\DC2}\171[\141\237\199i"
-sB = "_\142\GS\"\159uH\170\140\183\145\&0vSi`\225C\166 \ESC\192\224\139'2\190QH5J\158"
--}

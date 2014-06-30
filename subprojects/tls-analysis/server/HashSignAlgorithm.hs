@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module SignHashAlgorithm (SignatureAlgorithm(..), HashAlgorithm(..)) where
+module HashSignAlgorithm (SignAlg(..), HashAlg(..)) where
 
 import Data.Word (Word8)
 
@@ -8,10 +8,10 @@ import qualified Data.ByteString as BS
 import qualified Codec.Bytable as B
 import Codec.Bytable.BigEndian ()
 
-data HashAlgorithm = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8
+data HashAlg = Sha1 | Sha224 | Sha256 | Sha384 | Sha512 | HARaw Word8
 	deriving Show
 
-instance B.Bytable HashAlgorithm where
+instance B.Bytable HashAlg where
 	encode Sha1   = "\x02"
 	encode Sha224 = "\x03"
 	encode Sha256 = "\x04"
@@ -22,14 +22,14 @@ instance B.Bytable HashAlgorithm where
 		[ha] -> Right $ case ha of
 			2 -> Sha1  ; 3 -> Sha224; 4 -> Sha256
 			5 -> Sha384; 6 -> Sha512; _ -> HARaw ha
-		_ -> Left "SignHashAlgorithm: Bytable.decode"
+		_ -> Left "HashSignAlgorithm: Bytable.decode"
 
-instance B.Parsable HashAlgorithm where
+instance B.Parsable HashAlg where
 	parse = B.take 1
 
-data SignatureAlgorithm = Rsa | Dsa | Ecdsa | SARaw Word8 deriving (Show, Eq)
+data SignAlg = Rsa | Dsa | Ecdsa | SARaw Word8 deriving (Show, Eq)
 
-instance B.Bytable SignatureAlgorithm where
+instance B.Bytable SignAlg where
 	encode Rsa = "\x01"
 	encode Dsa = "\x02"
 	encode Ecdsa = "\x03"
@@ -39,5 +39,5 @@ instance B.Bytable SignatureAlgorithm where
 			1 -> Rsa; 2 -> Dsa; 3 -> Ecdsa; _ -> SARaw sa
 		_ -> Left "Type.decodeSA"
 
-instance B.Parsable SignatureAlgorithm where
+instance B.Parsable SignAlg where
 	parse = B.take 1
