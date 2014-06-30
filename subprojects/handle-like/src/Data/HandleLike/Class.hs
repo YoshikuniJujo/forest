@@ -1,13 +1,17 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts #-}
 
-module Data.HandleLike.Class (HandleLike(..), hlPutStrLn) where
+module Data.HandleLike.Class (
+	HandleLike(..),
+	Priority(..),
+	hlPutStrLn ) where
 
 import Control.Monad
 import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import Data.String
 
-class (Monad (HandleMonad h), Num (DebugLevel h)) =>
+class (Monad (HandleMonad h), IsString (DebugLevel h)) =>
 	HandleLike h where
 	type HandleMonad h
 	type DebugLevel h
@@ -21,7 +25,7 @@ class (Monad (HandleMonad h), Num (DebugLevel h)) =>
 	hlDebug :: h -> DebugLevel h -> BS.ByteString -> HandleMonad h ()
 	hlError :: h -> BS.ByteString -> HandleMonad h a
 
-	type DebugLevel h = Int
+	type DebugLevel h = Priority
 	hlGetByte h = do [b] <- BS.unpack `liftM` hlGet h 1; return b
 	hlGetLine h = do
 		b <- hlGetByte h
@@ -35,3 +39,12 @@ class (Monad (HandleMonad h), Num (DebugLevel h)) =>
 
 hlPutStrLn :: HandleLike h => h -> BS.ByteString -> HandleMonad h ()
 hlPutStrLn h = hlPut h . (`BS.append` "\n")
+
+data Priority = Low | Moderate | High | Critical deriving (Show, Read, Enum)
+
+instance IsString Priority where
+	fromString s = case takeWhile (/= ':') s of
+		"low" -> Low
+		"high" -> High
+		"critical" -> Critical
+		_ -> Moderate

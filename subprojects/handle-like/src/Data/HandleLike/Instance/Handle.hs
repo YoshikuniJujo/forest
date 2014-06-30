@@ -16,6 +16,7 @@ instance HandleLike Handle where
 --	hlGetByte h = do [b] <- BS.unpack <$> BS.hGet h 1; return b
 	hlGetLine = (chopCR `liftM`) . BS.hGetLine
 --	hlGetContent = flip BS.hGet 1
+	hlDebug _ Low = const $ return ()
 	hlDebug _ _ = BS.hPutStr stderr
 	hlFlush = hFlush
 	hlClose = hClose
