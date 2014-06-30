@@ -3,13 +3,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Network.PeyoTLS.Server (
-	run, open, clientNames,
+	run, open, names,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PeyotlsM, PeyotlsHandle,
 	TlsM, TlsHandle,
 	ValidateHandle(..), CertSecretKey ) where
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, liftM, ap)
 import "monads-tf" Control.Monad.Error (catchError)
 import qualified "monads-tf" Control.Monad.Error as E (throwError)
@@ -20,7 +19,6 @@ import Data.HandleLike (HandleLike(..))
 import "crypto-random" Crypto.Random (CPRG)
 
 import qualified Data.ByteString as BS
-import qualified Data.ASN1.Types as ASN1
 import qualified Data.X509 as X509
 import qualified Data.X509.Validation as X509
 import qualified Data.X509.CertificateStore as X509
@@ -31,10 +29,10 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
-import Network.PeyoTLS.HandshakeBase ( -- debug,
+import Network.PeyoTLS.HandshakeBase (
 	PeyotlsM, PeyotlsHandle,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
-	TlsHandle, setClientNames, clientNames,
+	TlsHandle, names,
 		readHandshake, getChangeCipherSpec,
 		writeHandshake, putChangeCipherSpec,
 	ValidateHandle(..), handshakeValidate,
@@ -182,7 +180,7 @@ clientCertificate :: (ValidateHandle h, CPRG g) =>
 	X509.CertificateStore -> HandshakeM h g X509.PubKey
 clientCertificate cs = do
 	cc@(X509.CertificateChain (c : _)) <- readHandshake
-	chk cc >> setClientNames (names cc)
+	chk cc -- >> setClientNames (certNames $ X509.getCertificate c)
 	return . X509.certPubKey $ X509.getCertificate c
 	where
 	chk cc = do
@@ -194,15 +192,6 @@ clientCertificate cs = do
 		| X509.Expired `elem` rs = ADCertificateExpired
 		| X509.InFuture `elem` rs = ADCertificateExpired
 		| otherwise = ADCertificateUnknown
-	names cc = maybe id (:) <$> nms <*> ans $ crt cc
-	nms = (ASN1.asn1CharacterToString =<<) .
-		X509.getDnElement X509.DnCommonName . X509.certSubjectDN
-	ans = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
-				. \(X509.ExtSubjectAltName ns) -> ns)
-			. X509.extensionGet . X509.certExtensions
-	crt cc = case cc of
-		X509.CertificateChain (t : _) -> X509.getCertificate t
-		_ -> error "TlsServer.clientCertificate: empty certificate chain"
 
 rsaClientKeyExchange :: (HandleLike h, CPRG g) => RSA.PrivateKey ->
 	Version -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()

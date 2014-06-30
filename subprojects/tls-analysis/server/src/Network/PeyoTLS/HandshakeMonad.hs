@@ -4,7 +4,6 @@ module Network.PeyoTLS.HandshakeMonad (
 	TH.TlsM, TH.run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	ValidateHandle(..), handshakeValidate,
 	TH.TlsHandle(..), TH.ContentType(..),
-		setClientNames,
 		setCipherSuite, flushCipherSuite, debugCipherSuite,
 		tlsGetContentType, tlsGet, tlsPut,
 		generateKeys, encryptRsa, decryptRsa, rsaPadding,
@@ -13,6 +12,8 @@ module Network.PeyoTLS.HandshakeMonad (
 
 import Prelude hiding (read)
 
+import Control.Applicative
+import qualified Data.ASN1.Types as ASN1
 import Control.Arrow (first)
 import Control.Monad (liftM)
 import "monads-tf" Control.Monad.Trans (lift)
@@ -70,14 +71,23 @@ instance ValidateHandle Handle where
 			(\_ _ _ -> return ())
 		validationChecks = X509.defaultChecks { X509.checkFQHN = False }
 
+certNames :: X509.Certificate -> [String]
+certNames = nms
+	where
+	nms c = maybe id (:) <$> nms_ <*> ans $ c
+	nms_ = (ASN1.asn1CharacterToString =<<) .
+		X509.getDnElement X509.DnCommonName . X509.certSubjectDN
+	ans = maybe [] ((\ns -> [s | X509.AltNameDNS s <- ns])
+				. \(X509.ExtSubjectAltName ns) -> ns)
+			. X509.extensionGet . X509.certExtensions
+
 handshakeValidate :: ValidateHandle h =>
 	X509.CertificateStore -> X509.CertificateChain ->
 	HandshakeM h g [X509.FailedReason]
-handshakeValidate cs cc =
-	gets fst >>= \t -> lift . lift . lift $ validate (TH.tlsHandle t) cs cc
-
-setClientNames :: HandleLike h => [String] -> HandshakeM h g ()
-setClientNames n = do t <- gets fst; modify . first $ const t { TH.clientNames = n }
+handshakeValidate cs cc@(X509.CertificateChain (c : _)) = gets fst >>= \t -> do
+	modify . first $ const t { TH.names = certNames $ X509.getCertificate c }
+	lift . lift . lift $ validate (TH.tlsHandle t) cs cc
+handshakeValidate _ _ = error "empty certificate chain"
 
 setCipherSuite :: HandleLike h => TH.CipherSuite -> HandshakeM h g ()
 setCipherSuite = modify . first . TH.setCipherSuite

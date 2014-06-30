@@ -37,7 +37,7 @@ import qualified Network.PeyoTLS.CryptoTools as CT (
 
 data TlsHandle h g = TlsHandle {
 	clientId :: PartnerId,
-	tlsHandle :: h, keys :: Keys, clientNames :: [String] }
+	tlsHandle :: h, keys :: Keys, names :: [String] }
 
 type HandleHash h g = (TlsHandle h g, SHA256.Ctx)
 
@@ -56,7 +56,7 @@ newHandle h = do
 	let (i, s') = newPartnerId s
 	put s'
 	return TlsHandle {
-		clientId = i, tlsHandle = h, keys = nullKeys, clientNames = [] }
+		clientId = i, tlsHandle = h, keys = nullKeys, names = [] }
 
 getContentType :: (HandleLike h, CPRG g) => TlsHandle h g -> TlsM h g ContentType
 getContentType t = do

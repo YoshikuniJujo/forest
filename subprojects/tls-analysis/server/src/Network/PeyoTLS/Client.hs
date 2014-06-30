@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module Network.PeyoTLS.Client (
-	run, open, CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	run, open, names,
+	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
 	PeyotlsM, PeyotlsHandle,
 	TlsM, TlsHandle,
 	ValidateHandle(..), CertSecretKey ) where
@@ -30,7 +31,7 @@ import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeBase (
-	PeyotlsM, PeyotlsHandle,
+	PeyotlsM, PeyotlsHandle, names,
 	TlsM, run, HandshakeM, execHandshakeM, CertSecretKey(..),
 		withRandom, randomByteString,
 	TlsHandle,

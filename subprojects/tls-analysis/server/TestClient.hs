@@ -11,6 +11,7 @@ import "crypto-random" Crypto.Random
 import Data.HandleLike
 
 import qualified Data.ByteString as BS
+-- import qualified Data.ByteString.Char8 as BSC
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 
@@ -31,6 +32,9 @@ client :: (ValidateHandle h, CPRG g) => g -> h ->
 	HandleMonad h ()
 client g h crt crtS = (`run` g) $ do
 	t <- open h cipherSuites crt crtS
+--	hlDebug t "medium" . BSC.pack . (++ "\n") . show $ names t
+	unless ("localhost" `elem` names t) $
+		error "certificate name mismatch"
 	hlPut t request
 	const () `liftM` hlGetContent t
 
