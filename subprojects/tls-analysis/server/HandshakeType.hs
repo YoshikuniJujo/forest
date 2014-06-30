@@ -111,15 +111,13 @@ instance HandshakeItem ServerKeyExchange where
 instance HandshakeItem ServerKeyExDhe where
 	toHandshake = HServerKeyEx . B.encode
 	fromHandshake (HServerKeyEx ske) =
---		either (const Nothing) Just $ B.decode ske
-		either error Just $ B.decode ske
+		either (const Nothing) Just $ B.decode ske
 	fromHandshake _ = Nothing
 
 instance HandshakeItem ServerKeyExEcdhe where
 	toHandshake = HServerKeyEx . B.encode
 	fromHandshake (HServerKeyEx ske) =
---		either (const Nothing) Just $ B.decode ske
-		either error Just $ B.decode ske
+		either (const Nothing) Just $ B.decode ske
 	fromHandshake _ = Nothing
 
 instance B.Bytable ServerKeyExchange where

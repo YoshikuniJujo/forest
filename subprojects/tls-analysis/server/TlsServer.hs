@@ -118,7 +118,6 @@ dhKeyExchange :: (ValidateHandle h, CPRG g, SecretKey sk, Show (Secret dp),
 	HandshakeM h g (Maybe X509.PubKey)
 dhKeyExchange ha dp ssk rs mcs = do
 	sv <- withRandom $ generateSecret dp
---	debug sv
 	serverKeyExchange ha dp sv ssk rs
 	return const
 		`ap` requestAndCertificate mcs
@@ -206,12 +205,8 @@ rsaClientKeyExchange :: (HandleLike h, CPRG g) => RSA.PrivateKey ->
 	Version -> (BS.ByteString, BS.ByteString) -> HandshakeM h g ()
 rsaClientKeyExchange sk (cvj, cvn) rs = do
 	Epms epms <- readHandshake
-	pms <- mkpms epms `catchError` const
+	generateKeys Server rs =<< mkpms epms `catchError` const
 		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
---	debug pms
-	generateKeys Server rs pms
---	generateKeys Server rs =<< mkpms epms `catchError` const
---		((BS.cons cvj . BS.cons cvn) `liftM` randomByteString 46)
 	where
 	mkpms epms = do
 		pms <- decryptRsa sk epms
@@ -228,13 +223,10 @@ dhClientKeyExchange :: (HandleLike h, CPRG g, DhParam dp, B.Bytable (Public dp),
 dhClientKeyExchange dp sv rs = do
 	ClientKeyExchange cke <- readHandshake
 	let Right pv = B.decode cke
---	debug pv
 	generateKeys Server rs =<< case Right $ calculateShared dp sv pv of
 		Left em -> E.throwError . strMsg $
 			"TlsServer.dhClientKeyExchange: " ++ em
-		Right sh -> -- do
---			debug sh
-			return sh
+		Right sh -> return sh
 
 certificateVerify :: (HandleLike h, CPRG g) => X509.PubKey -> HandshakeM h g ()
 certificateVerify (X509.PubKeyRSA pk) = do

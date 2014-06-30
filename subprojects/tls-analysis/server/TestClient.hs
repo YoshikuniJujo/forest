@@ -8,7 +8,6 @@ module TestClient ( CertSecretKey,
 import TlsClient
 import Control.Monad
 import "crypto-random" Crypto.Random
--- import HandshakeBase
 import Data.HandleLike
 
 import qualified Data.ByteString as BS
@@ -33,7 +32,7 @@ client :: (ValidateHandle h, CPRG g) => g -> h ->
 client g h crt crtS = (`run` g) $ do
 	t <- openServer h cipherSuites crt crtS
 	hlPut t request
-	const () `liftM` hlGetContent t -- >>= hlDebug t 5
+	const () `liftM` hlGetContent t
 
 request :: BS.ByteString
 request = "GET / HTTP/1.1\r\n\r\n"

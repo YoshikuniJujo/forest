@@ -20,8 +20,6 @@ import qualified Data.X509.CertificateStore as X509
 
 import TestServer
 
--- import ForClientTest
-
 cipherSuites :: [CipherSuite]
 cipherSuites = [
 	CipherSuite ECDHE_ECDSA AES_128_CBC_SHA256,
