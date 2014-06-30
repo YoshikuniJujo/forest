@@ -2,7 +2,7 @@ cabal-version:	>= 1.6
 build-type:	Simple
 
 name:		handle-like
-version:	0.0.0.10
+version:	0.0.0.11
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
@@ -38,10 +38,11 @@ source-repository	head
 source-repository	this
     type:	git
     location:	git://github.com/YoshikuniJujo/forest
-    tag:	handle-like-0.0.0.10
+    tag:	handle-like-0.0.0.11
 
 library
     hs-source-dirs:	src
-    exposed-modules:	Data.HandleLike
+    exposed-modules:
+        Data.HandleLike, Data.HandleLike.Class, Data.HandleLike.Instance.Handle
     build-depends:	base == 4.*, bytestring == 0.10.*
     ghc-options:	-Wall
