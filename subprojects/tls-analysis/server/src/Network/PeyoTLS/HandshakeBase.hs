@@ -2,6 +2,7 @@
 	TupleSections #-}
 
 module Network.PeyoTLS.HandshakeBase (
+	PeyotlsM, PeyotlsHandle,
 	debug, generateKs, blindSign, CertSecretKey(..),
 	HM.TlsM, HM.run, HM.HandshakeM, HM.execHandshakeM,
 	HM.withRandom, HM.randomByteString,
@@ -30,8 +31,9 @@ import Control.Monad (liftM, ap)
 import "monads-tf" Control.Monad.State (gets, lift)
 import Data.Word (Word8)
 import Data.HandleLike (HandleLike(..))
+import System.IO (Handle)
 import Numeric (readHex)
-import "crypto-random" Crypto.Random (CPRG, cprgGenerate)
+import "crypto-random" Crypto.Random (CPRG, SystemRNG, cprgGenerate)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -72,6 +74,9 @@ import qualified Network.PeyoTLS.HandshakeMonad as HM (
 import Network.PeyoTLS.Ecdsa (blindSign, generateKs)
 
 import Network.PeyoTLS.CertSecretKey
+
+type PeyotlsM = HM.TlsM Handle SystemRNG
+type PeyotlsHandle = HM.TlsHandle Handle SystemRNG
 
 debug :: (HandleLike h, Show a) => a -> HM.HandshakeM h g ()
 debug x = do

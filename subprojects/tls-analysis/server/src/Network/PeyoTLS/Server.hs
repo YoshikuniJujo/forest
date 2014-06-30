@@ -5,6 +5,8 @@
 module Network.PeyoTLS.Server (
 	run, open, clientNames,
 	CipherSuite(..), KeyExchange(..), BulkEncryption(..),
+	PeyotlsM, PeyotlsHandle,
+	TlsM, TlsHandle,
 	ValidateHandle(..), CertSecretKey ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -30,6 +32,7 @@ import qualified Crypto.Types.PubKey.ECDSA as ECDSA
 import qualified Crypto.PubKey.ECC.ECDSA as ECDSA
 
 import Network.PeyoTLS.HandshakeBase ( -- debug,
+	PeyotlsM, PeyotlsHandle,
 	TlsM, run, HandshakeM, execHandshakeM, withRandom, randomByteString,
 	TlsHandle, setClientNames, clientNames,
 		readHandshake, getChangeCipherSpec,
