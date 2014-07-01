@@ -15,7 +15,7 @@ category:	Network
 synopsis:	Pretty Easy YOshikuni-made TLS library
 description:
     Currently implemente the TLS1.2 protocol only,
-    and support following cipher suites.
+    and support the following cipher suites.
     .
     * TLS_RSA_WITH_AES_128_CBC_SHA
     .
@@ -33,13 +33,13 @@ description:
     .
     * TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
     .
-    And support client certificate with following algorithms.
+    And support client certificate with the following algorithms.
     .
     * RSA (SHA1 or SHA256 depending on the agreed cipher suite)
     .
     * ECDSA (SHA1 or SHA256 depending on the agreed cipher suite)
     .
-    Currently not implemente following features.
+    Currently not implemente the following features.
     .
     * session resumption (RFC 5077)
     .
@@ -191,6 +191,36 @@ description:
     > ---
     > >		p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(ek, ec), (rk, rc)] ca
     .
+    ECC server (use ECC or RSA depending on client)
+    .
+    * file: examples/eccServer.hs
+    .
+    > % diff examples/simpleServer.hs examples/eccServer.hs
+    > 15a16,26
+    > > cipherSuites :: [CipherSuite]
+    > > cipherSuites = [
+    > >       "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_RSA_WITH_AES_128_CBC_SHA" ]
+    > >
+    > 18,19c29,32
+    > <       k <- readKey "localhost.key"
+    > <       c <- readCertificateChain "localhost.crt"
+    > ---
+    > >       rk <- readKey "localhost.key"
+    > >       rc <- readCertificateChain "localhost.crt"
+    > >       ek <- readKey "localhost_ecdsa.key"
+    > >       ec <- readCertificateChain "localhost_ecdsa.crt"
+    > 26c39
+    > <                       p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
+    > ---
+    > >                       p <- open h cipherSuites [(rk, rc), (ek, ec)]
+    .
 
 extra-source-files:
     examples/simpleServer.hs
@@ -198,6 +228,7 @@ extra-source-files:
     examples/clcertServer.hs
     examples/clcertClient.hs
     examples/clcertEcdsaClient.hs
+    examples/eccServer.hs
 
 extra-source-files:
 
