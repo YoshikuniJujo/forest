@@ -17,6 +17,7 @@ main :: IO ()
 main = do
 	k <- readKey "localhost.key"
 	c <- readCertificateChain "localhost.crt"
+	ca <- readCertificateStore ["cacert.pem"]
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn $ PortNumber 443
 	void . (`runStateT` g0) . forever $ do
@@ -24,7 +25,7 @@ main = do
 		g <- StateT $ return . cprgFork
 		liftIO . forkIO . (`run` g) $ do
 			p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
-				Nothing
+				$ Just ca
 			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
 			hlPut p $ BS.concat [
 				"HTTP/1.1 200 OK\r\n",

@@ -14,7 +14,38 @@ license-file:	LICENSE
 category:	Network
 synopsis:	Pretty Easy YOshikuni-made TLS library
 description:
-    server sample (-XOverloadedStrings -XPackageImports)
+    Currently implemente the TLS1.2 protocol only,
+    and support following cipher suites.
+    .
+    * TLS_RSA_WITH_AES_128_CBC_SHA
+    .
+    * TLS_RSA_WITH_AES_128_CBC_SHA256
+    .
+    * TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+    .
+    * TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+    .
+    * TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+    .
+    * TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+    .
+    * TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+    .
+    * TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+    .
+    And support client certificate with following algorithms.
+    .
+    * RSA (SHA1 or SHA256 depending on the agreed cipher suite)
+    .
+    * ECDSA (SHA1 or SHA256 depending on the agreed cipher suite)
+    .
+    Currently not implemente following features.
+    .
+    * session resumption (RFC 5077)
+    .
+    * renegotiation (RFC 5746)
+    .
+    Server sample (examples/simpleServer.hs)
     .
     localhost.key: key file
     .
@@ -27,6 +58,14 @@ description:
     > -----BEGIN CERTIFICATE-----
     > ...
     > -----END CERTIFICATE-----
+    .
+    examples/simpleServer.hs
+    .
+    extensions
+    .
+    * OverloadedStrings
+    .
+    * PackageImports
     .
     > import Control.Applicative
     > import Control.Monad
@@ -51,7 +90,8 @@ description:
     >		(h, _, _) <- liftIO $ accept soc
     >		g <- StateT $ return . cprgFork
     >		liftIO . forkIO . (`run` g) $ do
-    >			p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] Nothing
+    >			p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
+    >				Nothing
     >			doUntil BS.null (hlGetLine p) >>= liftIO . mapM_ BSC.putStrLn
     >			hlPut p $ BS.concat [
     >				"HTTP/1.1 200 OK\r\n",
@@ -64,13 +104,21 @@ description:
     > doUntil p rd = rd >>= \x ->
     >	(if p x then return . (: []) else (`liftM` doUntil p rd) . (:)) x
     .
-    client sample (-XOverloadedStrings -XPackageImports)
+    Client sample (examples/simpleClient.hs)
     .
     cacert.pem: self-signed root certificate to validate server
     .
     > -----BEGIN CERTIFICATE-----
     > ...
     > -----END CERTIFICATE-----
+    .
+    examples/simpleClient.hs
+    .
+    extensions
+    .
+    * OverloadedStrings
+    .
+    * PackageImports
     .
     > import Control.Applicative
     > import Control.Monad
@@ -101,10 +149,21 @@ description:
     > doUntil p rd = rd >>= \x ->
     > 	(if p x then return . (: []) else (`liftM` doUntil p rd) . (:)) x
     .
+    Client certificate server (examples/clcertServer)
+    .
+    > % diff examples/simpleServer.hs examples/clcertServer.hs
+    > 19a20
+    > >	ca <- readCertificateStore ["cacert.pem"]
+    > 27c28
+    > <				Nothing
+    > ---
+    > >				$ Just ca
+    .
 
 extra-source-files:
     examples/simpleServer.hs
     examples/simpleClient.hs
+    examples/clcertServer.hs
 
 extra-source-files:
 
