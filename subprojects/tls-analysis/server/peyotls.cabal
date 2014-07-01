@@ -221,6 +221,28 @@ description:
     > ---
     > >                       p <- open h cipherSuites [(rk, rc), (ek, ec)]
     .
+    ECC client (use ECC or RSA depending on server)
+    .
+    * file: examples/eccClient.hs
+    .
+    > % diff examples/simpleClient.hs examples/eccClient.hs
+    > 13a14,24
+    > > cipherSuites :: [CipherSuite]
+    > > cipherSuites = [
+    > >       "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+    > >       "TLS_RSA_WITH_AES_128_CBC_SHA256",
+    > >       "TLS_RSA_WITH_AES_128_CBC_SHA" ]
+    > >
+    > 20c31
+    > <               p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+    > ---
+    > >               p <- open h cipherSuites [] ca
+    .
 
 extra-source-files:
     examples/simpleServer.hs
@@ -229,6 +251,7 @@ extra-source-files:
     examples/clcertClient.hs
     examples/clcertEcdsaClient.hs
     examples/eccServer.hs
+    examples/eccClient.hs
 
 extra-source-files:
 
