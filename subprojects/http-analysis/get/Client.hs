@@ -3,37 +3,39 @@
 module Client (httpGet, httpPost) where
 
 import Control.Applicative
+import Control.Monad
 import Data.Maybe
 
 import HttpTypes
-import HandleLike
+import Data.HandleLike
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-httpGet :: HandleLike h => h -> IO BS.ByteString
+httpGet :: HandleLike h => h -> HandleMonad h BS.ByteString
 httpGet sv = do
 	hlPutStrLn sv request
 	src <- hGetHeader sv
 	let res = parseResponse src
 	cnt <- hlGet sv (contentLength $ responseContentLength res)
 	let res' = res { responseBody = cnt }
-	mapM_ BSC.putStrLn . catMaybes $ showResponse res'
+	mapM_ (hlDebug sv "critical" . (`BS.append` "\n"))
+		. catMaybes $ showResponse res'
 	return cnt
 
-httpPost :: HandleLike h => h -> BS.ByteString -> IO BS.ByteString
+httpPost :: HandleLike h => h -> BS.ByteString -> HandleMonad h BS.ByteString
 httpPost sv cnt = do
 	hlPutStrLn sv . requestToString $ post cnt
-	res <- parseResponse <$> hGetHeader sv
+	res <- parseResponse `liftM` hGetHeader sv
 	cnt' <- hlGet sv (contentLength $ responseContentLength res)
 	let res' = res { responseBody = cnt' }
-	BS.putStr $ responseToString res'
+	hlDebug sv "critical" . (`BS.append` "\n") $ responseToString res'
 	return cnt'
 
-hGetHeader :: HandleLike h => h -> IO [BS.ByteString]
+hGetHeader :: HandleLike h => h -> HandleMonad h [BS.ByteString]
 hGetHeader h = do
 	l <- hlGetLine h
-	if (BS.null l) then return [] else (l :) <$> hGetHeader h
+	if (BS.null l) then return [] else (l :) `liftM` hGetHeader h
 
 crlf :: [BS.ByteString] -> BS.ByteString
 crlf = BS.concat . map (+++ "\r\n")
