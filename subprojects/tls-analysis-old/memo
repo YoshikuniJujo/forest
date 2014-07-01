@@ -1,7 +1,0 @@
-今はparse...と...ToByteStringとしているが、これらは以下のようにまとめられるだろう。
-
-class ByteStringObject bso where
-	parse :: ByteStringM bso
-	toByteString :: bso -> ByteString
-
-このようにするとタイプが楽になるし、まとまりもつく。

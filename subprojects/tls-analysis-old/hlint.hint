@@ -1,3 +1,0 @@
-import "hlint" HLint.Default
-import "hlint" HLint.Dollar
-ignore "Use concatMap"
