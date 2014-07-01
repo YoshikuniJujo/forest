@@ -12,3 +12,4 @@ dist/
 /subprojects/schedevr/src/prog_graph/mkGraph
 /subprojects/schedevr/dist/
 /subprojects/schedevr/*.ebuild
+/subprojects/tls-analysis/server/clientFiles/
