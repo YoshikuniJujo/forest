@@ -19,7 +19,7 @@ main = do
 	(pn :: Int) : _ <- mapM readIO =<< getArgs
 	let port = PortNumber $ fromIntegral pn
 	k <- readKey "localhost.sample_key"
-	c <- readCertificateChain "localhost.sample_crt"
+	c <- readCertificateChain ["localhost.sample_crt"]
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	socket <- listenOn port
 	void . (`runStateT` g0) . forever $ do
