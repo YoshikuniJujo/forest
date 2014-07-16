@@ -9,7 +9,7 @@ import Data.Bits (shiftR, xor)
 import Crypto.Number.ModArithmetic (inverse)
 
 import qualified Data.ByteString as BS
-import qualified Codec.Bytable as B
+import qualified Codec.Bytable.BigEndian as B
 import Codec.Bytable.BigEndian ()
 import qualified Crypto.Types.PubKey.ECC as ECC
 import qualified Crypto.PubKey.ECC.Prim as ECC
