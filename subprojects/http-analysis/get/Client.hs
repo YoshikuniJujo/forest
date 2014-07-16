@@ -2,7 +2,6 @@
 
 module Client (httpGet, httpPost) where
 
-import Control.Applicative
 import Control.Monad
 import Data.Maybe
 
@@ -10,7 +9,6 @@ import HttpTypes
 import Data.HandleLike
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 
 httpGet :: HandleLike h => h -> HandleMonad h BS.ByteString
 httpGet sv = do
