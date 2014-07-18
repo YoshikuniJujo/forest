@@ -62,9 +62,9 @@ finalize (Need _ n) f = Need f $ \i -> finalize (n i) f
 finalize (Done _ r) f = Done f r
 finalize (Make _ m) f = Make f $ flip finalize f `liftM` m
 
-finalize' :: (MonadIO m, MonadBase m IO) => Pipe m i o r -> IO () -> Pipe m i o r
+finalize' :: (MonadIO m, MonadBase m IO) => Pipe m i o r -> m () -> Pipe m i o r
 finalize' p f =
-	finalize (mapMake (liftIO . (`onException` f) . liftBase) p) (liftIO f)
+	finalize (mapMake (liftIO . (`onException` liftBase f) . liftBase) p) f
 
 mapMake :: Monad m => (forall a . m a -> m a) -> Pipe m i o r -> Pipe m i o r
 mapMake k (Ready f o p) = Ready f o $ mapMake k p

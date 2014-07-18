@@ -1,6 +1,11 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 import PipeF
 import Control.Monad
 import System.IO
+
+import Control.Monad.IO.Class
+import Control.Monad.Base
 
 readStdin :: Pipe IO () Char ()
 readStdin = do
@@ -34,9 +39,8 @@ take1 = do
 		-}
 
 readf :: FilePath -> Pipe IO () String ()
-readf fp = do
-	h <- liftP $ openFile fp ReadMode
-	hRead h `finalize'` (putStrLn "finalize" >> hClose h)
+readf fp = bracket
+	(openFile fp ReadMode) (\h -> putStrLn "finalize" >> hClose h) hRead
 
 hRead :: Handle -> Pipe IO () String ()
 hRead h = do
@@ -45,3 +49,9 @@ hRead h = do
 		l <- liftP $ hGetLine h
 		yield l
 		hRead h
+
+bracket :: (MonadIO m, MonadBase m IO) =>
+	m a -> (a -> m b) -> (a -> Pipe m i o r) -> Pipe m i o r
+bracket o c p = do
+	h <- liftP o
+	p h `finalize'` (c h >> return ())
