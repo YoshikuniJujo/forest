@@ -1,0 +1,98 @@
+{-# LANGUAGE KindSignatures #-}
+
+import Control.Applicative
+import Control.Monad
+import System.IO
+
+class PipelineClass (p :: * -> * -> * -> *) where
+	(=$=) :: p a b x -> p b c y -> p a c y
+
+data Pipeline m i o r
+	= HaveOutput o (Pipeline m i o r)
+	| NeedInput (Maybe i -> Pipeline m i o r)
+	| Done r
+	| PipeM (m (Pipeline m i o r))
+
+data Finished m i o r = Finished {
+	finished :: m (),
+	pipeline :: Pipeline m i o r }
+
+fromDone :: Monad m => Pipeline m i o r -> m (Maybe r)
+fromDone (Done x) = return $ Just x
+fromDone (PipeM m) = do
+	r <- m
+	case r of
+		Done x -> return $ Just x
+		PipeM m -> do
+			r <- m
+			fromDone r
+		_ -> return Nothing
+
+fromDone _ = return Nothing
+
+instance Functor m => PipelineClass (Pipeline m) where
+	_ =$= Done y = Done y
+	NeedInput f =$= p2 = NeedInput $ \i -> f i =$= p2
+	p1 =$= HaveOutput o' n' = HaveOutput o' (p1 =$= n')
+	HaveOutput o n =$= NeedInput f = n =$= f (Just o)
+	Done r =$= NeedInput f = Done r =$= f Nothing
+	PipeM m =$= p2 = PipeM $ (=$= p2) <$> m
+	p1 =$= PipeM m = PipeM $ (p1 =$=) <$> m
+
+instance Functor m => Functor (Pipeline m i o) where
+	f `fmap` HaveOutput o p = HaveOutput o $ f `fmap` p
+	f `fmap` NeedInput n = NeedInput $ \i -> f `fmap` n i
+	f `fmap` Done r = Done $ f r
+	f `fmap` PipeM m = PipeM $ (f `fmap`) `fmap` m
+
+instance Monad m => Monad (Pipeline m i o) where
+	HaveOutput o p >>= f = HaveOutput o $ p >>= f
+	NeedInput n >>= f = NeedInput $ \i -> n i >>= f
+	Done r >>= f = f r
+	PipeM m >>= f = PipeM $ do -- liftP m >>= (>>= f)
+		x <- m
+		return $ x >>= f
+	return = Done
+
+liftP :: Monad m => m a -> Pipeline m i o a
+liftP m = PipeM $ Done `liftM` m
+
+instance (Monad m, Functor m) => PipelineClass (Finished m) where
+	f1 =$= f2 = Finished (return ()) $ do
+		r <- pipeline f1 =$= pipeline f2
+		liftP $ finished f1
+		liftP $ finished f2
+		return r
+
+fromHandle :: Handle -> Pipeline IO () Char ()
+fromHandle h = PipeM $ do
+	c <- hGetChar h
+	print c
+	return $ case c of
+		'q' -> Done ()
+		_ -> HaveOutput c $ fromHandle h
+
+toList :: Functor m => Pipeline m a () [a]
+toList = NeedInput f
+	where
+	f Nothing = Done []
+	f (Just x) = (x :) <$> toList
+
+takeN :: Functor m => Int -> Pipeline m a () [a]
+takeN 0 = Done []
+takeN n = NeedInput f
+	where
+	f Nothing = Done []
+	f (Just x) = (x :) <$> takeN (n - 1)
+
+finishedHandle :: Handle -> IO () -> Finished IO () Char ()
+finishedHandle h c = Finished c (fromHandle h)
+
+liftF :: Monad m => Pipeline m i o r -> Finished m i o r
+liftF p = Finished (return ()) p
+
+readStdin :: Finished IO () Char ()
+readStdin = finishedHandle stdin (putStrLn "finished")
+
+test :: IO (Maybe String)
+test = fromDone . pipeline $ readStdin =$= liftF (takeN 3)
