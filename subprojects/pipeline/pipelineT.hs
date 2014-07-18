@@ -1,8 +1,9 @@
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE KindSignatures, PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
 import System.IO
+import Data.Char
 
 class PipelineClass (p :: * -> * -> * -> *) where
 	(=$=) :: p a b x -> p b c y -> p a c y
@@ -23,12 +24,17 @@ fromDone (PipeM m) = do
 	r <- m
 	case r of
 		Done x -> return $ Just x
-		PipeM m -> do
-			r <- m
-			fromDone r
+		PipeM m' -> do
+			r' <- m'
+			fromDone r'
 		_ -> return Nothing
-
 fromDone _ = return Nothing
+
+fromDoneF :: Monad m => Finished m i o r -> m (Maybe r)
+fromDoneF (Finished f p) = do
+	x <- fromDone p
+	f
+	return x
 
 instance Functor m => PipelineClass (Pipeline m) where
 	_ =$= Done y = Done y
@@ -58,11 +64,12 @@ liftP :: Monad m => m a -> Pipeline m i o a
 liftP m = PipeM $ Done `liftM` m
 
 instance (Monad m, Functor m) => PipelineClass (Finished m) where
-	f1 =$= f2 = Finished (return ()) $ do
-		r <- pipeline f1 =$= pipeline f2
-		liftP $ finished f1
-		liftP $ finished f2
-		return r
+	Finished f1 p1 =$= Finished f2 p2 = Finished (f1 >> f2) (p1 =$= p2)
+
+pipe :: (a -> b) -> Pipeline m a b ()
+pipe f = NeedInput $ \mi -> case mi of
+	Just i -> HaveOutput (f i) (pipe f)
+	_ -> Done ()
 
 fromHandle :: Handle -> Pipeline IO () Char ()
 fromHandle h = PipeM $ do
@@ -95,4 +102,4 @@ readStdin :: Finished IO () Char ()
 readStdin = finishedHandle stdin (putStrLn "finished")
 
 test :: IO (Maybe String)
-test = fromDone . pipeline $ readStdin =$= liftF (takeN 3)
+test = fromDoneF $ readStdin =$= liftF (pipe toUpper) =$= liftF (takeN 3)
