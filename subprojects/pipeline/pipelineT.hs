@@ -39,7 +39,7 @@ fromDoneF (Finished f p) = do
 instance Functor m => PipelineClass (Pipeline m) where
 	_ =$= Done y = Done y
 	NeedInput f =$= p2 = NeedInput $ \i -> f i =$= p2
-	p1 =$= HaveOutput o' n' = HaveOutput o' (p1 =$= n')
+	p1 =$= HaveOutput o n = HaveOutput o (p1 =$= n)
 	HaveOutput o n =$= NeedInput f = n =$= f (Just o)
 	Done r =$= NeedInput f = Done r =$= f Nothing
 	PipeM m =$= p2 = PipeM $ (=$= p2) <$> m
@@ -55,15 +55,17 @@ instance Monad m => Monad (Pipeline m i o) where
 	HaveOutput o p >>= f = HaveOutput o $ p >>= f
 	NeedInput n >>= f = NeedInput $ \i -> n i >>= f
 	Done r >>= f = f r
-	PipeM m >>= f = PipeM $ do -- liftP m >>= (>>= f)
-		x <- m
-		return $ x >>= f
+	PipeM m >>= f = PipeM $ (>>= f) `liftM` m
 	return = Done
 
 liftP :: Monad m => m a -> Pipeline m i o a
 liftP m = PipeM $ Done `liftM` m
 
 instance (Monad m, Functor m) => PipelineClass (Finished m) where
+	Finished f1 p1@(Done _) =$= Finished f2 p2 = Finished f2 $ do
+		r <- p1 =$= p2
+		liftP f1
+		return r
 	Finished f1 p1 =$= Finished f2 p2 = Finished (f1 >> f2) (p1 =$= p2)
 
 pipe :: (a -> b) -> Pipeline m a b ()
