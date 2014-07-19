@@ -3,19 +3,19 @@ module Data.Pipe.List (
 	toList,
 	) where
 
-import Control.Applicative
+import Control.Monad
 import Data.Pipe
 
-fromList :: Monad m => [a] -> Pipe () a m ()
+fromList :: (Monad m, Monad (p () a m), PipeClass p) => [a] -> p () a m ()
 fromList [] = return ()
 fromList (x : xs) = yield x >> fromList xs
 
 -- | Consume all values from the stream and return as a list.
 -- This will pull all values into memory.
 
-toList :: Monad m => Pipe a () m [a]
+toList :: (Monad m, Monad (p a () m), PipeClass p) => p a () m [a]
 toList = do
 	mx <- await
 	case mx of
-		Just x -> (x :) <$> toList
+		Just x -> (x :) `liftM` toList
 		_ -> return []
