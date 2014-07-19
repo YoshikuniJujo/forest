@@ -1,11 +1,9 @@
 {-# LANGUAGE FlexibleContexts, PackageImports #-}
 
-import PipeT
+import Data.Pipe
 import Control.Monad
 import System.IO
 
-import Control.Monad.IO.Class
-import Control.Monad.Base
 import "monads-tf" Control.Monad.Trans
 
 readStdin :: Pipe () Char IO ()

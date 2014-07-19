@@ -4,9 +4,6 @@ import PipeF
 import Control.Monad
 import System.IO
 
-import Control.Monad.IO.Class
-import Control.Monad.Base
-
 readStdin :: Pipe IO () Char ()
 readStdin = do
 	c <- liftP getChar
