@@ -1,26 +1,27 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, PackageImports #-}
 
-import PipeF
+import PipeT
 import Control.Monad
 import System.IO
 
 import Control.Monad.IO.Class
 import Control.Monad.Base
+import "monads-tf" Control.Monad.Trans
 
-readStdin :: Pipe IO () Char ()
+readStdin :: Pipe () Char IO ()
 readStdin = do
-	c <- liftP getChar
-	liftP $ print c
+	c <- lift getChar
+	lift $ print c
 	case c of
 		'q' -> return ()
 		_ -> yield c >> readStdin
 
-toList :: Monad m => Pipe m a () [a]
+toList :: Monad m => Pipe a () m [a]
 toList = await >>= \mx -> case mx of
 	Just x -> (x :) `liftM` toList
 	_ -> return []
 
-takeN :: Monad m => Int -> Pipe m a () [a]
+takeN :: Monad m => Int -> Pipe a () m [a]
 takeN 0 = return []
 takeN n = do
 	mx <- await
@@ -28,7 +29,7 @@ takeN n = do
 		Just x -> (x :) `liftM` takeN (n - 1)
 		_ -> return []
 
-take1 :: Monad m => Pipe m a () (Maybe a)
+take1 :: Monad m => Pipe a () m (Maybe a)
 take1 = do
 	mx <- await
 	return mx
@@ -38,19 +39,19 @@ take1 = do
 		_ -> return Nothing
 		-}
 
-readf :: FilePath -> Pipe IO () String ()
+readf :: FilePath -> Pipe () String IO ()
 readf fp = bracketP
 	(openFile fp ReadMode) (\h -> putStrLn "finalize" >> hClose h) hRead
 
-hRead :: Handle -> Pipe IO () String ()
+hRead :: Handle -> Pipe () String IO ()
 hRead h = do
-	eof <- liftP $ hIsEOF h
+	eof <- lift $ hIsEOF h
 	if eof then return () else do
-		l <- liftP $ hGetLine h
+		l <- lift $ hGetLine h
 		yield l
 		hRead h
 
-takeP :: Monad m => Int -> Pipe m [a] [a] ()
+takeP :: Monad m => Int -> Pipe [a] [a] m ()
 takeP 0 = return ()
 takeP n = do
 	mx <- await
@@ -58,7 +59,7 @@ takeP n = do
 		Just x -> yield x >> takeP (n - 1)
 		_ -> return ()
 
-writeString :: Pipe IO String () ()
+writeString :: Pipe String () IO ()
 writeString = do
 	s <- await
-	maybe (return ()) ((>> writeString) . liftP . putStrLn) s
+	maybe (return ()) ((>> writeString) . lift . putStrLn) s
