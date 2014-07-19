@@ -57,6 +57,9 @@ instance Monad m => Applicative (Pipe i o m) where
 instance MonadTrans (Pipe i o) where
 	lift = liftP
 
+instance MonadIO m => MonadIO (Pipe i o m) where
+	liftIO = lift . liftIO
+
 runPipe :: Monad m => Pipe i o m r -> m (Maybe r)
 runPipe (Done f r) = f >> return (Just r)
 runPipe (Make _ m) = runPipe =<< m
