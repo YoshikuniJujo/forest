@@ -3,6 +3,7 @@
 module Data.Pipe (
 	PipeClass(..), Pipe, runPipe, finalize, finally, bracket ) where
 
+import Control.Applicative
 import Control.Monad
 import Control.Exception.Lifted (onException)
 import Control.Monad.Trans.Control
@@ -45,6 +46,13 @@ instance Monad m => Monad (Pipe i o m) where
 	Done _ r >>= k = k r
 	Make f m >>= k = Make f $ (>>= k) `liftM` m
 	return = Done (return ())
+
+instance Monad m => Functor (Pipe i o m) where
+	fmap = (=<<) . (return .)
+
+instance Monad m => Applicative (Pipe i o m) where
+	pure = return
+	(<*>) = liftM2 id
 
 instance MonadTrans (Pipe i o) where
 	lift = liftP
