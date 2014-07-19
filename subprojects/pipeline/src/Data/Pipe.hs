@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleContexts, RankNTypes, PackageImports #-}
 
 module Data.Pipe (
-	PipeClass(..), Pipe, runPipe, finalize, finalize', bracketP ) where
+	PipeClass(..), Pipe, runPipe, finalize, finally, bracket ) where
 
 import Control.Monad
-import Control.Exception.Lifted
+import Control.Exception.Lifted (onException)
 import Control.Monad.Trans.Control
 import "monads-tf" Control.Monad.Trans
 
@@ -35,10 +35,7 @@ instance PipeClass Pipe where
 	Make f m =$= p = Make f $ (=$= p) `liftM` m
 	p =$= Make f m = Make f $ (p =$=) `liftM` m
 
---	yield :: Monad m => o -> Pipe i o m ()
 	yield x = Ready (return ()) x (return ())
-
---	await :: Monad m => Pipe i o m (Maybe i)
 	await = Need (return ()) return
 
 instance Monad m => Monad (Pipe i o m) where
@@ -60,11 +57,11 @@ runPipe _ = return Nothing
 liftP :: Monad m => m a -> Pipe i o m a
 liftP m = Make (return ()) $ Done (return ()) `liftM` m
 
-bracketP :: MonadBaseControl IO m =>
+bracket :: MonadBaseControl IO m =>
 	m a -> (a -> m b) -> (a -> Pipe i o m r) -> Pipe i o m r
-bracketP o c p = do
+bracket o c p = do
 	h <- liftP o
-	p h `finalize'` (c h >> return ())
+	p h `finally` (c h >> return ())
 
 finalize :: Monad m => Pipe i o m r -> m b -> Pipe i o m r
 finalize (Ready _ o p) f = Ready (f >> return ()) o $ finalize p f
@@ -72,9 +69,8 @@ finalize (Need _ n) f = Need (f >> return ()) $ \i -> finalize (n i) f
 finalize (Done _ r) f = Done (f >> return ()) r
 finalize (Make _ m) f = Make (f >> return ()) $ flip finalize f `liftM` m
 
-finalize' :: MonadBaseControl IO m => Pipe i o m r -> m b -> Pipe i o m r
-finalize' p f =
-	finalize (mapMake (`onException` f) p) f
+finally :: MonadBaseControl IO m => Pipe i o m r -> m b -> Pipe i o m r
+finally p f = finalize (mapMake (`onException` f) p) f
 
 mapMake :: Monad m => (forall a . m a -> m a) -> Pipe i o m r -> Pipe i o m r
 mapMake k (Ready f o p) = Ready f o $ mapMake k p

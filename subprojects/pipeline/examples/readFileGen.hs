@@ -38,7 +38,7 @@ take1 = do
 		-}
 
 readf :: FilePath -> Pipe () String IO ()
-readf fp = bracketP
+readf fp = bracket
 	(openFile fp ReadMode) (\h -> putStrLn "finalize" >> hClose h) hRead
 
 hRead :: Handle -> Pipe () String IO ()
