@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts, RankNTypes, PackageImports #-}
 
 module Data.Pipe (
-	PipeClass(..), Pipe, runPipe, finalize, finally, bracket ) where
+	PipeClass(..), Pipe, runPipe, onBreak, finalize, finally, bracket ) where
 
 import Control.Applicative
 import Control.Monad
@@ -74,11 +74,17 @@ bracket o c p = do
 	h <- liftP o
 	p h `finally` (c h >> return ())
 
+onBreak :: Monad m => Pipe i o m r -> m b -> Pipe i o m r
+onBreak (Ready f0 o p) f = Ready (f0 >> f >> return ()) o $ onBreak p f
+onBreak (Need f0 n) f = Need (f0 >> f >> return ()) $ \i -> onBreak (n i) f
+onBreak (Done f0 r) _ = Done f0 r
+onBreak (Make f0 m) f = Make (f0 >> f >> return ()) $ flip onBreak f `liftM` m
+
 finalize :: Monad m => Pipe i o m r -> m b -> Pipe i o m r
-finalize (Ready _ o p) f = Ready (f >> return ()) o $ finalize p f
-finalize (Need _ n) f = Need (f >> return ()) $ \i -> finalize (n i) f
-finalize (Done _ r) f = Done (f >> return ()) r
-finalize (Make _ m) f = Make (f >> return ()) $ flip finalize f `liftM` m
+finalize (Ready f0 o p) f = Ready (f0 >> f >> return ()) o $ finalize p f
+finalize (Need f0 n) f = Need (f0 >> f >> return ()) $ \i -> finalize (n i) f
+finalize (Done f0 r) f = Done (f0 >> f >> return ()) r
+finalize (Make f0 m) f = Make (f0 >> f >> return ()) $ flip finalize f `liftM` m
 
 finally :: MonadBaseControl IO m => Pipe i o m r -> m b -> Pipe i o m r
 finally p f = finalize (mapMake (`onException` f) p) f
