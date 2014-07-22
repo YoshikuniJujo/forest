@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, PackageImports #-}
+{-# LANGUAGE KindSignatures #-}
 
 import Control.Applicative
 import Control.Monad
@@ -53,7 +53,7 @@ instance Functor m => Functor (Pipeline m i o) where
 
 instance Monad m => Monad (Pipeline m i o) where
 	HaveOutput o p >>= f = HaveOutput o $ p >>= f
-	NeedInput n >>= f = NeedInput $ \i -> n i >>= f
+	NeedInput n >>= f = NeedInput $ n >=> f
 	Done r >>= f = f r
 	PipeM m >>= f = PipeM $ (>>= f) `liftM` m
 	return = Done
@@ -98,7 +98,7 @@ finishedHandle :: Handle -> IO () -> Finished IO () Char ()
 finishedHandle h c = Finished c (fromHandle h)
 
 liftF :: Monad m => Pipeline m i o r -> Finished m i o r
-liftF p = Finished (return ()) p
+liftF = Finished $ return ()
 
 readStdin :: Finished IO () Char ()
 readStdin = finishedHandle stdin (putStrLn "finished")

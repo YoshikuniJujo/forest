@@ -37,7 +37,7 @@ instance Monad m => PipeClass (Pipe m) where
 
 instance Monad m => Monad (Pipe m i o) where
 	Ready f o p >>= k = Ready f o $ p >>= k
-	Need f n >>= k = Need f $ \i -> n i >>= k
+	Need f n >>= k = Need f $ n >=> k
 --	Done f r >>= k = Make (return ()) $ f >> return (k r)
 	Done _ r >>= k = k r
 	Make f m >>= k = Make f $ (>>= k) `liftM` m
@@ -61,7 +61,7 @@ bracketP :: (MonadIO m, MonadBase m IO) =>
 	m a -> (a -> m b) -> (a -> Pipe m i o r) -> Pipe m i o r
 bracketP o c p = do
 	h <- liftP o
-	p h `finalize'` (c h >> return ())
+	p h `finalize'` void (c h)
 
 finalize :: Monad m => Pipe m i o r -> m () -> Pipe m i o r
 finalize (Ready _ o p) f = Ready f o $ finalize p f

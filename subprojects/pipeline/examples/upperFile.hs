@@ -1,5 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
+import Control.Monad
 import Data.Pipe
 import Data.Char
 import System.IO
@@ -20,7 +21,7 @@ readFileP fp = bracket (openFile fp ReadMode) hClose hRead
 hRead :: Handle -> Pipe () String IO ()
 hRead h = do
 	eof <- lift $ hIsEOF h
-	if eof then return () else do
+	unless eof $ do
 		l <- lift $ hGetLine h
 		yield l
 		hRead h

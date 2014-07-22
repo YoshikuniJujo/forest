@@ -1,5 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
+import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Data.Pipe
 import Data.Pipe.List
@@ -10,7 +11,7 @@ input = fromList "Hello, world!" `onBreak` putStrLn "finalize"
 fromStdin :: Pipe () String IO ()
 fromStdin = do
 	l <- lift getLine
-	if null l then return () else yield l >> fromStdin
+	unless (null l) $ yield l >> fromStdin
 
 takeP :: Monad m => Int -> Pipe a a m ()
 takeP 0 = return ()

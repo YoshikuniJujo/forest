@@ -35,7 +35,7 @@ instance Monad m => PipelineClass (Pipeline m) where
 
 instance Monad m => Monad (Pipeline m i o) where
 	Ready o p >>= f = Ready o $ p >>= f
-	Need n >>= f = Need $ \i -> n i >>= f
+	Need n >>= f = Need $ n >=> f
 	Done r >>= f = f r
 	Make m >>= f = Make $ (>>= f) `liftM` m
 	return = Done
@@ -62,7 +62,7 @@ yield :: Monad m => o -> Pipeline m i o ()
 yield x = Ready x (return ())
 
 await :: Monad m => Pipeline m i o (Maybe i)
-await = Need $ return
+await = Need return
 
 finalize :: Pipeline m i o r -> m () -> Pipe m i o r
 finalize p f = Pipe f p

@@ -28,14 +28,7 @@ takeN n = do
 		_ -> return []
 
 take1 :: Monad m => Pipe a () m (Maybe a)
-take1 = do
-	mx <- await
-	return mx
-	{-
-	case mx of
-		Just x -> return $ Just x
-		_ -> return Nothing
-		-}
+take1 = await
 
 readf :: FilePath -> Pipe () String IO ()
 readf fp = bracket
@@ -44,7 +37,7 @@ readf fp = bracket
 hRead :: Handle -> Pipe () String IO ()
 hRead h = do
 	eof <- lift $ hIsEOF h
-	if eof then return () else do
+	unless eof $ do
 		l <- lift $ hGetLine h
 		yield l
 		hRead h

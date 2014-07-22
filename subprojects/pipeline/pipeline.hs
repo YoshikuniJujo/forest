@@ -26,8 +26,7 @@ instance Functor (Pipeline i o) where
 	f `fmap` HaveOutput o n = HaveOutput o $ f `fmap` n
 
 fromList :: [a] -> Pipeline () a ()
-fromList [] = Done ()
-fromList (x : xs) = HaveOutput x $ fromList xs
+fromList = foldr HaveOutput (Done ())
 
 toList :: Pipeline a () [a]
 toList = NeedInput f
