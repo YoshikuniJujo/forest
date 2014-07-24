@@ -30,9 +30,11 @@ xmlEvent :: XmlEvent
 
 spaces = _:(' ' / '\t' / '\r' / '\n')+
 
-nameStartChar :: Char = <isAlpha>
+nameStartChar :: Char = <(`elem` (":_" ++ ['a' .. 'z'] ++ ['A' .. 'Z']))>
 
-nameChar :: Char = <isAlphaNum>
+nameChar :: Char
+	= s:nameStartChar				{ s }
+	/ <(`elem` ("-." ++ ['0' .. '9']))>
 
 name :: ByteString
 	= sc:nameStartChar cs:(c:nameChar { c })*	{ pack $ sc : cs }
