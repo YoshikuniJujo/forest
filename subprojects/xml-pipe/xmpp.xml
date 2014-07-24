@@ -10,3 +10,4 @@
 	<mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>
 		<mechanism>SCRAM-SHA-1</mechanism>
 		<mechanism>DIGEST-MD5</mechanism></mechanisms></stream:features>
+<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>cmVhbG09ImxvY2FsaG9zdCIsbm9uY2U9IjQ3MGY5NmQzLTEx0WEtNDlhMi04OTI0LWIwNTQzYTlmODhlNSIscW9wPSJhdXRoIixjaGFyc2V0PXV0Zi0rLGFsZ29yaXRobT1tZDUtc2Vzcw==</challenge>

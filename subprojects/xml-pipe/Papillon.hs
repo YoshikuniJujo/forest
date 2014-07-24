@@ -10,7 +10,7 @@ import qualified Data.ByteString.Char8 as BSC
 
 data XmlEvent
 	= XEXmlDecl (Int, Int)
-	| XESTag BSC.ByteString
+	| XESTag BSC.ByteString [(BSC.ByteString, BSC.ByteString)]
 	| XEETag BSC.ByteString
 	| XECharData BSC.ByteString
 	deriving Show
@@ -39,6 +39,10 @@ nameChar :: Char
 name :: ByteString
 	= sc:nameStartChar cs:(c:nameChar { c })*	{ pack $ sc : cs }
 
+attValue :: ByteString
+	= '"' v:(<(`notElem` "<&\"")>)* '"'		{ pack v }
+	/ '\'' v:(<(`notElem` "<&'")>)* '\''		{ pack v }
+
 charData :: XmlEvent
 	= '>' cds:(<(`notElem` "<&")>)*			{ XECharData $ pack cds }
 
@@ -48,20 +52,23 @@ xmlDecl :: XmlEvent
 
 versionInfo :: (Int, Int)
 	= _:spaces 'v' 'e' 'r' 's' 'i' 'o' 'n' _:eq
-		'"' v:versionNum '"'
-	{ v }
+		vn:('"' v:versionNum '"' { v } / '\'' v:versionNum '\'' { v })
+	{ vn }
 
 eq :: () = _:spaces? '=' _:spaces?
 
 versionNum :: (Int, Int)
-	= '1' '.' d:<isDigit>+			{ (1, read d) }
+	= '1' '.' d:<isDigit>+				{ (1, read d) }
 
 sTag :: XmlEvent
-	= '<' n:name _:spaces? _:eof		{ XESTag n }
+	= '<' n:name as:(_:spaces a:attribute { a })* _:spaces? _:eof
+	{ XESTag n as }
+
+attribute :: (ByteString, ByteString)
+	= n:name _:eq v:attValue			{ (n, v) }
 
 eTag :: XmlEvent
 	= '<' '/' n:name _:spaces? _:eof	{ XEETag n }
---	= '<' '/' n:name _:spaces?		{ XEETag n }
 
 eof = !_
 
