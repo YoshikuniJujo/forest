@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, QuasiQuotes #-}
 
-module Papillon(parseXmlEvent) where
+module Papillon(parseXmlEvent, XmlEvent(..)) where
 
 import Data.Char
 import Data.ByteString.Char8 (ByteString, pack)
