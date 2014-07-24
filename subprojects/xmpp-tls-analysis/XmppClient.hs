@@ -20,7 +20,7 @@ import qualified Data.Text as T
 
 import Data.HandleLike
 
-connect :: HandleLike h => h -> IO ()
+-- connect :: HandleLike h => h -> IO ()
 connect sv = do
 	hlPut sv $ beginDoc +++ stream
 	ioSource (hlGetContent sv)
@@ -32,14 +32,14 @@ connect sv = do
 		$$ sinkNull
 	putStrLn "connected"
 
-stanzaSource :: (Monad m, MonadIO m, MonadThrow m) =>
-	HandleLike h => h -> Source m Stanza
+-- stanzaSource :: (Monad m, MonadIO m, MonadThrow m) =>
+--	HandleLike h => h -> Source m Stanza
 stanzaSource sv = ioSource (hlGetContent sv)
 	=$= parseBytes def
 	=$= eventToElementAll
 	=$= Cd.map elementToStanza
 
-connectSendMsg :: HandleLike h => h -> T.Text -> IO ()
+-- connectSendMsg :: HandleLike h => h -> T.Text -> HandleMonad h ()
 connectSendMsg sv msg = do
 	hlPut sv $ beginDoc +++ stream
 	ioSource (hlGetContent sv)
@@ -85,7 +85,7 @@ checkEnd h = do
 			checkEnd h
 		_ -> return ()
 
-connectSendIq :: HandleLike h => h -> Element -> IO ()
+-- connectSendIq :: HandleLike h => h -> Element -> HandleMonad h ()
 connectSendIq sv msg = do
 	hlPut sv $ beginDoc +++ stream
 	ioSource (hlGetContent sv)
@@ -117,7 +117,7 @@ conduitOnce = do
 		_ -> return ()
 	
 
-responseToServer :: HandleLike h => h -> T.Text -> Stanza -> IO ()
+responseToServer :: HandleLike h => h -> T.Text -> Stanza -> HandleMonad h ()
 responseToServer sv _ (StanzaMechanismList ms)
 	| DigestMd5 `elem` ms = hlPut sv . showElement . stanzaToElement $
 		StanzaMechanism DigestMd5
@@ -160,8 +160,8 @@ responseToServer sv _ (StanzaIq { iqId = "_xmpp_bind1" }) =
 		iqBody = IqBodySession
 	 }
 responseToServer sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
-	BS.putStrLn "\n##### HERE ####\n"
-	BS.putStr . showElement . stanzaToElement $ StanzaMessage {
+	hlDebug sv "critical" "\n##### HERE ####\n"
+	hlDebug sv "critical" . showElement . stanzaToElement $ StanzaMessage {
 		messageType = "chat",
 		messageId = "yoshikuni1",
 		messageFrom = Nothing,
@@ -224,7 +224,7 @@ makeMessage msg = StanzaMessage {
 	messageBody = [NodeElement msg]
  }
 
-responseToServer' :: HandleLike h => h -> Stanza -> Stanza -> IO ()
+responseToServer' :: HandleLike h => h -> Stanza -> Stanza -> HandleMonad h ()
 responseToServer' sv _ (StanzaMechanismList ms)
 	| DigestMd5 `elem` ms = hlPut sv . showElement . stanzaToElement $
 		StanzaMechanism DigestMd5
@@ -267,9 +267,9 @@ responseToServer' sv _ (StanzaIq { iqId = "_xmpp_bind1" }) =
 		iqBody = IqBodySession
 	 }
 responseToServer' sv msg (StanzaIq { iqId = "_xmpp_session1" }) = do
-	BS.putStrLn ""
-	BS.putStr . showElement $ stanzaToElement msg
-	BS.putStrLn ""
+	hlDebug sv "critical" "\n"
+	hlDebug sv "critical" . showElement $ stanzaToElement msg
+	hlDebug sv "critical" "\n"
 	hlPut sv . showElement $ stanzaToElement msg
 	hlPut sv "</stream:stream>"
 responseToServer' _ _ _ = return ()

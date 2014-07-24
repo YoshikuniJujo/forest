@@ -18,7 +18,7 @@ import qualified Data.ByteString as BS
 import TlsClient
 
 import XmppClient
-import HandleLike
+import Data.HandleLike
 
 main :: IO ()
 main = do
