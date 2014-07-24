@@ -1,0 +1,12 @@
+<?xml version='1.0'?>
+<stream:stream
+	xmlns='jabber:client'
+	xmlns:stream='http://etherx.jabber.org/streams'
+	id='b6244509-9366-4c80-af70-c65cb81ab62c7'
+	from='localhost'
+	version='1.0'
+	xml:lang='en'>
+<stream:features>
+	<mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>
+		<mechanism>SCRAM-SHA-1</mechanism>
+		<mechanism>DIGEST-MD5</mechanism></mechanisms></stream:features>
