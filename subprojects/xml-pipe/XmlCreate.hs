@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module XmlCreate (xmlEvent, XmlEvent(..), xmlBegin, xmlNode) where
+module XmlCreate (
+	xmlEvent, XmlEvent(..), XmlNode, xmlBegin, xmlNode) where
 
 import Control.Applicative
 import Control.Arrow
@@ -12,7 +13,8 @@ import XmlEvent
 type QName = ((BS.ByteString, Maybe BS.ByteString), BS.ByteString)
 
 data XmlNode
-	= XmlStart QName [(QName, BS.ByteString)]
+	= XmlDecl (Int, Int)
+	| XmlStart QName [(QName, BS.ByteString)]
 	| XmlEnd QName
 	| XmlNode QName [(QName, BS.ByteString)] [XmlNode]
 	| XmlCharData BS.ByteString
@@ -33,45 +35,36 @@ xmlBegin = do
 		Nothing -> return []
 		_ -> xmlBegin
 
-xmlNode :: Monad m => [(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent XmlNode m ()
+xmlNode :: Monad m =>
+	[(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent XmlNode m Bool
 xmlNode nss = do
 	mnd <- xmlNd nss
 	case mnd of
-		Just nd -> yield nd >> xmlNode nss
-		_ -> return ()
-{-
-	mxe <- await
-	case mxe of
-		Just (XESTag n nss' atts) -> do
-			Just nd <- xmlNd nss
-			yield nd
-		{-
-			yield $ XmlNode (toQName (nss ++ nss') n)
-				(map (first $ toQName (nss ++ nss')) atts) []
-				-}
-		Nothing -> return ()
-		_ -> error "bad"
-		-}
+		Right nd -> yield nd >> xmlNode nss
+		Left (XEXmlDecl _) -> return True
+		_ -> return False
 
 xmlNd :: Monad m =>
-	[(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent a m (Maybe XmlNode)
+	[(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent a m (Either XmlEvent XmlNode)
 xmlNd nss = do
 	mxe <- await
 	case mxe of
 		Just (XESTag n nss' atts) -> do
 			nds <- xmlNds (nss' ++ nss)
-			return . Just $ XmlNode (toQName (nss' ++ nss) n)
+			return . Right $ XmlNode (toQName (nss' ++ nss) n)
 				(map (first $ toQName (nss' ++ nss)) atts) nds
-		Just (XEETag n) -> return Nothing
-		Just (XECharData cd) -> return . Just $ XmlCharData cd
-		_ -> return Nothing
+--		Just (XEETag n) -> return $ Left (XEE
+		Just (XECharData cd) -> return . Right $ XmlCharData cd
+--		Just (XEXmlDecl v) -> return . Just $ XmlDecl v
+		Just xe -> return $ Left xe
+		_ -> error "bad"
 --		_ -> error $ "bad: " ++ show mxe
 
 xmlNds :: Monad m => [(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent a m [XmlNode]
 xmlNds nss = do
 	mxn <- xmlNd nss
 	case mxn of
-		Just xn -> (xn :) <$> xmlNds nss
+		Right xn -> (xn :) <$> xmlNds nss
 		_ -> return []
 {-
 	mxe <- await

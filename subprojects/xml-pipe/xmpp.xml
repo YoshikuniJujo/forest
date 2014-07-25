@@ -11,3 +11,19 @@
 		<mechanism>SCRAM-SHA-1</mechanism>
 		<mechanism>DIGEST-MD5</mechanism></mechanisms></stream:features>
 <challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>cmVhbG09ImxvY2FsaG9zdCIsbm9uY2U9IjQ3MGY5NmQzLTEx0WEtNDlhMi04OTI0LWIwNTQzYTlmODhlNSIscW9wPSJhdXRoIixjaGFyc2V0PXV0Zi0rLGFsZ29yaXRobT1tZDUtc2Vzcw==</challenge>
+<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'></success>
+<?xml version='1.0'?>
+<stream:stream
+	xmlns='jabber:client'
+	xmlns:stream='http://etherx.jabber.org/streams''
+	id='3f1f1c72-d415-4088-9225-85764ed570cf'
+	from='localhost'
+	version='1.0'
+	xml:lang='en'>
+<stream:features>
+	<ver xmlns='urn:xmpp:features:rosterver'><optional/></ver>
+	<c hash='sha-1' ver='k07nuHawZqmndRtf3ZfBm54FwL0='
+		node='http://prosody.im' xmlns='http://jabber.org/protocol/caps'/>
+	<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><required/></bind>
+	<session xmlns='urn:ietf:params:xml:ns:xmpp-session'><optional/></session>
+	</stream:features>

@@ -1,5 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
+import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Data.Pipe
 import Data.Pipe.List
@@ -16,11 +17,17 @@ main = do
 	mu <- runPipe $ fromList [cnt]
 		=$= xmlEvent
 		=$= filterJust
-		=$= (xmlBegin >>= xmlNode)
+--		=$= (xmlBegin >>= xmlNode)
+		=$= xmlPipe
 		=$= puts
 	case mu of
 		Just _ -> return ()
 		_ -> error "bad"
+
+xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
+xmlPipe = do
+	c <- xmlBegin >>= xmlNode
+	when c $ xmlPipe
 
 puts :: Show a => (Monad m, MonadIO m) => Pipe a () m ()
 puts = await >>= maybe (return ()) (\bs -> liftIO (print bs) >> puts)
