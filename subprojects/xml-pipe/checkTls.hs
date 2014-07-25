@@ -15,6 +15,7 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString as BS
 
 import XmlCreate
+import XmlWrite
 
 main :: IO ()
 main = do
@@ -68,12 +69,21 @@ filterJust = do
 		_ -> return ()
 
 begin, startTls :: BS.ByteString
-begin = BS.concat [
-	"<?xml version='1.0'?>",
-	"<stream:stream to='localhost' xml:lang='en' version='1.0' ",
-	"xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>"
-	]
-startTls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
+begin = toByteString beginX
+startTls = toByteString startTlsX
+
+beginX, startTlsX :: [XmlNode]
+beginX = [
+	XmlDecl (1, 0),
+	XmlStart (("stream", Nothing), "stream")
+		[	("", "jabber:client"),
+			("stream", "http://etherx.jabber.org/streams") ]
+		[	((("", Nothing), "to"), "localhost"),
+			((("", Nothing), "version"), "1.0"),
+			((("xml", Nothing), "lang"), "en") ] ]
+startTlsX = [
+	XmlNode (("", Nothing), "starttls")
+		[("", "urn:ietf:params:xml:ns:xmpp-tls")] [] [] ]
 
 handleP' :: Handle -> Pipe () BS.ByteString IO ()
 handleP' h = do
