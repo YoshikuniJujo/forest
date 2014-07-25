@@ -44,8 +44,8 @@ instance PipeClass Pipe where
 	Ready _ o p =$= Need _ n = p =$= n (Just o)
 	Done f r =$= Need f' n =
 		Done (return ()) r =$= Make f' (f >> return (n Nothing))
-	Make f m =$= p = Make f $ (=$= p) `liftM` m
 	p =$= Make f m = Make f $ (p =$=) `liftM` m
+	Make f m =$= p = Make f $ (=$= p) `liftM` m
 
 	yield x = Ready (return ()) x (return ())
 	await = Need (return ()) return
