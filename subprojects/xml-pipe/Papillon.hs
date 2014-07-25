@@ -2,6 +2,8 @@
 
 module Papillon(parseXmlEvent, XmlEvent(..)) where
 
+import Control.Arrow
+import Data.List
 import Data.Char
 import Data.ByteString.Char8 (ByteString, pack)
 import Text.Papillon
@@ -10,7 +12,9 @@ import qualified Data.ByteString.Char8 as BSC
 
 data XmlEvent
 	= XEXmlDecl (Int, Int)
-	| XESTag (BSC.ByteString, BSC.ByteString) [Attribute]
+	| XESTag (BSC.ByteString, BSC.ByteString)
+		[(BSC.ByteString, BSC.ByteString)]
+		[((BSC.ByteString, BSC.ByteString), BSC.ByteString)]
 	| XEETag (BSC.ByteString, BSC.ByteString)
 	| XECharData BSC.ByteString
 	deriving Show
@@ -19,6 +23,23 @@ data Attribute
 	= NSAttribute BSC.ByteString BSC.ByteString
 	| Attribute (BSC.ByteString, BSC.ByteString) BSC.ByteString
 	deriving Show
+
+procAtts :: [Attribute] -> (
+	[(BSC.ByteString, BSC.ByteString)],
+	[((BSC.ByteString, BSC.ByteString), BSC.ByteString)])
+procAtts = (map fromNSAttribute *** map fromAttribute) . partition isNSAtt
+
+fromNSAttribute :: Attribute -> (BSC.ByteString, BSC.ByteString)
+fromNSAttribute (NSAttribute k v) = (k, v)
+fromNSAttribute _ = error "bad"
+
+fromAttribute :: Attribute -> ((BSC.ByteString, BSC.ByteString), BSC.ByteString)
+fromAttribute (Attribute k v) = (k, v)
+fromAttribute _ = error "bad"
+
+isNSAtt :: Attribute -> Bool
+isNSAtt (NSAttribute _ _) = True
+isNSAtt _ = False
 
 parseXmlEvent :: ByteString -> Maybe XmlEvent
 parseXmlEvent = either (const Nothing) (Just . fst) . runError . xmlEvent . parse
@@ -84,7 +105,7 @@ versionNum :: (Int, Int)
 
 sTag :: XmlEvent
 	= '<' n:qName as:(_:spaces a:attribute { a })* _:spaces? _:eof
-	{ XESTag n as }
+	{ uncurry (XESTag n) $ procAtts as }
 
 prefixedAttName :: ByteString
 	= 'x' 'm' 'l' 'n' 's' ':' n:ncName		{ n }
