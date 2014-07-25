@@ -34,6 +34,7 @@ main = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	(`run` g) $ do
 		p <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+		getNames p >>= liftIO . print
 		hlPut p begin
 		getTag p >>= liftIO . print
 		getTag p >>= liftIO . print
