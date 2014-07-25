@@ -41,7 +41,6 @@ main = do
 			=$= filterJust
 			=$= xmlPipe
 			=$= puts
---		hlGet p 30 >>= liftIO . print
 		return ()
 
 xmlPipe1 :: Monad m => Pipe XmlEvent XmlNode m ()
@@ -53,7 +52,7 @@ xmlPipe = do
 	when c $ xmlPipe
 
 isProceed :: XmlNode -> Bool
-isProceed (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-tls"), "proceed") [] [])
+isProceed (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-tls"), "proceed") _ [] [])
 	= True
 isProceed _ = False
 

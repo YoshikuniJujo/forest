@@ -11,13 +11,14 @@ import qualified Data.ByteString as BS
 
 import XmlEvent
 
+type NameSpace = [(BS.ByteString, BS.ByteString)]
 type QName = ((BS.ByteString, Maybe BS.ByteString), BS.ByteString)
 
 data XmlNode
 	= XmlDecl (Int, Int)
-	| XmlStart QName [(QName, BS.ByteString)]
+	| XmlStart QName NameSpace [(QName, BS.ByteString)]
 	| XmlEnd QName
-	| XmlNode QName [(QName, BS.ByteString)] [XmlNode]
+	| XmlNode QName NameSpace [(QName, BS.ByteString)] [XmlNode]
 	| XmlCharData BS.ByteString
 	deriving Show
 
@@ -30,7 +31,7 @@ xmlBegin = do
 	mxe <- await
 	case mxe of
 		Just (XESTag n nss atts) -> do
-			yield $ XmlStart (toQName nss n)
+			yield $ XmlStart (toQName nss n) nss
 				(map (first $ toQName nss) atts)
 			return nss
 		Nothing -> return []
@@ -64,10 +65,10 @@ xmlNd nss = do
 	case mxe of
 		Just (XESTag n nss' atts) -> do
 			nds <- xmlNds (nss' ++ nss)
-			return . Right $ XmlNode (toQName (nss' ++ nss) n)
+			return . Right $ XmlNode (toQName (nss' ++ nss) n) nss'
 				(map (first $ toQName (nss' ++ nss)) atts) nds
 		Just (XEEmptyElemTag n nss' atts) ->
-			return . Right $ XmlNode (toQName (nss' ++ nss) n)
+			return . Right $ XmlNode (toQName (nss' ++ nss) n) nss'
 				(map (first $ toQName (nss' ++ nss)) atts) []
 --		Just (XEETag n) -> return $ Left (XEE
 		Just (XECharData cd) -> return . Right $ XmlCharData cd
