@@ -53,11 +53,15 @@ xmlNd nss = do
 			nds <- xmlNds (nss' ++ nss)
 			return . Right $ XmlNode (toQName (nss' ++ nss) n)
 				(map (first $ toQName (nss' ++ nss)) atts) nds
+		Just (XEEmptyElemTag n nss' atts) ->
+			return . Right $ XmlNode (toQName (nss' ++ nss) n)
+				(map (first $ toQName (nss' ++ nss)) atts) []
 --		Just (XEETag n) -> return $ Left (XEE
 		Just (XECharData cd) -> return . Right $ XmlCharData cd
 --		Just (XEXmlDecl v) -> return . Just $ XmlDecl v
 		Just xe -> return $ Left xe
-		_ -> error "bad"
+		Nothing -> return . Left $ XECharData ""
+		_ -> error $ "bad in xmlNd: " ++ show mxe
 --		_ -> error $ "bad: " ++ show mxe
 
 xmlNds :: Monad m => [(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent a m [XmlNode]

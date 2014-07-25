@@ -15,7 +15,7 @@
 <?xml version='1.0'?>
 <stream:stream
 	xmlns='jabber:client'
-	xmlns:stream='http://etherx.jabber.org/streams''
+	xmlns:stream='http://etherx.jabber.org/streams'
 	id='3f1f1c72-d415-4088-9225-85764ed570cf'
 	from='localhost'
 	version='1.0'

@@ -22,7 +22,7 @@ main = do
 		=$= puts
 	case mu of
 		Just _ -> return ()
-		_ -> error "bad"
+		_ -> error "bad in main"
 
 xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = do
@@ -37,5 +37,5 @@ filterJust = do
 	mmx <- await
 	case mmx of
 		Just (Just x) -> yield x >> filterJust
-		Just _ -> filterJust
+		Just _ -> error "filterJust" -- filterJust
 		_ -> return ()

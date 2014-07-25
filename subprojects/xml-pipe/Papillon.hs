@@ -16,6 +16,9 @@ data XmlEvent
 		[(BSC.ByteString, BSC.ByteString)]
 		[((BSC.ByteString, BSC.ByteString), BSC.ByteString)]
 	| XEETag (BSC.ByteString, BSC.ByteString)
+	| XEEmptyElemTag (BSC.ByteString, BSC.ByteString)
+		[(BSC.ByteString, BSC.ByteString)]
+		[((BSC.ByteString, BSC.ByteString), BSC.ByteString)]
 	| XECharData BSC.ByteString
 	deriving Show
 
@@ -49,7 +52,8 @@ parseXmlEvent = either (const Nothing) (Just . fst) . runError . xmlEvent . pars
 source: ByteString
 
 xmlEvent :: XmlEvent
-	= st:sTag		{ st }
+	= et:emptyElemTag	{ et }
+	/ st:sTag		{ st }
 	/ et:eTag		{ et }
 	/ cd:charData		{ cd }
 	/ xd:xmlDecl		{ xd }
@@ -106,6 +110,10 @@ versionNum :: (Int, Int)
 sTag :: XmlEvent
 	= '<' n:qName as:(_:spaces a:attribute { a })* _:spaces? _:eof
 	{ uncurry (XESTag n) $ procAtts as }
+
+emptyElemTag :: XmlEvent
+	= '<' n:qName as:(_:spaces a:attribute { a })* _:spaces? '/' _:eof
+	{ uncurry (XEEmptyElemTag n) $ procAtts as }
 
 prefixedAttName :: ByteString
 	= 'x' 'm' 'l' 'n' 's' ':' n:ncName		{ n }
