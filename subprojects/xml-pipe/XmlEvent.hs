@@ -1,4 +1,4 @@
-module XmlEvent (xmlEvent) where
+module XmlEvent (xmlEvent, XmlEvent(..)) where
 
 import Data.Pipe
 import Data.Word8

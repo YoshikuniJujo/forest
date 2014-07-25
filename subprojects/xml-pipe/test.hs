@@ -1,23 +1,34 @@
 {-# LANGUAGE PackageImports #-}
 
 import "monads-tf" Control.Monad.Trans
-import Data.Word8
 import Data.Pipe
 import Data.Pipe.List
 import System.Environment
 
 import qualified Data.ByteString as BS
 
-import XmlEvent
+import XmlCreate
 
 main :: IO ()
 main = do
 	fn : _ <- getArgs
 	cnt <- BS.readFile fn
-	mu <- runPipe $ fromList [cnt] =$= xmlEvent =$= puts
+	mu <- runPipe $ fromList [cnt]
+		=$= xmlEvent
+		=$= filterJust
+		=$= (xmlBegin >>= xmlNode)
+		=$= puts
 	case mu of
 		Just _ -> return ()
 		_ -> error "bad"
 
 puts :: Show a => (Monad m, MonadIO m) => Pipe a () m ()
 puts = await >>= maybe (return ()) (\bs -> liftIO (print bs) >> puts)
+
+filterJust :: Monad m => Pipe (Maybe a) a m ()
+filterJust = do
+	mmx <- await
+	case mmx of
+		Just (Just x) -> yield x >> filterJust
+		Just _ -> filterJust
+		_ -> return ()
