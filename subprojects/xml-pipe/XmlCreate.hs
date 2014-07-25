@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module XmlCreate (
-	xmlEvent, XmlEvent(..), XmlNode, xmlBegin, xmlNode) where
+	xmlEvent, XmlEvent(..), XmlNode(..), xmlBegin, xmlNode, xmlNodeUntil) where
 
 import Control.Applicative
 import Control.Arrow
+import Control.Monad
 import Data.Pipe
 import qualified Data.ByteString as BS
 
@@ -34,6 +35,18 @@ xmlBegin = do
 			return nss
 		Nothing -> return []
 		_ -> xmlBegin
+
+xmlNodeUntil :: Monad m =>
+	[(BS.ByteString, BS.ByteString)] -> (XmlNode -> Bool) ->
+		Pipe XmlEvent XmlNode m ()
+xmlNodeUntil nss p = do
+	mnd <- xmlNd nss
+	case mnd of
+		Right nd -> do
+			yield nd
+			unless (p nd) $ xmlNodeUntil nss p
+		Left (XEXmlDecl _) -> return ()
+		_ -> return ()
 
 xmlNode :: Monad m =>
 	[(BS.ByteString, BS.ByteString)] -> Pipe XmlEvent XmlNode m Bool
