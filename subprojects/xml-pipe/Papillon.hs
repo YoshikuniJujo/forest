@@ -10,9 +10,14 @@ import qualified Data.ByteString.Char8 as BSC
 
 data XmlEvent
 	= XEXmlDecl (Int, Int)
-	| XESTag BSC.ByteString [(BSC.ByteString, BSC.ByteString)]
-	| XEETag BSC.ByteString
+	| XESTag (BSC.ByteString, BSC.ByteString) [Attribute]
+	| XEETag (BSC.ByteString, BSC.ByteString)
 	| XECharData BSC.ByteString
+	deriving Show
+
+data Attribute
+	= NSAttribute BSC.ByteString BSC.ByteString
+	| Attribute (BSC.ByteString, BSC.ByteString) BSC.ByteString
 	deriving Show
 
 parseXmlEvent :: ByteString -> Maybe XmlEvent
@@ -36,8 +41,25 @@ nameChar :: Char
 	= s:nameStartChar				{ s }
 	/ <(`elem` ("-." ++ ['0' .. '9']))>
 
+ncNameStartChar :: Char = !':' s:nameStartChar		{ s }
+
+ncNameChar :: Char = !':' c:nameChar			{ c }
+
 name :: ByteString
 	= sc:nameStartChar cs:(c:nameChar { c })*	{ pack $ sc : cs }
+
+ncName :: ByteString
+	= sc:ncNameStartChar cs:(c:ncNameChar { c })*	{ pack $ sc : cs }
+
+qName :: (ByteString, ByteString)
+	= pn:prefixedName				{ pn }
+	/ un:unprefixedName				{ ("", un) }
+
+prefixedName :: (ByteString, ByteString) = p:prefix ':' l:localPart
+							{ (p, l) }
+unprefixedName :: ByteString = l:localPart		{ l }
+prefix :: ByteString = n:ncName				{ n }
+localPart :: ByteString = n:ncName			{ n }
 
 attValue :: ByteString
 	= '"' v:(<(`notElem` "<&\"")>)* '"'		{ pack v }
@@ -61,14 +83,24 @@ versionNum :: (Int, Int)
 	= '1' '.' d:<isDigit>+				{ (1, read d) }
 
 sTag :: XmlEvent
-	= '<' n:name as:(_:spaces a:attribute { a })* _:spaces? _:eof
+	= '<' n:qName as:(_:spaces a:attribute { a })* _:spaces? _:eof
 	{ XESTag n as }
 
-attribute :: (ByteString, ByteString)
-	= n:name _:eq v:attValue			{ (n, v) }
+prefixedAttName :: ByteString
+	= 'x' 'm' 'l' 'n' 's' ':' n:ncName		{ n }
+
+defaultAttName = 'x' 'm' 'l' 'n' 's'
+
+nsAttName :: ByteString
+	= n:prefixedAttName				{ n }
+	/ _:defaultAttName				{ "" }
+
+attribute :: Attribute
+	= n:nsAttName _:eq v:attValue			{ NSAttribute n v }
+	/ n:qName _:eq v:attValue			{ Attribute n v }
 
 eTag :: XmlEvent
-	= '<' '/' n:name _:spaces? _:eof	{ XEETag n }
+	= '<' '/' n:qName _:spaces? _:eof	{ XEETag n }
 
 eof = !_
 
