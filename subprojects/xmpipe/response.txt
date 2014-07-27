@@ -1,0 +1,1 @@
+username="yoshikuni",realm="localhost",nonce="daa534d3-ed6e-4ff8-bb21-bd96cc2b46e1",cnonce="00DEADBEEF00",nc=00000001,qop=auth,digest-uri="xmpp/localhost",response=a5017adf54ad6f97e4f8d7ba5ab87529,charset=utf-8
