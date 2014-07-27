@@ -23,10 +23,16 @@ main = do
 	void . runPipe $ handleP h
 		=$= xmlEvent
 		=$= convert fromJust
-		=$= (xmlBegin >>= xmlNode)
+--		=$= (xmlBegin >>= xmlNode)
+		=$= xmlPipe
 		=$= convert showResponse
 		=$= processResponse h
 		=$= printP
+
+xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
+xmlPipe = do
+	c <- xmlBegin >>= xmlNode
+	when c $ xmlPipe
 
 data ShowResponse
 	= SRChallenge {
@@ -36,6 +42,7 @@ data ShowResponse
 		charset :: BS.ByteString,
 		algorithm :: BS.ByteString }
 	| SRChallengeRspauth BS.ByteString
+	| SRSaslSuccess
 	| SRRaw XmlNode
 	deriving Show
 
@@ -52,6 +59,8 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 				qop = fromJust $ lookup "qop" a,
 				charset = fromJust $ lookup "charset" a,
 				algorithm = fromJust $ lookup "algorithm" a }
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
+	_ [] []) = SRSaslSuccess
 showResponse n = SRRaw n
 
 processResponse :: Handle -> Pipe ShowResponse ShowResponse IO ()
@@ -85,6 +94,7 @@ procR h (SRChallengeRspauth _) = do
 	BS.hPut h . xmlString . (: []) $ XmlNode
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+procR h SRSaslSuccess = BS.hPut h $ xmlString begin
 procR h r = return ()
 
 begin :: [XmlNode]
