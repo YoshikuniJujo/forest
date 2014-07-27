@@ -16,7 +16,7 @@ import qualified Data.ByteString.Base64 as B64
 import DigestMd5
 
 responseToContent :: DigestResponse -> BS.ByteString
-responseToContent = B64.encode . kvsToS . responseToKvs
+responseToContent = B64.encode . kvsToS . responseToKvs True
 
 kvsToS :: [(BS.ByteString, BS.ByteString)] -> BS.ByteString
 kvsToS [] = ""
@@ -24,8 +24,8 @@ kvsToS [(k, v)] = k `BS.append` "=" `BS.append` v
 kvsToS ((k, v) : kvs) =
 	k `BS.append` "=" `BS.append` v `BS.append` "," `BS.append` kvsToS kvs
 
-responseToKvs :: DigestResponse -> [(BS.ByteString, BS.ByteString)]
-responseToKvs rsp = [
+responseToKvs :: Bool -> DigestResponse -> [(BS.ByteString, BS.ByteString)]
+responseToKvs isClient rsp = [
 	("username", quote $ drUserName rsp),
 	("realm", quote $ drRealm rsp),
 	("nonce", quote $ drNonce rsp),
@@ -33,7 +33,7 @@ responseToKvs rsp = [
 	("nc", drNc rsp),
 	("qop", drQop rsp),
 	("digest-uri", quote $ drDigestUri rsp),
-	("response", calcMd5 True rsp),
+	("response", calcMd5 isClient rsp),
 	("charset", drCharset rsp)
 	]
 

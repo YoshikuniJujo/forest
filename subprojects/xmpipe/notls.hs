@@ -73,21 +73,23 @@ processResponse h = do
 procR :: Handle -> ShowResponse -> IO ()
 procR h (SRChallenge r n q c a) = do
 	print (r, n, q, c, a)
-	let ret = kvsToS $ responseToKvs DR {
-				drUserName = "yoshikuni",
-				drRealm = r,
-				drPassword = "password",
-				drCnonce = "00DEADBEEF00",
-				drNonce = n,
-				drNc = "00000001",
-				drQop = q,
-				drDigestUri = "xmpp/localhost",
-				drCharset = c }
+	let dr = DR {	drUserName = "yoshikuni",
+			drRealm = r,
+			drPassword = "password",
+			drCnonce = "00DEADBEEF00",
+			drNonce = n,
+			drNc = "00000001",
+			drQop = q,
+			drDigestUri = "xmpp/localhost",
+			drCharset = c }
+	let ret = kvsToS $ responseToKvs True dr
+	let Just sret = lookup "response" $ responseToKvs False dr
 	let node = xmlString . (: []) $ XmlNode
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
 		[XmlCharData $ encode ret]
 	print ret
+	print sret
 	print node
 	BS.hPut h node
 procR h (SRChallengeRspauth _) = do
