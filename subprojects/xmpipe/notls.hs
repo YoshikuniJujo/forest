@@ -47,6 +47,7 @@ data ShowResponse
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
 	| SRRaw XmlNode
+	| SRIq [(IqTag, BS.ByteString)] IqBody
 	deriving Show
 
 data Feature
@@ -58,7 +59,7 @@ data Feature
 	| Bind Requirement
 	| Session Requirement
 	| FeatureRaw XmlNode
-	deriving Show
+	deriving (Eq, Show)
 
 toFeature :: XmlNode -> Feature
 toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")
@@ -85,7 +86,7 @@ toRequirement [XmlNode (_, "optional") _ [] []] = Optional
 toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
 
-data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving Show
+data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving (Eq, Show)
 
 toMechanism :: XmlNode -> Mechanism
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
@@ -111,6 +112,33 @@ toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
 toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
 toCapsTag n = CTRaw n
 
+data IqTag = IqId | IqType | IqRaw QName deriving (Eq, Show)
+
+toIqTag :: QName -> IqTag
+toIqTag ((_, Just "jabber:client"), "id") = IqId
+toIqTag ((_, Just "jabber:client"), "type") = IqType
+toIqTag n = IqRaw n
+
+data IqBody
+	= IqBind Bind
+	| IqBodyRaw [XmlNode]
+	deriving Show
+
+toIqBody :: [XmlNode] -> IqBody
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
+	IqBind $ toBind ns
+toIqBody ns = IqBodyRaw ns
+
+data Bind
+	= Jid BS.ByteString
+	| BindRaw [XmlNode]
+	deriving Show
+
+toBind :: [XmlNode] -> Bind
+toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
+	[XmlCharData cd]] = Jid cd
+toBind ns = BindRaw ns
+
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
 	_ atts) = SRStream $ map (first qnameToTag) atts
@@ -130,6 +158,8 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 				algorithm = fromJust $ lookup "algorithm" a }
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
+showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
+	SRIq (map (first toIqTag) as) $ toIqBody ns
 showResponse n = SRRaw n
 
 processResponse :: Handle -> Pipe ShowResponse ShowResponse IO ()
@@ -139,7 +169,22 @@ processResponse h = do
 		Just r -> lift (procR h r) >> yield r >> processResponse h
 		_ -> return ()
 
+nullQ :: (BS.ByteString, Maybe BS.ByteString)
+nullQ = ("", Nothing)
+
+bind :: XmlNode
+bind = XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
+	[XmlNode (nullQ, "required") [] [] [], resource]
+
+resource :: XmlNode
+resource = XmlNode (nullQ, "resource") [] [] [XmlCharData "profanity"]
+
 procR :: Handle -> ShowResponse -> IO ()
+procR h (SRFeatures fs)
+	| Rosterver Optional `elem` fs = BS.hPut h . xmlString . (: []) $ XmlNode
+		(nullQ, "iq") [] [
+			((nullQ, "id"), "_xmpp_bind1"),
+			((nullQ, "type"), "set") ] [bind]
 procR h (SRChallenge r n q c _a) = do
 --	print (r, n, q, c, a)
 	let dr = DR {	drUserName = "yoshikuni",
