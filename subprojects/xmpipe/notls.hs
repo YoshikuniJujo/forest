@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings, PackageImports #-}
 
+import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Data.Maybe
@@ -35,7 +36,9 @@ xmlPipe = do
 	when c $ xmlPipe
 
 data ShowResponse
-	= SRChallenge {
+	= SRStream [(Tag, BS.ByteString)]
+	| SRFeatures [Feature]
+	| SRChallenge {
 		realm :: BS.ByteString,
 		nonce :: BS.ByteString,
 		qop :: BS.ByteString,
@@ -46,7 +49,73 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
+data Feature
+	= Mechanisms [Mechanism]
+	| Caps {ctHash :: BS.ByteString,
+		ctNode :: BS.ByteString,
+		ctVer :: BS.ByteString } -- [(CapsTag, BS.ByteString)]
+	| Rosterver Requirement
+	| Bind Requirement
+	| Session Requirement
+	| FeatureRaw XmlNode
+	deriving Show
+
+toFeature :: XmlNode -> Feature
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")
+	_ [] ns) = Mechanisms $ map toMechanism ns
+toFeature (XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []) =
+	let h = map (first toCapsTag) as in Caps {
+		ctHash = fromJust $ lookup CTHash h,
+		ctNode = fromJust $ lookup CTNode h,
+		ctVer = (\(Right r) -> r) . B64.decode . fromJust $ lookup CTVer h }
+--	Caps $ map (first toCapsTag) as
+toFeature (XmlNode ((_, Just "urn:xmpp:features:rosterver"), "ver") _ [] r) =
+	Rosterver $ toRequirement r
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] r) =
+	Bind $ toRequirement r
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session")
+	_ [] r) = Session $ toRequirement r
+toFeature n = FeatureRaw n
+
+data Requirement = Optional | Required | NoRequirement [XmlNode]
+	deriving (Eq, Show)
+
+toRequirement :: [XmlNode] -> Requirement
+toRequirement [XmlNode (_, "optional") _ [] []] = Optional
+toRequirement [XmlNode (_, "required") _ [] []] = Required
+toRequirement n = NoRequirement n
+
+data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving Show
+
+toMechanism :: XmlNode -> Mechanism
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "SCRAM-SHA-1"]) = ScramSha1
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "DIGEST-MD5"]) = DigestMd5
+toMechanism n = MechanismRaw n
+
+data Tag = Id | From | Version | Lang | TagRaw QName deriving (Eq, Show)
+
+qnameToTag :: QName -> Tag
+qnameToTag ((_, Just "jabber:client"), "id") = Id
+qnameToTag ((_, Just "jabber:client"), "from") = From
+qnameToTag ((_, Just "jabber:client"), "version") = Version
+qnameToTag (("xml", Nothing), "lang") = Lang
+qnameToTag n = TagRaw n
+
+data CapsTag = CTHash | CTNode | CTVer | CTRaw QName deriving (Eq, Show)
+
+toCapsTag :: QName -> CapsTag
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
+toCapsTag n = CTRaw n
+
 showResponse :: XmlNode -> ShowResponse
+showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
+	_ atts) = SRStream $ map (first qnameToTag) atts
+showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
+	_ [] nds) = SRFeatures $ map toFeature nds
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
 	_ [] [XmlCharData c]) = let
 		Right d = B64.decode c
@@ -71,8 +140,8 @@ processResponse h = do
 		_ -> return ()
 
 procR :: Handle -> ShowResponse -> IO ()
-procR h (SRChallenge r n q c a) = do
-	print (r, n, q, c, a)
+procR h (SRChallenge r n q c _a) = do
+--	print (r, n, q, c, a)
 	let dr = DR {	drUserName = "yoshikuni",
 			drRealm = r,
 			drPassword = "password",
@@ -88,16 +157,16 @@ procR h (SRChallenge r n q c a) = do
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
 		[XmlCharData $ encode ret]
-	print ret
+--	print ret
 	print sret
-	print node
+--	print node
 	BS.hPut h node
 procR h (SRChallengeRspauth _) = do
 	BS.hPut h . xmlString . (: []) $ XmlNode
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 procR h SRSaslSuccess = BS.hPut h $ xmlString begin
-procR h r = return ()
+procR _ _ = return ()
 
 begin :: [XmlNode]
 begin = [

@@ -6,7 +6,7 @@ import Text.Papillon
 import Data.ByteString.Char8 (ByteString, pack)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
+-- import qualified Data.ByteString.Char8 as BSC
 
 parseAtts :: BS.ByteString -> Maybe [(BS.ByteString, BS.ByteString)]
 parseAtts = either (const Nothing) (Just . fst) . runError . atts . parse
