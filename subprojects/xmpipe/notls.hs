@@ -11,11 +11,20 @@ import Text.XML.Pipe
 import Network
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
 import Papillon
 import Digest
 import Caps (profanityCaps, capsToXml, capsToQuery)
+
+import System.IO.Unsafe
+import System.Environment
+
+sender, recipient :: BS.ByteString
+-- sender = "yoshikuni"
+-- recipient = "yoshio"
+[sender, recipient] = map BSC.pack $ unsafePerformIO getArgs
 
 main :: IO ()
 main = do
@@ -49,8 +58,52 @@ data ShowResponse
 	| SRSaslSuccess
 	| SRIq [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
+	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRRaw XmlNode
 	deriving Show
+
+data MessageBody
+	= MessageBody BS.ByteString
+	| MBRaw XmlNode
+	deriving Show
+data MessageDelay
+	= MessageDelay [(DelayTag, BS.ByteString)]
+	| MDRaw XmlNode
+	deriving Show
+
+data DelayTag = DTFrom | DTStamp | DlyTRaw QName deriving Show
+
+data MessageXDelay
+	= MessageXDelay [(XDelayTag, BS.ByteString)]
+	| MXDRaw XmlNode
+	deriving Show
+
+data XDelayTag = XDTFrom | XDTStamp | XDlyTRaw QName deriving Show
+
+toXDelay :: XmlNode -> MessageXDelay
+toXDelay (XmlNode ((_, Just "jabber:x:delay"), "x") _ as []) =
+	MessageXDelay $ map (first toXDelayTag) as
+toXDelay n = MXDRaw n
+
+toXDelayTag :: QName -> XDelayTag
+toXDelayTag ((_, Just "jabber:x:delay"), "from") = XDTFrom
+toXDelayTag ((_, Just "jabber:x:delay"), "stamp") = XDTStamp
+toXDelayTag n = XDlyTRaw n
+
+toDelayTag :: QName -> DelayTag
+toDelayTag ((_, Just "urn:xmpp:delay"), "from") = DTFrom
+toDelayTag ((_, Just "urn:xmpp:delay"), "stamp") = DTStamp
+toDelayTag n = DlyTRaw n
+
+toBody :: XmlNode -> MessageBody
+toBody (XmlNode ((_, Just "jabber:client"), "body") _ [] [XmlCharData b]) =
+	MessageBody b
+toBody n = MBRaw n
+
+toDelay :: XmlNode -> MessageDelay
+toDelay (XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ as []) = MessageDelay $
+	map (first toDelayTag) as
+toDelay n = MDRaw n
 
 data Feature
 	= Mechanisms [Mechanism]
@@ -199,6 +252,12 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 	SRIq (map (first toIqTag) as) $ toIqBody ns
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
 	SRPresence (map (first qnameToTag) as) $ toCaps ns
+showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
+	(b : d : xd : [])) = SRMessage
+		(map (first toIqTag) as)
+		(toBody b)
+		(toDelay d)
+		(toXDelay xd)
 showResponse n = SRRaw n
 
 processResponse :: Handle -> Pipe ShowResponse ShowResponse IO ()
@@ -248,7 +307,7 @@ procR h (SRFeatures fs)
 			[capsToXml profanityCaps "http://www.profanity.im"]
 procR h (SRChallenge r n q c _a) = do
 --	print (r, n, q, c, a)
-	let dr = DR {	drUserName = "yoshikuni",
+	let dr = DR {	drUserName = sender,
 			drRealm = r,
 			drPassword = "password",
 			drCnonce = "00DEADBEEF00",
@@ -276,10 +335,12 @@ procR h (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
 	BS.hPut h . xmlString . (: []) $ XmlNode
 		(("", Nothing), "iq") [] [
 			((("", Nothing), "id"), "prof_caps_2"),
-			((("", Nothing), "to"), "yoshikuni@localhost/profanity"),
+			((("", Nothing), "to"),
+				sender `BS.append` "@localhost/profanity"),
 			((("", Nothing), "type"), "get")] [capsQuery v n]
-procR h (SRIq [(IqId, i), (IqType, "get"), (IqTo, "yoshikuni@localhost/profanity"),
-	(IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)])) = do
+procR h (SRIq [(IqId, i), (IqType, "get"), (IqTo, to),
+	(IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
+	| to == sender `BS.append` "@localhost/profanity" = do
 	BS.hPut h . xmlString . (: []) $ XmlNode
 		(("", Nothing), "iq") [] [
 			((("", Nothing), "id"), i),
@@ -289,7 +350,7 @@ procR h (SRIq [(IqId, i), (IqType, "get"), (IqTo, "yoshikuni@localhost/profanity
 	BS.hPut h . xmlString . (: []) $ XmlNode
 		(("", Nothing), "message") [] [
 			((("", Nothing), "id"), "prof_3"),
-			((("", Nothing), "to"), "yoshio@localhost"),
+			((("", Nothing), "to"), recipient `BS.append` "@localhost"),
 			((("", Nothing), "type"), "chat") ] [message]
 	BS.hPut h "</stream:stream>"
 procR _ _ = return ()
