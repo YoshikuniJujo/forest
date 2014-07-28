@@ -15,7 +15,7 @@ import qualified Data.ByteString.Base64 as B64
 
 import Papillon
 import Digest
-import Caps (profanityCaps, capsToXml)
+import Caps (profanityCaps, capsToXml, capsToQuery)
 
 main :: IO ()
 main = do
@@ -47,8 +47,9 @@ data ShowResponse
 		algorithm :: BS.ByteString }
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
-	| SRRaw XmlNode
 	| SRIq [(IqTag, BS.ByteString)] IqBody
+	| SRPresence [(Tag, BS.ByteString)] Caps
+	| SRRaw XmlNode
 	deriving Show
 
 data Feature
@@ -113,17 +114,26 @@ toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
 toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
 toCapsTag n = CTRaw n
 
-data IqTag = IqId | IqType | IqTo | IqRaw QName deriving (Eq, Show)
+data IqTag = IqId | IqType | IqTo | IqFrom | IqRaw QName deriving (Eq, Show)
 
 toIqTag :: QName -> IqTag
 toIqTag ((_, Just "jabber:client"), "id") = IqId
 toIqTag ((_, Just "jabber:client"), "type") = IqType
 toIqTag ((_, Just "jabber:client"), "to") = IqTo
+toIqTag ((_, Just "jabber:client"), "from") = IqFrom
 toIqTag n = IqRaw n
+
+data DiscoTag = DTNode | DTRaw QName deriving (Eq, Show)
+
+toDiscoTag :: QName -> DiscoTag
+toDiscoTag ((_, Just "http://jabber.org/protocol/disco#info"), "node") = DTNode
+toDiscoTag n = DTRaw n
 
 data IqBody
 	= IqBind Bind
 	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
+	| IqDiscoInfo
+	| IqDiscoInfoNode [(DiscoTag, BS.ByteString)]
 	| IqBodyNull
 	| IqBodyRaw [XmlNode]
 	deriving Show
@@ -133,6 +143,10 @@ toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns
 	IqBind $ toBind ns
 toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as []] =
 	IqRoster $ map (first toRosterTag) as
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ [] []] = IqDiscoInfo
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as []] = IqDiscoInfoNode $ map (first toDiscoTag) as
 toIqBody [] = IqBodyNull
 toIqBody ns = IqBodyRaw ns
 
@@ -151,6 +165,16 @@ toBind :: [XmlNode] -> Bind
 toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
 	[XmlCharData cd]] = Jid cd
 toBind ns = BindRaw ns
+
+data Caps
+	= C [(CapsTag, BS.ByteString)]
+	| CapsRaw [XmlNode]
+	deriving Show
+
+toCaps :: [XmlNode] -> Caps
+toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
+	C $ map (first toCapsTag) as
+toCaps ns = CapsRaw ns
 
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
@@ -173,6 +197,8 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 	SRIq (map (first toIqTag) as) $ toIqBody ns
+showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
+	SRPresence (map (first qnameToTag) as) $ toCaps ns
 showResponse n = SRRaw n
 
 processResponse :: Handle -> Pipe ShowResponse ShowResponse IO ()
@@ -246,7 +272,35 @@ procR h (SRChallengeRspauth _) = do
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 procR h SRSaslSuccess = BS.hPut h $ xmlString begin
+procR h (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
+	BS.hPut h . xmlString . (: []) $ XmlNode
+		(("", Nothing), "iq") [] [
+			((("", Nothing), "id"), "prof_caps_2"),
+			((("", Nothing), "to"), "yoshikuni@localhost/profanity"),
+			((("", Nothing), "type"), "get")] [capsQuery v n]
+procR h (SRIq [(IqId, i), (IqType, "get"), (IqTo, "yoshikuni@localhost/profanity"),
+	(IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)])) = do
+	BS.hPut h . xmlString . (: []) $ XmlNode
+		(("", Nothing), "iq") [] [
+			((("", Nothing), "id"), i),
+			((("", Nothing), "to"), f),
+			((("", Nothing), "type"), "result")]
+		[capsToQuery profanityCaps n]
+	BS.hPut h . xmlString . (: []) $ XmlNode
+		(("", Nothing), "message") [] [
+			((("", Nothing), "id"), "prof_3"),
+			((("", Nothing), "to"), "yoshio@localhost"),
+			((("", Nothing), "type"), "chat") ] [message]
+	BS.hPut h "</stream:stream>"
 procR _ _ = return ()
+
+message :: XmlNode
+message = XmlNode (("", Nothing), "body") [] [] [XmlCharData "Hello, darkness!"]
+
+capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
+capsQuery v n = XmlNode (("", Nothing), "query")
+	[("", "http://jabber.org/protocol/disco#info")]
+	[((("", Nothing), "node"), n `BS.append` "#" `BS.append` v)] []
 
 begin :: [XmlNode]
 begin = [
