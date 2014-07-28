@@ -112,27 +112,39 @@ toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
 toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
 toCapsTag n = CTRaw n
 
-data IqTag = IqId | IqType | IqRaw QName deriving (Eq, Show)
+data IqTag = IqId | IqType | IqTo | IqRaw QName deriving (Eq, Show)
 
 toIqTag :: QName -> IqTag
 toIqTag ((_, Just "jabber:client"), "id") = IqId
 toIqTag ((_, Just "jabber:client"), "type") = IqType
+toIqTag ((_, Just "jabber:client"), "to") = IqTo
 toIqTag n = IqRaw n
 
 data IqBody
 	= IqBind Bind
+	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
+	| IqBodyNull
 	| IqBodyRaw [XmlNode]
 	deriving Show
 
 toIqBody :: [XmlNode] -> IqBody
 toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
 	IqBind $ toBind ns
+toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as []] =
+	IqRoster $ map (first toRosterTag) as
+toIqBody [] = IqBodyNull
 toIqBody ns = IqBodyRaw ns
 
 data Bind
 	= Jid BS.ByteString
 	| BindRaw [XmlNode]
 	deriving Show
+
+data RosterTag = RTVer | RTRaw QName deriving (Eq, Show)
+
+toRosterTag :: QName -> RosterTag
+toRosterTag ((_, Just "jabber:iq:roster"), "ver") = RTVer
+toRosterTag n = RTRaw n
 
 toBind :: [XmlNode] -> Bind
 toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
@@ -179,12 +191,30 @@ bind = XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
 resource :: XmlNode
 resource = XmlNode (nullQ, "resource") [] [] [XmlCharData "profanity"]
 
+session :: XmlNode
+session = XmlNode (nullQ, "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
+
+iqSession :: XmlNode
+iqSession = XmlNode (nullQ, "iq") []
+	[((nullQ, "id"), "_xmpp_session1"), ((nullQ, "type"), "set")] [session]
+
+iqRoster :: XmlNode
+iqRoster = XmlNode (nullQ, "iq") []
+	[((nullQ, "id"), "roster"), ((nullQ, "type"), "get")] [roster]
+
+roster :: XmlNode
+roster = XmlNode (nullQ, "query") [("", "jabber:iq:roster")] [] []
+
 procR :: Handle -> ShowResponse -> IO ()
 procR h (SRFeatures fs)
-	| Rosterver Optional `elem` fs = BS.hPut h . xmlString . (: []) $ XmlNode
-		(nullQ, "iq") [] [
-			((nullQ, "id"), "_xmpp_bind1"),
-			((nullQ, "type"), "set") ] [bind]
+	| Rosterver Optional `elem` fs = do
+		BS.hPut h . xmlString . (: []) $ XmlNode
+			(nullQ, "iq") [] [
+				((nullQ, "id"), "_xmpp_bind1"),
+				((nullQ, "type"), "set") ] [bind]
+		BS.hPut h $ xmlString [iqSession]
+		BS.hPut h $ xmlString [iqRoster]
 procR h (SRChallenge r n q c _a) = do
 --	print (r, n, q, c, a)
 	let dr = DR {	drUserName = "yoshikuni",
