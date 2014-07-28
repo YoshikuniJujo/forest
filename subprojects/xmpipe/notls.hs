@@ -187,6 +187,7 @@ data IqBody
 	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
 	| IqDiscoInfo
 	| IqDiscoInfoNode [(DiscoTag, BS.ByteString)]
+	| IqDiscoInfoFull [(DiscoTag, BS.ByteString)] Identity [InfoFeature]
 	| IqBodyNull
 	| IqBodyRaw [XmlNode]
 	deriving Show
@@ -200,8 +201,55 @@ toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 	_ [] []] = IqDiscoInfo
 toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 	_ as []] = IqDiscoInfoNode $ map (first toDiscoTag) as
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as (i : ns)] = IqDiscoInfoFull
+	(map (first toDiscoTag) as)
+	(toIdentity i)
+	(map toInfoFeature ns)
 toIqBody [] = IqBodyNull
 toIqBody ns = IqBodyRaw ns
+
+data Identity
+	= Identity [(IdentityTag, BS.ByteString)]
+	| IdentityRaw XmlNode
+	deriving Show
+
+data IdentityTag
+	= IDTType | IDTName | IDTCategory | IDTRaw QName deriving (Eq, Show)
+
+toIdentityTag :: QName -> IdentityTag
+toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "type") = IDTType
+toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "name") = IDTName
+toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "category") =
+	IDTCategory
+toIdentityTag n = IDTRaw n
+
+toIdentity :: XmlNode -> Identity
+toIdentity (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "identity")
+	_ as []) = Identity $ map (first toIdentityTag) as
+toIdentity n = IdentityRaw n
+
+data InfoFeature
+	= InfoFeature BS.ByteString
+	| InfoFeatureSemiRaw [(InfoFeatureTag, BS.ByteString)]
+	| InfoFeatureRaw XmlNode
+	deriving Show
+
+data InfoFeatureTag
+	= IFTVar
+	| IFTVarRaw QName
+	deriving (Eq, Show)
+
+toInfoFeatureTag :: QName -> InfoFeatureTag
+toInfoFeatureTag ((_, Just "http://jabber.org/protocol/disco#info"), "var") = IFTVar
+toInfoFeatureTag n = IFTVarRaw n
+
+toInfoFeature :: XmlNode -> InfoFeature
+toInfoFeature (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"),
+	"feature") _ as []) = case map (first toInfoFeatureTag) as of
+		[(IFTVar, v)] -> InfoFeature v
+		atts -> InfoFeatureSemiRaw atts
+toInfoFeature n = InfoFeatureRaw n
 
 data Bind
 	= Jid BS.ByteString
