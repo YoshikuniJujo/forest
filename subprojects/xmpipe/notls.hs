@@ -15,6 +15,7 @@ import qualified Data.ByteString.Base64 as B64
 
 import Papillon
 import Digest
+import Caps (profanityCaps, capsToXml)
 
 main :: IO ()
 main = do
@@ -215,6 +216,10 @@ procR h (SRFeatures fs)
 				((nullQ, "type"), "set") ] [bind]
 		BS.hPut h $ xmlString [iqSession]
 		BS.hPut h $ xmlString [iqRoster]
+		BS.hPut h . xmlString . (: []) $ XmlNode
+			(nullQ, "presence") []
+			[((nullQ, "id"), "prof_presence_1")]
+			[capsToXml profanityCaps "http://www.profanity.im"]
 procR h (SRChallenge r n q c _a) = do
 --	print (r, n, q, c, a)
 	let dr = DR {	drUserName = "yoshikuni",
