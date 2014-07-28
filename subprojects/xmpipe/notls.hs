@@ -39,9 +39,21 @@ xmpp h = do
 		=$= convert fromJust
 --		=$= (xmlBegin >>= xmlNode)
 		=$= xmlPipe
+		=$= checkP h
 		=$= convert showResponse
 		=$= processResponse h
 		=$= printP h
+
+checkP :: HandleLike h => h -> Pipe XmlNode XmlNode (HandleMonad h) ()
+checkP h = do
+	mn <- await
+	case mn of
+		Just n@(XmlNode (_, "challenge") _ _ [XmlCharData cd]) ->
+			lift (hlDebug h "critical" . (`BS.append` "\n") .
+					(\(Right s) -> s) $ B64.decode cd) >>
+				yield n >> checkP h
+		Just n -> yield n >> checkP h
+		_ -> return ()
 
 voidM :: Monad m => m a -> m ()
 voidM m = m >> return ()
