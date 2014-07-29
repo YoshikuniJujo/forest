@@ -303,15 +303,16 @@ showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
 	_ [] [XmlCharData c]) = let
 		Right d = B64.decode c
-		Just a = parseAtts d in
-		case a of
-			[("rspauth", ra)] -> SRChallengeRspauth ra
-			_ -> SRChallenge {
+		ma = parseAtts d in
+		case ma of
+			Just [("rspauth", ra)] -> SRChallengeRspauth ra
+			Just a -> SRChallenge {
 				realm = fromJust $ lookup "realm" a,
 				nonce = fromJust $ lookup "nonce" a,
 				qop = fromJust $ lookup "qop" a,
 				charset = fromJust $ lookup "charset" a,
 				algorithm = fromJust $ lookup "algorithm" a }
+			_ -> error $ "ERROR: " ++ show d
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
