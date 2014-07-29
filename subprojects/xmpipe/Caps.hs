@@ -56,15 +56,15 @@ featureToXml :: BS.ByteString -> XmlNode
 featureToXml f =
 	XmlNode (nullQ "feature") [] [(nullQ "var", f)] []
 
-sampleId :: Identity
-sampleId = Identity {
+_sampleId :: Identity
+_sampleId = Identity {
 	idCategory = "client",
 	idType = Just "pc",
 	idLang = Nothing,
 	idName = Just "Exodus 0.9.1" }
 
-sampleFeatures :: [BS.ByteString]
-sampleFeatures = [
+_sampleFeatures :: [BS.ByteString]
+_sampleFeatures = [
 	"http://jabber.org/protocol/caps",
 	"http://jabber.org/protocol/disco#info",
 	"http://jabber.org/protocol/disco#items",

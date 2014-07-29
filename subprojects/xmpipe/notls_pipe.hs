@@ -21,8 +21,6 @@ import System.IO.Unsafe
 import System.Environment
 
 sender, recipient :: BS.ByteString
--- sender = "yoshikuni"
--- recipient = "yoshio"
 [sender, recipient] = map BSC.pack $ unsafePerformIO getArgs
 
 main :: IO ()
@@ -33,18 +31,16 @@ main = do
 xmpp :: HandleLike h => h -> HandleMonad h ()
 xmpp h = do
 	hlPut h $ xmlString begin
-	hlPut h $ xmlString selectDigestMd5
 	voidM . runPipe $ handleP h
 		=$= xmlEvent
 		=$= convert fromJust
---		=$= (xmlBegin >>= xmlNode)
 		=$= xmlPipe
 		=$= checkP h
 		=$= convert showResponse
+		=$= checkSR h
 		=$= process
+		=$= convert showResponseToXmlNode
 		=$= output h
---		=$= processResponse h
---		=$= printP h
 
 checkP :: HandleLike h => h -> Pipe XmlNode XmlNode (HandleMonad h) ()
 checkP h = do
@@ -55,6 +51,14 @@ checkP h = do
 					(\(Right s) -> s) $ B64.decode cd) >>
 				yield n >> checkP h
 		Just n -> yield n >> checkP h
+		_ -> return ()
+
+checkSR :: HandleLike h => h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
+checkSR h = do
+	mr <- await
+	case mr of
+		Just r -> lift (hlDebug h "critical" . (`BS.append` "\n") $
+			showBS r) >> yield r >> checkSR h
 		_ -> return ()
 
 voidM :: Monad m => m a -> m ()
@@ -328,6 +332,10 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
 		(toXDelay xd)
 showResponse n = SRRaw n
 
+showResponseToXmlNode :: ShowResponse -> XmlNode
+showResponseToXmlNode (SRRaw n) = n
+showResponseToXmlNode _ = error "not implemented yet"
+
 output :: HandleLike h => h -> Pipe XmlNode () (HandleMonad h) ()
 output h = do
 	mn <- await
@@ -335,22 +343,25 @@ output h = do
 		Just n -> lift (hlPut h $ xmlString [n]) >> output h
 		_ -> return ()
 
-process :: Monad m => Pipe ShowResponse XmlNode m ()
+process :: Monad m => Pipe ShowResponse ShowResponse m ()
 process = do
 	mr <- await
 	case mr of
 		Just r -> mapM_ yield (mkWriteData r) >> process
 		_ -> return ()
 
-mkWriteData :: ShowResponse -> [XmlNode]
+mkWriteData :: ShowResponse -> [ShowResponse]
+mkWriteData (SRFeatures [Mechanisms ms])
+	| DigestMd5 `elem` ms = map SRRaw selectDigestMd5
 mkWriteData (SRFeatures fs)
 	| Rosterver Optional `elem` fs = [
-		XmlNode (nullQ, "iq") [] [
+		SRRaw $ XmlNode (nullQ, "iq") [] [
 			((nullQ, "id"), "_xmpp_bind1"),
 			((nullQ, "type"), "set") ] [bind],
-		iqSession,
-		iqRoster,
-		XmlNode	(nullQ, "presence") []
+		SRRaw iqSession,
+		SRRaw iqRoster,
+		SRRaw $ XmlNode
+			(nullQ, "presence") []
 			[((nullQ, "id"), "prof_presence_1")]
 			[capsToXml profanityCaps "http://www.profanity.im"] ]
 mkWriteData (SRChallenge r n q c _a) = let
@@ -363,18 +374,16 @@ mkWriteData (SRChallenge r n q c _a) = let
 			drQop = q,
 			drDigestUri = "xmpp/localhost",
 			drCharset = c }
-	ret = kvsToS $ responseToKvs True dr
---	Just sret = lookup "response" $ responseToKvs False dr
-	node = (: []) $ XmlNode
+	ret = kvsToS $ responseToKvs True dr in
+	(: []) . SRRaw $ XmlNode
 		(("", Nothing), "response")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-		[XmlCharData $ encode ret] in
-	node
-mkWriteData (SRChallengeRspauth _) = (:[]) $ XmlNode
+		[XmlCharData $ encode ret]
+mkWriteData (SRChallengeRspauth _) = (:[]) . SRRaw $ XmlNode
 	(("", Nothing), "response") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-mkWriteData SRSaslSuccess = begin
+mkWriteData SRSaslSuccess = map SRRaw begin
 mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
-	(: []) $ XmlNode
+	(: []) . SRRaw $ XmlNode
 		(("", Nothing), "iq") [] [
 			((("", Nothing), "id"), "prof_caps_2"),
 			((("", Nothing), "to"),
@@ -383,16 +392,16 @@ mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
 mkWriteData (SRIq [(IqId, i), (IqType, "get"), (IqTo, to), (IqFrom, f)]
 	(IqDiscoInfoNode [(DTNode, n)]))
 	| to == sender `BS.append` "@localhost/profanity" = [
-		XmlNode (("", Nothing), "iq") [] [
+		SRRaw $ XmlNode (("", Nothing), "iq") [] [
 				((("", Nothing), "id"), i),
 				((("", Nothing), "to"), f),
 				((("", Nothing), "type"), "result")]
 			[capsToQuery profanityCaps n],
-		XmlNode (("", Nothing), "message") [] [
+		SRRaw $ XmlNode (("", Nothing), "message") [] [
 			((("", Nothing), "id"), "prof_3"),
 			((("", Nothing), "to"), recipient `BS.append` "@localhost"),
 			((("", Nothing), "type"), "chat") ] [message],
-		XmlEnd (("stream", Nothing), "stream") ]
+		SRRaw $ XmlEnd (("stream", Nothing), "stream") ]
 mkWriteData _ = []
 
 nullQ :: (BS.ByteString, Maybe BS.ByteString)
@@ -421,7 +430,8 @@ roster :: XmlNode
 roster = XmlNode (nullQ, "query") [("", "jabber:iq:roster")] [] []
 
 message :: XmlNode
-message = XmlNode (("", Nothing), "body") [] [] [XmlCharData "HOGERU"]
+message = XmlNode (("", Nothing), "body") [] []
+	[XmlCharData "I like coffee. I like tea. I like Jack and he likes me."]
 
 capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
 capsQuery v n = XmlNode (("", Nothing), "query")
@@ -448,11 +458,6 @@ handleP h = do
 	c <- lift $ hlGetContent h
 	yield c
 	handleP h
-
--- printP :: (Show a, Monad m, MonadIO m) => Pipe a () m ()
-printP :: (Show a, HandleLike h) => h -> Pipe a () (HandleMonad h) ()
-printP h = await >>=
-	maybe (return ()) (\x -> lift (hlDebug h "critical" $ showBS x) >> printP h)
 
 showBS :: Show a => a -> BS.ByteString
 showBS = BSC.pack . (++ "\n") . show
