@@ -11,6 +11,9 @@ import qualified Data.ByteString as BS
 parseAtts :: BS.ByteString -> Maybe [(BS.ByteString, BS.ByteString)]
 parseAtts = either (const Nothing) (Just . fst) . runError . atts . parse
 
+isTextChar :: Char -> Bool
+isTextChar = (`elem` (['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z'] ++ "-"))
+
 [papillon|
 
 source: ByteString
@@ -24,8 +27,7 @@ att :: (ByteString, ByteString)
 
 txt :: ByteString
 	= '"' t:(<(`notElem` "\"")>)* '"'	{ pack t }
-	/ t:(<(`elem` (['0'..'9'] ++ ['a'..'z'] ++ ['A'..'Z'] ++ "-" ))>)+
-						{ pack t }
+	/ t:(<isTextChar>)+			{ pack t }
 
 |]
 
