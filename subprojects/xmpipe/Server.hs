@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, FlexibleContexts,
 	PackageImports #-}
 
+module Server (xmpp, SHandle(..)) where
+
 import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
@@ -50,6 +52,7 @@ xmpp h = do
 		=$= convert showResponse
 		=$= processResponse h
 		=$= printP h
+	hlDebug h "critical" "finished"
 	hlPut h "</stream:stream>"
 	hlClose h
 
