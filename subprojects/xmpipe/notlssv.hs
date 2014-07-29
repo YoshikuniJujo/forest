@@ -13,6 +13,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
+import DigestSv
+
 main :: IO ()
 main = do
 	socket <- listenOn $ PortNumber 5222
@@ -28,7 +30,39 @@ xmpp h = do
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= (xmlBegin >>= xmlNode)
+		=$= convert showResponse
+		=$= processResponse h
 		=$= printP h
+
+data ShowResponse
+	= SRResponse BS.ByteString
+	| SRResponseNull
+	| SRRaw XmlNode
+	deriving Show
+
+showResponse :: XmlNode -> ShowResponse
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
+	_ [] []) = SRResponseNull
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
+	_ [] [XmlCharData cd]) = SRResponse . (\(Right s) -> s) $ B64.decode cd
+showResponse n = SRRaw n
+
+processResponse :: HandleLike h =>
+	h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
+processResponse h = do
+	mr <- await
+	case mr of
+		Just r -> lift (procR h r) >> yield r >> processResponse h
+		_ -> return ()
+
+procR :: HandleLike h => h -> ShowResponse -> HandleMonad h ()
+procR h (SRResponse _) = do
+	let sret = B64.encode . fromJust . lookup "response" $
+		responseToKvs False sampleDR
+	hlPut h . xmlString . (: []) $ XmlNode (nullQ "challenge")
+		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
+	hlDebug h "critical" $ sret `BS.append` "\n"
+procR _ _ = return ()
 
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 handleP h = do
