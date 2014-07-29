@@ -143,7 +143,7 @@ procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
 	h -> ShowResponse -> HandleMonad h ()
 procR h (SRResponse _) = do
-	let sret = B64.encode . fromJust . lookup "response" $
+	let sret = B64.encode . ("rspauth=" `BS.append`) . fromJust . lookup "response" $
 		responseToKvs False sampleDR
 	hlPut h . xmlString . (: []) $ XmlNode (nullQ "challenge")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
