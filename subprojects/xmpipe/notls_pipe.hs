@@ -253,6 +253,7 @@ data IqBody
 	| IqSession
 	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
 	| IqCapsQuery BS.ByteString BS.ByteString
+	| IqCapsQuery2 CAPS.Caps BS.ByteString
 	| IqDiscoInfo
 	| IqDiscoInfoNode [(DiscoTag, BS.ByteString)]
 	| IqDiscoInfoFull [(DiscoTag, BS.ByteString)] Identity [InfoFeature]
@@ -424,6 +425,8 @@ showResponseToXmlNode (SRIq as (IqRoster [])) =
 	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [roster]
 showResponseToXmlNode (SRIq as (IqCapsQuery v n)) =
 	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [capsQuery v n]
+showResponseToXmlNode (SRIq as (IqCapsQuery2 c n)) =
+	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [capsToQuery c n]
 showResponseToXmlNode (SRPresenceRaw i n c) =
 	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
@@ -497,11 +500,8 @@ mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
 mkWriteData (SRIq [(IqId, i), (IqType, "get"), (IqTo, to), (IqFrom, f)]
 	(IqDiscoInfoNode [(DTNode, n)]))
 	| to == sender `BS.append` "@localhost/profanity" = [
-		SRRaw $ XmlNode (("", Nothing), "iq") [] [
-				((("", Nothing), "id"), i),
-				((("", Nothing), "to"), f),
-				((("", Nothing), "type"), "result")]
-			[capsToQuery profanityCaps n],
+		SRIq [(IqId, i), (IqTo, f), (IqType, "result")]
+			(IqCapsQuery2 profanityCaps n),
 		SRRaw $ XmlNode (("", Nothing), "message") [] [
 			((("", Nothing), "id"), "prof_3"),
 			((("", Nothing), "to"), recipient `BS.append` "@localhost"),
