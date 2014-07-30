@@ -1,7 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 
-import Debug.Trace
-
 import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
@@ -79,12 +77,12 @@ checkSR h = do
 		_ -> return ()
 
 voidM :: Monad m => m a -> m ()
-voidM m = m >> return ()
+voidM = (>> return ())
 
 xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = do
 	c <- xmlBegin >>= xmlNode
-	when c $ xmlPipe
+	when c xmlPipe
 
 data ShowResponse
 	= SRXmlDecl
@@ -432,7 +430,7 @@ showResponseToXmlNode (SRPresenceRaw i n c) =
 	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
 showResponseToXmlNode (SRMessageRaw as m) =
-	XmlNode (nullQ, "message") [] (map (first fromIqTag) as) $
+	XmlNode (nullQ, "message") [] (map (first fromIqTag) as)
 		[XmlNode (nullQ, "body") [] [] [XmlCharData m]]
 showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
 showResponseToXmlNode (SRRaw n) = n
@@ -461,9 +459,7 @@ process = do
 		Just r@(SRChallengeRspauth sa) -> do
 			sa0 <- lift get
 			unless (sa == sa0) $ error "process: bad server"
-			mapM_ yield $ mkWriteData $
-				trace (	"HERE: " ++ show sa ++ "\n" ++
-					"HERE: " ++ show sa0 ) r
+			mapM_ yield $ mkWriteData r
 			process
 		Just r -> do
 			let ret = mkWriteData r
