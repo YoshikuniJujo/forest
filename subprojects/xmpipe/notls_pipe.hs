@@ -66,10 +66,9 @@ mkWriteData (SRFeatures [Mechanisms ms])
 	| DigestMd5 `elem` ms = [SRAuth DigestMd5]
 mkWriteData (SRFeatures fs)
 	| Rosterver Optional `elem` fs = [
-		SRIq Set [(IqId, "_xmpp_bind1")] . IqBind $
-			Resource "profanity",
-		SRIq Set [(IqId, "_xmpp_session1")] IqSession,
-		SRIq Set [(IqId, "_xmpp_session1")] $ IqRoster [],
+		SRIq Set "_xmpp_bind1" [] . IqBind $ Resource "profanity",
+		SRIq Set "_xmpp_session1" [] IqSession,
+		SRIq Set "_xmpp_roster1" [] $ IqRoster [],
 		SRPresenceRaw
 			"prof_presence_1" "http://www.profanity.im" profanityCaps
 		]
@@ -81,15 +80,13 @@ mkWriteData (SRChallengeRspauth _) = [SRResponseNull]
 mkWriteData SRSaslSuccess =
 	[SRXmlDecl, SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]]
 mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
-	(: []) $ SRIq Get [
-			(IqId, "prof_caps_2"),
+	(: []) $ SRIq Get "prof_caps_2" [
 			(IqTo, sender `BS.append` "@localhost/profanity") ]
 		(IqCapsQuery v n)
-mkWriteData (SRIq Get [(IqId, i), (IqTo, to), (IqFrom, f)]
+mkWriteData (SRIq Get i [(IqTo, to), (IqFrom, f)]
 	(IqDiscoInfoNode [(DTNode, n)]))
 	| to == sender `BS.append` "@localhost/profanity" = [
-		SRIq Result [(IqId, i), (IqTo, f)]
-			(IqCapsQuery2 profanityCaps n),
+		SRIq Result i [(IqTo, f)] (IqCapsQuery2 profanityCaps n),
 		SRMessageRaw Chat "prof_3" recipient message,
 		SREnd ]
 mkWriteData _ = []
