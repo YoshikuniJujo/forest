@@ -74,6 +74,7 @@ data ShowResponse
 	= SRXmlDecl
 	| SRStream [(Tag, BS.ByteString)]
 	| SRFeatures [Feature]
+	| SRAuth Mechanism
 	| SRChallenge {
 		realm :: BS.ByteString,
 		nonce :: BS.ByteString,
@@ -168,6 +169,15 @@ toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
 
 data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving (Eq, Show)
+
+selectMechanism :: Mechanism -> ShowResponse
+selectMechanism ScramSha1 = SRRaw $ XmlNode (("", Nothing), "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
+selectMechanism DigestMd5 = SRRaw $ XmlNode (("", Nothing), "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
+selectMechanism (MechanismRaw n) = SRRaw n
 
 toMechanism :: XmlNode -> Mechanism
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
@@ -350,6 +360,13 @@ showResponseToXmlNode (SRStream as) = XmlStart
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
+showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ, "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
+showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
+showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -376,7 +393,7 @@ process = do
 
 mkWriteData :: ShowResponse -> [ShowResponse]
 mkWriteData (SRFeatures [Mechanisms ms])
-	| DigestMd5 `elem` ms = map SRRaw selectDigestMd5
+	| DigestMd5 `elem` ms = [SRAuth DigestMd5]
 mkWriteData (SRFeatures fs)
 	| Rosterver Optional `elem` fs = [
 		SRRaw $ XmlNode (nullQ, "iq") [] [
@@ -460,11 +477,6 @@ capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
 capsQuery v n = XmlNode (("", Nothing), "query")
 	[("", "http://jabber.org/protocol/disco#info")]
 	[((("", Nothing), "node"), n `BS.append` "#" `BS.append` v)] []
-
-selectDigestMd5 :: [XmlNode]
-selectDigestMd5 = (: []) $ XmlNode (("", Nothing), "auth")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
-	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 handleP h = do
