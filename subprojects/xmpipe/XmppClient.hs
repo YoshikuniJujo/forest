@@ -28,6 +28,7 @@ module XmppClient (
 	voidM,
 	MessageType(..),
 	Jid(..),
+	IqType(..),
 	) where
 
 import Control.Arrow
@@ -111,7 +112,7 @@ data ShowResponse
 	| SRResponseNull
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
-	| SRIq [(IqTag, BS.ByteString)] IqBody
+	| SRIq IqType [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
@@ -120,7 +121,10 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
-data MessageType = Normal | Chat | Groupchat | Headline | Error deriving (Eq, Show)
+data IqType = Get | Set | Result | ITError deriving (Eq, Show)
+
+data MessageType = Normal | Chat | Groupchat | Headline | MTError
+	deriving (Eq, Show)
 
 data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, Show)
 
@@ -404,7 +408,17 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRIq (map (first toIqTag) as) $ toIqBody ns
+	SRIq t ts' $ toIqBody ns
+	where
+	ts = map (first toIqTag) as
+	ts' = filter ((/= IqType) . fst) ts
+	Just st = lookup IqType ts
+	t = case st of
+		"get" -> Get
+		"set" -> Set
+		"result" -> Result
+		"error" -> ITError
+		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
 	SRPresence (map (first qnameToTag) as) $ toCaps ns
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
@@ -431,16 +445,46 @@ showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
 showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
 showResponseToXmlNode SRResponseNull = drnToXmlNode
-showResponseToXmlNode (SRIq as (IqBind b)) =
-	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) $ fromBind b
-showResponseToXmlNode (SRIq as IqSession) =
-	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [session]
-showResponseToXmlNode (SRIq as (IqRoster [])) =
-	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [roster]
-showResponseToXmlNode (SRIq as (IqCapsQuery v n)) =
-	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [capsQuery v n]
-showResponseToXmlNode (SRIq as (IqCapsQuery2 c n)) =
-	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [capsToQuery c n]
+showResponseToXmlNode (SRIq it as (IqBind b)) = XmlNode (nullQ, "iq") []
+	(t : map (first fromIqTag) as) $ fromBind b
+	where
+	t = ((nullQ, "type") ,) $ case it of
+		Get -> "get"
+		Set -> "set"
+		Result -> "result"
+		ITError -> "error"
+showResponseToXmlNode (SRIq it as IqSession) = XmlNode (nullQ, "iq") []
+	(t : map (first fromIqTag) as) [session]
+	where
+	t = ((nullQ, "type") ,) $ case it of
+		Get -> "get"
+		Set -> "set"
+		Result -> "result"
+		ITError -> "error"
+showResponseToXmlNode (SRIq it as (IqRoster [])) = XmlNode (nullQ, "iq") []
+	(t : map (first fromIqTag) as) [roster]
+	where
+	t = ((nullQ, "type") ,) $ case it of
+		Get -> "get"
+		Set -> "set"
+		Result -> "result"
+		ITError -> "error"
+showResponseToXmlNode (SRIq it as (IqCapsQuery v n)) = XmlNode (nullQ, "iq") []
+	(t : map (first fromIqTag) as) [capsQuery v n]
+	where
+	t = ((nullQ, "type") ,) $ case it of
+		Get -> "get"
+		Set -> "set"
+		Result -> "result"
+		ITError -> "error"
+showResponseToXmlNode (SRIq it as (IqCapsQuery2 c n)) = XmlNode (nullQ, "iq") []
+	(t : map (first fromIqTag) as) [capsToQuery c n]
+	where
+	t = ((nullQ, "type") ,) $ case it of
+		Get -> "get"
+		Set -> "set"
+		Result -> "result"
+		ITError -> "error"
 showResponseToXmlNode (SRPresenceRaw i n c) =
 	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
