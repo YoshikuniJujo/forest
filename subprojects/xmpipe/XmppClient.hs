@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections,
+	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
 	SHandle(..),
@@ -25,6 +26,8 @@ module XmppClient (
 	DelayTag(..),
 	XDelayTag(..),
 	voidM,
+	MessageType(..),
+	Jid(..),
 	) where
 
 import Control.Arrow
@@ -112,10 +115,17 @@ data ShowResponse
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
-	| SRMessageRaw [(IqTag, BS.ByteString)] BS.ByteString
+	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
 	| SREnd
 	| SRRaw XmlNode
 	deriving Show
+
+data MessageType = Normal | Chat | Groupchat | Headline | Error deriving (Eq, Show)
+
+data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, Show)
+
+fromJid :: Jid -> BS.ByteString
+fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append` fromMaybe "" r
 
 data MessageBody
 	= MessageBody BS.ByteString
@@ -333,7 +343,7 @@ toInfoFeature (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"),
 toInfoFeature n = InfoFeatureRaw n
 
 data Bind
-	= Jid BS.ByteString
+	= BJid BS.ByteString
 	| Resource BS.ByteString
 	| BindRaw [XmlNode]
 	deriving Show
@@ -342,7 +352,7 @@ resource :: BS.ByteString -> XmlNode
 resource r = XmlNode (nullQ, "resource") [] [] [XmlCharData r]
 
 fromBind :: Bind -> [XmlNode]
-fromBind (Jid _) = error "fromBind: not implemented"
+fromBind (BJid _) = error "fromBind: not implemented"
 fromBind (Resource r) = [
 	XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
 		[XmlNode (nullQ, "required") [] [] [], resource r]
@@ -357,7 +367,7 @@ toRosterTag n = RTRaw n
 
 toBind :: [XmlNode] -> Bind
 toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
-	[XmlCharData cd]] = Jid cd
+	[XmlCharData cd]] = BJid cd
 toBind ns = BindRaw ns
 
 data Caps
@@ -434,9 +444,15 @@ showResponseToXmlNode (SRIq as (IqCapsQuery2 c n)) =
 showResponseToXmlNode (SRPresenceRaw i n c) =
 	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
-showResponseToXmlNode (SRMessageRaw as m) =
-	XmlNode (nullQ, "message") [] (map (first fromIqTag) as)
+showResponseToXmlNode (SRMessageRaw mt i j m) =
+	XmlNode (nullQ, "message") []
+		[t,((nullQ, "id"), i), ((nullQ, "to"), fromJid j)]
 		[XmlNode (nullQ, "body") [] [] [XmlCharData m]]
+	where
+	t = ((nullQ, "type") ,) $ case mt of
+		Normal -> "normal"
+		Chat -> "chat"
+		_ -> error "showResponseToXmlNode: not implemented yet"
 showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"

@@ -17,8 +17,11 @@ import Caps (profanityCaps)
 import System.IO.Unsafe
 import System.Environment
 
-sender, recipient, message :: BS.ByteString
-[sender, recipient, message] = map BSC.pack $ unsafePerformIO getArgs
+sender, message :: BS.ByteString
+recipient :: Jid
+(sender, recipient, message) = unsafePerformIO $ do
+	[s, r, m] <- getArgs
+	return (BSC.pack s, Jid (BSC.pack r) "localhost" Nothing, BSC.pack m)
 
 main :: IO ()
 main = do
@@ -87,9 +90,6 @@ mkWriteData (SRIq [(IqId, i), (IqType, "get"), (IqTo, to), (IqFrom, f)]
 	| to == sender `BS.append` "@localhost/profanity" = [
 		SRIq [(IqId, i), (IqTo, f), (IqType, "result")]
 			(IqCapsQuery2 profanityCaps n),
-		SRMessageRaw [
-			(IqId, "prof_3"),
-			(IqTo, recipient `BS.append` "@localhost"),
-			(IqType, "chat") ] message,
+		SRMessageRaw Chat "prof_3" recipient message,
 		SREnd ]
 mkWriteData _ = []
