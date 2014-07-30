@@ -273,10 +273,6 @@ session :: XmlNode
 session = XmlNode (nullQ, "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
 
-iqSession :: XmlNode
-iqSession = XmlNode (nullQ, "iq") []
-	[((nullQ, "id"), "_xmpp_session1"), ((nullQ, "type"), "set")] [session]
-
 data Identity
 	= Identity [(IdentityTag, BS.ByteString)]
 	| IdentityRaw XmlNode
@@ -410,6 +406,10 @@ showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
 showResponseToXmlNode SRResponseNull = drnToXmlNode
 showResponseToXmlNode (SRIq as (IqBind b)) =
 	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) $ fromBind b
+showResponseToXmlNode (SRIq as IqSession) =
+	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [session]
+showResponseToXmlNode (SRIq as (IqRoster [])) =
+	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [roster]
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -459,8 +459,8 @@ mkWriteData (SRFeatures fs)
 	| Rosterver Optional `elem` fs = [
 		SRIq [(IqId, "_xmpp_bind1"), (IqType, "set")] . IqBind $
 			Resource "profanity",
-		SRRaw iqSession,
-		SRRaw iqRoster,
+		SRIq [(IqId, "_xmpp_session1"), (IqType, "set")] IqSession,
+		SRIq [(IqId, "_xmpp_session1"), (IqType, "set")] $ IqRoster [],
 		SRRaw $ XmlNode
 			(nullQ, "presence") []
 			[((nullQ, "id"), "prof_presence_1")]
