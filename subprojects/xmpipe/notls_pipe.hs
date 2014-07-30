@@ -18,9 +18,11 @@ import qualified Data.ByteString.Base64 as B64
 import Papillon
 import Digest
 import Caps (profanityCaps, capsToXml, capsToQuery)
+import qualified Caps as CAPS
 
 import System.IO.Unsafe
 import System.Environment
+
 
 data SHandle s h = SHandle h
 
@@ -101,6 +103,7 @@ data ShowResponse
 	| SRSaslSuccess
 	| SRIq [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
+	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRRaw XmlNode
 	deriving Show
@@ -218,6 +221,9 @@ toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
 toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
 toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
 toCapsTag n = CTRaw n
+
+-- fromCapsTag :: CapsTag -> QName
+-- fromCapsTag
 
 data IqTag = IqId | IqType | IqTo | IqFrom | IqRaw QName deriving (Eq, Show)
 
@@ -357,6 +363,10 @@ toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
 	C $ map (first toCapsTag) as
 toCaps ns = CapsRaw ns
 
+-- fromCaps :: Caps -> [XmlNode]
+-- fromCaps 
+-- fromCaps (CapsRaw ns) = ns
+
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
 	_ atts) = SRStream $ map (first qnameToTag) atts
@@ -410,6 +420,9 @@ showResponseToXmlNode (SRIq as IqSession) =
 	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [session]
 showResponseToXmlNode (SRIq as (IqRoster [])) =
 	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) [roster]
+showResponseToXmlNode (SRPresenceRaw i n c) =
+	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
+--			[capsToXml profanityCaps "http://www.profanity.im"] ]
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -461,10 +474,9 @@ mkWriteData (SRFeatures fs)
 			Resource "profanity",
 		SRIq [(IqId, "_xmpp_session1"), (IqType, "set")] IqSession,
 		SRIq [(IqId, "_xmpp_session1"), (IqType, "set")] $ IqRoster [],
-		SRRaw $ XmlNode
-			(nullQ, "presence") []
-			[((nullQ, "id"), "prof_presence_1")]
-			[capsToXml profanityCaps "http://www.profanity.im"] ]
+		SRPresenceRaw
+			"prof_presence_1" "http://www.profanity.im" profanityCaps
+		]
 mkWriteData (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
 	drUserName = sender, drRealm = r, drPassword = "password",
 	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",

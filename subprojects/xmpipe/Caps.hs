@@ -11,14 +11,14 @@ import Data.ByteString.Base64
 
 import qualified Data.ByteString as BS
 
-data Caps = Caps [Identity] [BS.ByteString]
+data Caps = Caps [Identity] [BS.ByteString] deriving Show
 
 data Identity = Identity {
 	idCategory :: BS.ByteString,
 	idType :: Maybe BS.ByteString,
 	idLang :: Maybe BS.ByteString,
 	idName :: Maybe BS.ByteString }
-	deriving (Eq, Ord)
+	deriving (Eq, Ord, Show)
 
 serialize :: Identity -> BS.ByteString
 serialize i = BS.concat [
