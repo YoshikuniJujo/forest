@@ -96,6 +96,7 @@ data ShowResponse
 		charset :: BS.ByteString,
 		algorithm :: BS.ByteString }
 	| SRResponse DigestResponse
+	| SRResponseNull
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
 	| SRIq [(IqTag, BS.ByteString)] IqBody
@@ -227,6 +228,13 @@ toIqTag ((_, Just "jabber:client"), "to") = IqTo
 toIqTag ((_, Just "jabber:client"), "from") = IqFrom
 toIqTag n = IqRaw n
 
+fromIqTag :: IqTag -> QName
+fromIqTag IqId = (nullQ, "id")
+fromIqTag IqType = (nullQ, "type")
+fromIqTag IqTo = (nullQ, "to")
+fromIqTag IqFrom = (nullQ, "from")
+fromIqTag (IqRaw n) = n
+
 data DiscoTag = DTNode | DTRaw QName deriving (Eq, Show)
 
 toDiscoTag :: QName -> DiscoTag
@@ -235,6 +243,7 @@ toDiscoTag n = DTRaw n
 
 data IqBody
 	= IqBind Bind
+	| IqSession
 	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
 	| IqDiscoInfo
 	| IqDiscoInfoNode [(DiscoTag, BS.ByteString)]
@@ -259,6 +268,14 @@ toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 	(map toInfoFeature ns)
 toIqBody [] = IqBodyNull
 toIqBody ns = IqBodyRaw ns
+
+session :: XmlNode
+session = XmlNode (nullQ, "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
+
+iqSession :: XmlNode
+iqSession = XmlNode (nullQ, "iq") []
+	[((nullQ, "id"), "_xmpp_session1"), ((nullQ, "type"), "set")] [session]
 
 data Identity
 	= Identity [(IdentityTag, BS.ByteString)]
@@ -304,8 +321,24 @@ toInfoFeature n = InfoFeatureRaw n
 
 data Bind
 	= Jid BS.ByteString
+	| Resource BS.ByteString
 	| BindRaw [XmlNode]
 	deriving Show
+
+bind :: XmlNode
+bind = XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
+	[XmlNode (nullQ, "required") [] [] [], resource "profanity"]
+
+resource :: BS.ByteString -> XmlNode
+resource r = XmlNode (nullQ, "resource") [] [] [XmlCharData r]
+
+fromBind :: Bind -> [XmlNode]
+fromBind (Jid _) = error "fromBind: not implemented"
+fromBind (Resource r) = [
+	XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
+		[XmlNode (nullQ, "required") [] [] [], resource r]
+	]
+fromBind (BindRaw ns) = ns
 
 data RosterTag = RTVer | RTRaw QName deriving (Eq, Show)
 
@@ -374,6 +407,9 @@ showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
+showResponseToXmlNode SRResponseNull = drnToXmlNode
+showResponseToXmlNode (SRIq as (IqBind b)) =
+	XmlNode (nullQ, "iq") [] (map (first fromIqTag) as) $ fromBind b
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -421,9 +457,8 @@ mkWriteData (SRFeatures [Mechanisms ms])
 	| DigestMd5 `elem` ms = [SRAuth DigestMd5]
 mkWriteData (SRFeatures fs)
 	| Rosterver Optional `elem` fs = [
-		SRRaw $ XmlNode (nullQ, "iq") [] [
-			((nullQ, "id"), "_xmpp_bind1"),
-			((nullQ, "type"), "set") ] [bind],
+		SRIq [(IqId, "_xmpp_bind1"), (IqType, "set")] . IqBind $
+			Resource "profanity",
 		SRRaw iqSession,
 		SRRaw iqRoster,
 		SRRaw $ XmlNode
@@ -434,8 +469,7 @@ mkWriteData (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
 	drUserName = sender, drRealm = r, drPassword = "password",
 	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
 	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
-mkWriteData (SRChallengeRspauth _) = (:[]) . SRRaw $ XmlNode
-	(("", Nothing), "response") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+mkWriteData (SRChallengeRspauth _) = [SRResponseNull]
 mkWriteData SRSaslSuccess =
 	[SRXmlDecl, SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]]
 mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
@@ -466,24 +500,13 @@ drToXmlNode dr = XmlNode (("", Nothing), "response")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
 	[XmlCharData . encode . kvsToS $ responseToKvs True dr]
 
+drnToXmlNode :: XmlNode
+drnToXmlNode = XmlNode (nullQ, "response")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+
 
 nullQ :: (BS.ByteString, Maybe BS.ByteString)
 nullQ = ("", Nothing)
-
-bind :: XmlNode
-bind = XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
-	[XmlNode (nullQ, "required") [] [] [], resource]
-
-resource :: XmlNode
-resource = XmlNode (nullQ, "resource") [] [] [XmlCharData "profanity"]
-
-session :: XmlNode
-session = XmlNode (nullQ, "session")
-	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
-
-iqSession :: XmlNode
-iqSession = XmlNode (nullQ, "iq") []
-	[((nullQ, "id"), "_xmpp_session1"), ((nullQ, "type"), "set")] [session]
 
 iqRoster :: XmlNode
 iqRoster = XmlNode (nullQ, "iq") []
