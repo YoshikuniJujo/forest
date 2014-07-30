@@ -2,6 +2,8 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	handleP,
+	convert,
 	digestMd5,
 	SHandle(..),
 	input, output,
@@ -507,8 +509,12 @@ output :: HandleLike h => h -> Pipe ShowResponse () (HandleMonad h) ()
 output h = do
 	mn <- await
 	case mn of
-		Just n -> lift (hlPut h $
-			xmlString [showResponseToXmlNode n]) >> output h
+		Just n -> do
+			lift (hlPut h $ xmlString [showResponseToXmlNode n])
+			case n of
+				SREnd -> lift $ hlClose h
+				_ -> return ()
+			output h
 		_ -> return ()
 
 drToXmlNode :: DigestResponse -> XmlNode
