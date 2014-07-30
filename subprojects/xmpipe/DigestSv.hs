@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module DigestSv (
+	DigestResponse(..),
 	sampleDR,
 	responseToKvs,
 	) where

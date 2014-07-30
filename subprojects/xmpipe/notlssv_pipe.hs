@@ -16,6 +16,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
 import DigestSv
+import Papillon
 
 data SHandle s h = SHandle h
 
@@ -68,7 +69,7 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRStream [(Tag, BS.ByteString)]
 	| SRAuth [(Tag, BS.ByteString)]
-	| SRResponse BS.ByteString
+	| SRResponse BS.ByteString DigestResponse
 	| SRResponseNull
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
@@ -115,7 +116,19 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] [XmlCharData cd]) = SRResponse . (\(Right s) -> s) $ B64.decode cd
+	_ [] [XmlCharData cd]) = let
+		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
+		in
+		SRResponse (fromJust $ lookup "response" a) $ DR {
+			drUserName = fromJust $ lookup "username" a,
+			drRealm = fromJust $ lookup "realm" a,
+			drPassword = "password",
+			drCnonce = fromJust $ lookup "cnonce" a,
+			drNonce = fromJust $ lookup "nonce" a,
+			drNc = fromJust $ lookup "nc" a,
+			drQop = fromJust $ lookup "qop" a,
+			drDigestUri = fromJust $ lookup "digest-uri" a,
+			drCharset = fromJust $ lookup "charset" a }
 showResponse (XmlNode ((_, Just "jabber:client"), "iq")
 	_ as ns) = SRIq (map (first toTag) as) (map toIq ns)
 showResponse (XmlNode ((_, Just "jabber:client"), "presence")
@@ -157,12 +170,20 @@ processResponse h = do
 procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
 	h -> ShowResponse -> HandleMonad h ()
-procR h (SRResponse _) = do
-	let sret = B64.encode . ("rspauth=" `BS.append`) . fromJust . lookup "response" $
-		responseToKvs False sampleDR
+procR h (SRResponse r dr) = do
+	hlDebug h "critical" $ "REAL DR: "
+		`BS.append` BSC.pack (show r)
+		`BS.append` " "
+		`BS.append` BSC.pack (show dr)
+		`BS.append` "\n"
+	let	cret = fromJust . lookup "response" $ responseToKvs True dr
+		sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
+			. lookup "response" $ responseToKvs False dr -- sampleDR
 	hlPut h . xmlString . (: []) $ XmlNode (nullQ "challenge")
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
-	hlDebug h "critical" $ sret `BS.append` "\n"
+	hlDebug h "critical" $ "RESPONSE: " `BS.append` cret `BS.append` "\n"
+	hlDebug h "critical" $ "RSPAUTH: " `BS.append` sret `BS.append` "\n"
+	unless (r == cret) $ error "procR: bad authentication"
 procR h SRResponseNull = hlPut h . xmlString . (: []) $ XmlNode (nullQ "success")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 procR h (SRStream _) = do
@@ -170,7 +191,6 @@ procR h (SRStream _) = do
 	modify (+ 1)
 	hlDebug h "critical" . BSC.pack . (++ "\n") $ show n
 	when (n == 1) . hlPut h . xmlString $ begin' ++ capsFeatures
---	hlPut h $ xmlString begin'
 	return ()
 procR h (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) = do
 	hlPut h . xmlString . (: []) $ XmlNode (nullQ "iq") []
