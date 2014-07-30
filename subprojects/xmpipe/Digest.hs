@@ -50,6 +50,7 @@ data DigestResponse = DR {
 	drQop :: BS.ByteString,
 	drDigestUri :: BS.ByteString,
 	drCharset :: BS.ByteString }
+	deriving Show
 
 calcMd5 :: Bool -> DigestResponse -> BS.ByteString
 calcMd5 isClient = digestMd5 isClient

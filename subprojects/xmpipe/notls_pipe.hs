@@ -81,6 +81,7 @@ data ShowResponse
 		qop :: BS.ByteString,
 		charset :: BS.ByteString,
 		algorithm :: BS.ByteString }
+	| SRResponse DigestResponse
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
 	| SRIq [(IqTag, BS.ByteString)] IqBody
@@ -169,15 +170,6 @@ toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
 
 data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving (Eq, Show)
-
-selectMechanism :: Mechanism -> ShowResponse
-selectMechanism ScramSha1 = SRRaw $ XmlNode (("", Nothing), "auth")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
-	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-selectMechanism DigestMd5 = SRRaw $ XmlNode (("", Nothing), "auth")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
-	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
-selectMechanism (MechanismRaw n) = SRRaw n
 
 toMechanism :: XmlNode -> Mechanism
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
@@ -367,6 +359,7 @@ showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
+showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -405,21 +398,10 @@ mkWriteData (SRFeatures fs)
 			(nullQ, "presence") []
 			[((nullQ, "id"), "prof_presence_1")]
 			[capsToXml profanityCaps "http://www.profanity.im"] ]
-mkWriteData (SRChallenge r n q c _a) = let
-	dr = DR {	drUserName = sender,
-			drRealm = r,
-			drPassword = "password",
-			drCnonce = "00DEADBEEF00",
-			drNonce = n,
-			drNc = "00000001",
-			drQop = q,
-			drDigestUri = "xmpp/localhost",
-			drCharset = c }
-	ret = kvsToS $ responseToKvs True dr in
-	(: []) . SRRaw $ XmlNode
-		(("", Nothing), "response")
-		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-		[XmlCharData $ encode ret]
+mkWriteData (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
+	drUserName = sender, drRealm = r, drPassword = "password",
+	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
+	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
 mkWriteData (SRChallengeRspauth _) = (:[]) . SRRaw $ XmlNode
 	(("", Nothing), "response") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 mkWriteData SRSaslSuccess =
@@ -446,6 +428,11 @@ mkWriteData (SRIq [(IqId, i), (IqType, "get"), (IqTo, to), (IqFrom, f)]
 		SRRaw $ XmlEnd (("stream", Nothing), "stream") ]
 	where msg = XmlNode (("", Nothing), "body") [] [] [XmlCharData message]
 mkWriteData _ = []
+
+drToXmlNode :: DigestResponse -> XmlNode
+drToXmlNode dr = XmlNode (("", Nothing), "response")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
+	[XmlCharData . encode . kvsToS $ responseToKvs True dr]
 
 
 nullQ :: (BS.ByteString, Maybe BS.ByteString)
