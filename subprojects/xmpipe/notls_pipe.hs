@@ -1,8 +1,10 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
+
+import Debug.Trace
 
 import Control.Arrow
 import Control.Monad
-import "monads-tf" Control.Monad.Trans
+import "monads-tf" Control.Monad.State
 import Data.Maybe
 import Data.Pipe
 import Data.HandleLike
@@ -20,15 +22,27 @@ import Caps (profanityCaps, capsToXml, capsToQuery)
 import System.IO.Unsafe
 import System.Environment
 
+data SHandle s h = SHandle h
+
+instance HandleLike h => HandleLike (SHandle s h) where
+	type HandleMonad (SHandle s h) = StateT s (HandleMonad h)
+	type DebugLevel (SHandle s h) = DebugLevel h
+	hlPut (SHandle h) = lift . hlPut h
+	hlGet (SHandle h) = lift . hlGet h
+	hlClose (SHandle h) = lift $ hlClose h
+	hlDebug (SHandle h) = (lift .) . hlDebug h
+
 sender, recipient, message :: BS.ByteString
 [sender, recipient, message] = map BSC.pack $ unsafePerformIO getArgs
 
 main :: IO ()
 main = do
 	h <- connectTo "localhost" (PortNumber 54492)
-	xmpp h
+	xmpp (SHandle h) `evalStateT` ("" :: BS.ByteString)
 
-xmpp :: HandleLike h => h -> HandleMonad h ()
+xmpp :: (HandleLike h, MonadState (HandleMonad h),
+		BS.ByteString ~ StateType (HandleMonad h)) =>
+	h -> HandleMonad h ()
 xmpp h = voidM . runPipe $ input h =$= proc =$= output h
 
 input :: HandleLike h => h -> Pipe () ShowResponse (HandleMonad h) ()
@@ -371,17 +385,35 @@ output h = do
 			xmlString [showResponseToXmlNode n]) >> output h
 		_ -> return ()
 
-proc :: Monad m => Pipe ShowResponse ShowResponse m ()
+proc :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
+	Pipe ShowResponse ShowResponse m ()
 proc = do
 	yield SRXmlDecl
 	yield $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 	process
 
-process :: Monad m => Pipe ShowResponse ShowResponse m ()
+process :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
+	Pipe ShowResponse ShowResponse m ()
 process = do
 	mr <- await
 	case mr of
-		Just r -> mapM_ yield (mkWriteData r) >> process
+		Just r@(SRChallengeRspauth sa) -> do
+			sa0 <- lift get
+			unless (sa == sa0) $ error "process: bad server"
+			mapM_ yield $ mkWriteData $
+				trace (	"HERE: " ++ show sa ++ "\n" ++
+					"HERE: " ++ show sa0 ) r
+			process
+		Just r -> do
+			let ret = mkWriteData r
+			case ret of
+				[SRResponse dr] -> let
+					Just sret = lookup "response" $
+						responseToKvs False dr in
+					lift $ put sret
+				_ -> return ()
+			mapM_ yield ret
+			process
 		_ -> return ()
 
 mkWriteData :: ShowResponse -> [ShowResponse]
