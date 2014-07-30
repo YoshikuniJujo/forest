@@ -105,6 +105,7 @@ data ShowResponse
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
+	| SREnd
 	| SRRaw XmlNode
 	deriving Show
 
@@ -426,6 +427,7 @@ showResponseToXmlNode (SRIq as (IqCapsQuery v n)) =
 showResponseToXmlNode (SRPresenceRaw i n c) =
 	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
+showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
 showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
@@ -504,7 +506,7 @@ mkWriteData (SRIq [(IqId, i), (IqType, "get"), (IqTo, to), (IqFrom, f)]
 			((("", Nothing), "id"), "prof_3"),
 			((("", Nothing), "to"), recipient `BS.append` "@localhost"),
 			((("", Nothing), "type"), "chat") ] [msg],
-		SRRaw $ XmlEnd (("stream", Nothing), "stream") ]
+		SREnd ]
 	where msg = XmlNode (("", Nothing), "body") [] [] [XmlCharData message]
 mkWriteData _ = []
 
