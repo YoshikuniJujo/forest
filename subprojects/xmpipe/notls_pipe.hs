@@ -1,21 +1,20 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 
-import XmppClient
-
 import Control.Monad
 import "monads-tf" Control.Monad.State
+import Data.Maybe
 import Data.Pipe
 import Data.HandleLike
+import System.Environment
+import System.IO.Unsafe
 import Network
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
+import XmppClient
 import Digest
 import Caps (profanityCaps)
-
-import System.IO.Unsafe
-import System.Environment
 
 sender, message :: BS.ByteString
 recipient :: Jid
@@ -25,7 +24,7 @@ recipient :: Jid
 
 main :: IO ()
 main = do
-	h <- connectTo "localhost" (PortNumber 54492)
+	h <- connectTo "localhost" $ PortNumber 54492
 	xmpp (SHandle h) `evalStateT` ("" :: BS.ByteString)
 
 xmpp :: (HandleLike h, MonadState (HandleMonad h),
@@ -52,26 +51,20 @@ process = do
 		Just r -> do
 			let ret = mkWriteData r
 			case ret of
-				[SRResponse dr] -> let
-					Just sret = lookup "response" $
-						responseToKvs False dr in
-					lift $ put sret
+				[SRResponse dr] -> lift . put . fromJust .
+					lookup "response" $ responseToKvs False dr
 				_ -> return ()
 			mapM_ yield ret
 			process
 		_ -> return ()
 
 mkWriteData :: ShowResponse -> [ShowResponse]
-mkWriteData (SRFeatures [Mechanisms ms])
-	| DigestMd5 `elem` ms = [SRAuth DigestMd5]
-mkWriteData (SRFeatures fs)
-	| Rosterver Optional `elem` fs = [
-		SRIq Set "_xmpp_bind1" [] . IqBind $ Resource "profanity",
-		SRIq Set "_xmpp_session1" [] IqSession,
-		SRIq Set "_xmpp_roster1" [] $ IqRoster [],
-		SRPresenceRaw
-			"prof_presence_1" "http://www.profanity.im" profanityCaps
-		]
+mkWriteData (SRFeatures [Mechanisms ms]) | DigestMd5 `elem` ms = [SRAuth DigestMd5]
+mkWriteData (SRFeatures fs) | Rosterver Optional `elem` fs = [
+	SRIq Set "_xmpp_bind1" [] . IqBind $ Resource "profanity",
+	SRIq Set "_xmpp_session1" [] IqSession,
+	SRIq Get "_xmpp_roster1" [] $ IqRoster [],
+	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
 mkWriteData (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
 	drUserName = sender, drRealm = r, drPassword = "password",
 	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
@@ -83,8 +76,7 @@ mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
 	(: []) $ SRIq Get "prof_caps_2" [
 			(IqTo, sender `BS.append` "@localhost/profanity") ]
 		(IqCapsQuery v n)
-mkWriteData (SRIq Get i [(IqTo, to), (IqFrom, f)]
-	(IqDiscoInfoNode [(DTNode, n)]))
+mkWriteData (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
 	| to == sender `BS.append` "@localhost/profanity" = [
 		SRIq Result i [(IqTo, f)] (IqCapsQuery2 profanityCaps n),
 		SRMessageRaw Chat "prof_3" recipient message,
