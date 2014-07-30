@@ -2,6 +2,7 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	digestMd5,
 	SHandle(..),
 	input, output,
 	ShowResponse(..),
@@ -542,3 +543,34 @@ showBS = BSC.pack . (++ "\n") . show
 
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
+
+digestMd5 :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
+	BS.ByteString -> Pipe ShowResponse ShowResponse m ()
+digestMd5 sender = do
+	yield $ SRAuth DigestMd5
+	mr <- await
+	case mr of
+		Just r -> do
+			let ret = digestMd5Data sender r
+			case ret of
+				[SRResponse dr] -> lift . put . fromJust .
+					lookup "response" $ responseToKvs False dr
+				_ -> return ()
+			mapM_ yield ret
+		Nothing -> error "digestMd5: unexpected end of input"
+	mr' <- await
+	case mr' of
+		Just r'@(SRChallengeRspauth sa) -> do
+			sa0 <- lift get
+			unless (sa == sa0) $ error "process: bad server"
+			mapM_ yield $ digestMd5Data sender r'
+		Nothing -> error "digestMd5: unexpected end of input"
+		_ -> error "digestMd5: bad response"
+
+digestMd5Data :: BS.ByteString -> ShowResponse -> [ShowResponse]
+digestMd5Data sender (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
+	drUserName = sender, drRealm = r, drPassword = "password",
+	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
+	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
+digestMd5Data _ (SRChallengeRspauth _) = [SRResponseNull]
+digestMd5Data _ _ = []

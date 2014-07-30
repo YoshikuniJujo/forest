@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 
-import Control.Monad
 import "monads-tf" Control.Monad.State
-import Data.Maybe
 import Data.Pipe
 import Data.HandleLike
 import System.Environment
@@ -13,18 +11,10 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import XmppClient
-import Digest
 import Caps (profanityCaps)
 
-sender, message :: BS.ByteString
-recipient :: Jid
-(sender, recipient, message) = unsafePerformIO $ do
-	[s, r, m] <- getArgs
-	return (BSC.pack s, Jid (BSC.pack r) "localhost" Nothing, BSC.pack m)
-
 main :: IO ()
-main = do
-	h <- connectTo "localhost" $ PortNumber 54492
+main = connectTo "localhost" (PortNumber 54492) >>= \h ->
 	xmpp (SHandle h) `evalStateT` ("" :: BS.ByteString)
 
 xmpp :: (HandleLike h, MonadState (HandleMonad h),
@@ -33,52 +23,46 @@ xmpp h = voidM . runPipe $ input h =$= proc =$= output h
 
 proc :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
-proc = do
-	yield SRXmlDecl
-	yield $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
-	process
+proc = yield SRXmlDecl
+	>> yield (SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
+	>> process
 
 process :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
-process = do
-	mr <- await
-	case mr of
-		Just r@(SRChallengeRspauth sa) -> do
-			sa0 <- lift get
-			unless (sa == sa0) $ error "process: bad server"
-			mapM_ yield $ mkWriteData r
-			process
-		Just r -> do
-			let ret = mkWriteData r
-			case ret of
-				[SRResponse dr] -> lift . put . fromJust .
-					lookup "response" $ responseToKvs False dr
-				_ -> return ()
-			mapM_ yield ret
-			process
-		_ -> return ()
+process = await >>= \mr -> case mr of
+	Just (SRFeatures [Mechanisms ms])
+		| DigestMd5 `elem` ms -> digestMd5 sender >> process
+	Just SRSaslSuccess -> mapM_ yield [SRXmlDecl, begin] >> process
+	Just (SRFeatures fs) -> mapM_ yield binds >> process
+	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
+		-> yield (getCaps v n) >> process
+	Just (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
+		| to == sender `BS.append` "@localhost/profanity" -> do
+			yield $ resultCaps i f n
+			yield $ SRMessageRaw Chat "prof_3" recipient message
+			yield SREnd
+	Just _ -> process
+	_ -> return ()
 
-mkWriteData :: ShowResponse -> [ShowResponse]
-mkWriteData (SRFeatures [Mechanisms ms]) | DigestMd5 `elem` ms = [SRAuth DigestMd5]
-mkWriteData (SRFeatures fs) | Rosterver Optional `elem` fs = [
+begin :: ShowResponse
+begin = SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
+
+binds :: [ShowResponse]
+binds = [
 	SRIq Set "_xmpp_bind1" [] . IqBind $ Resource "profanity",
 	SRIq Set "_xmpp_session1" [] IqSession,
 	SRIq Get "_xmpp_roster1" [] $ IqRoster [],
 	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
-mkWriteData (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
-	drUserName = sender, drRealm = r, drPassword = "password",
-	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
-	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
-mkWriteData (SRChallengeRspauth _) = [SRResponseNull]
-mkWriteData SRSaslSuccess =
-	[SRXmlDecl, SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]]
-mkWriteData (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) =
-	(: []) $ SRIq Get "prof_caps_2" [
-			(IqTo, sender `BS.append` "@localhost/profanity") ]
-		(IqCapsQuery v n)
-mkWriteData (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
-	| to == sender `BS.append` "@localhost/profanity" = [
-		SRIq Result i [(IqTo, f)] (IqCapsQuery2 profanityCaps n),
-		SRMessageRaw Chat "prof_3" recipient message,
-		SREnd ]
-mkWriteData _ = []
+
+getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse
+getCaps v n = SRIq Get "prof_caps_2" [
+	(IqTo, sender `BS.append` "@localhost/profanity") ] $ IqCapsQuery v n
+
+resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> ShowResponse
+resultCaps i t n = SRIq Result i [(IqTo, t)] (IqCapsQuery2 profanityCaps n)
+
+sender, message :: BS.ByteString
+recipient :: Jid
+(sender, recipient, message) = unsafePerformIO $ do
+	[s, r, m] <- getArgs
+	return (BSC.pack s, Jid (BSC.pack r) "localhost" Nothing, BSC.pack m)
