@@ -43,10 +43,8 @@ xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ Int,
 		HandleLike h) =>
 	h -> HandleMonad h ()
 xmpp h = do
---	voidM . runPipe $ input h =$= makeP =$= output h
---	voidM . runPipe $ input h =$= makeP =$= (convert toXml =$= outputXml h)
-	voidM . runPipe $ input h =$= (makeP =$= convert toXml) =$= outputXml h
-	hlPut h "</stream:stream>"
+	voidM . runPipe $ input h =$= makeP =$= output h
+	hlPut h $ xmlString [XmlEnd (("stream", Nothing), "stream")]
 	hlClose h
 
 output :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
