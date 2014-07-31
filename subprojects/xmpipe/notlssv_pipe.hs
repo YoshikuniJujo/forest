@@ -144,7 +144,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "presence")
 showResponse n = SRRaw n
 
 data Tag
-	= To | Lang | Version | Mechanism | Id | Type
+	= Id | From | To | Version | Lang | Mechanism | Type
 	| TagRaw QName
 	deriving (Eq, Show)
 
@@ -157,14 +157,28 @@ toTag ((_, Just "jabber:client"), "id") = Id
 toTag ((_, Just "jabber:client"), "type") = Type
 toTag n = TagRaw n
 
+fromTag :: Tag -> QName
+fromTag Id = nullQ "id"
+fromTag From = nullQ "from"
+fromTag To = nullQ "to"
+fromTag Version = nullQ "version"
+fromTag Lang = (("xml", Nothing), "lang")
+fromTag Mechanism = nullQ "mechanism"
+fromTag Type = nullQ "type"
+fromTag (TagRaw n) = n
+
 toXml :: ShowResponse -> XmlNode
 toXml SRXmlDecl = XmlDecl (1, 0)
+toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
+	[	("", "jabber:client"),
+		("stream", "http://etherx.jabber.org/streams") ]
+	(map (first fromTag) as)
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
 makeSR :: Int -> ShowResponse -> [ShowResponse]
-makeSR 0 (SRStream _) = SRXmlDecl : begin ++ map SRRaw authFeatures
-makeSR 1 (SRStream _) = SRXmlDecl : begin' ++ map SRRaw capsFeatures
+makeSR 0 (SRStream _) = SRXmlDecl : begin : map SRRaw authFeatures
+makeSR 1 (SRStream _) = SRXmlDecl : begin' : map SRRaw capsFeatures
 makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
@@ -247,20 +261,13 @@ voidM = (>> return ())
 nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
 
-begin, begin' :: [ShowResponse]
+begin, begin' :: ShowResponse
 begin  = mkBegin "83e074ac-c014-432e-9f21-d06e73f5777e"
 begin' = mkBegin "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
-mkBegin :: BS.ByteString -> [ShowResponse]
-mkBegin i = [
-	SRRaw $ XmlStart (("stream", Nothing), "stream")
-		[	("", "jabber:client"),
-			("stream", "http://etherx.jabber.org/streams") ]
-		[	(nullQ "id", i),
-			(nullQ "from", "localhost"),
-			(nullQ "version", "1.0"),
-			((("xml", Nothing), "lang"), "en") ]
-	]
+mkBegin :: BS.ByteString -> ShowResponse
+mkBegin i = SRStream [
+	(Id, i), (From, "localhost"), (Version, "1.0"), (Lang, "en") ]
 
 authFeatures :: [XmlNode]
 authFeatures = [XmlNode (("stream", Nothing), "features") [] [] [mechanisms]]
