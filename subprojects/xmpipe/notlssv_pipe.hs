@@ -18,6 +18,8 @@ import qualified Data.ByteString.Base64 as B64
 import DigestSv
 import Papillon
 
+import Debug.Trace
+
 data SHandle s h = SHandle h
 
 instance HandleLike h => HandleLike (SHandle s h) where
@@ -41,14 +43,20 @@ xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ Int,
 		HandleLike h) =>
 	h -> HandleMonad h ()
 xmpp h = do
-	voidM . runPipe $ input h =$= makeP =$= outputXml h
---	voidM . runPipe $ input h =$= process h =$= printP h
+--	voidM . runPipe $ input h =$= makeP =$= output h
+--	voidM . runPipe $ input h =$= makeP =$= (convert toXml =$= outputXml h)
+	voidM . runPipe $ input h =$= (makeP =$= convert toXml) =$= outputXml h
 	hlPut h "</stream:stream>"
 	hlClose h
+
+output :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
+	HandleLike h) => h -> Pipe ShowResponse () (HandleMonad h) ()
+output h = convert toXml =$= outputXml h
 
 input :: HandleLike h => h -> Pipe () ShowResponse (HandleMonad h) ()
 input h = handleP h
 	=$= xmlEvent
+	=$= checkP h
 	=$= convert fromJust
 	=$= xmlPipe
 	=$= convert showResponse
@@ -150,22 +158,17 @@ toTag ((_, Just "jabber:client"), "id") = Id
 toTag ((_, Just "jabber:client"), "type") = Type
 toTag n = TagRaw n
 
-process :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
-		HandleLike h) =>
-	h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
-process h = do
-	mr <- await
-	case mr of
-		Just r -> lift (procR h r) >> yield r >> process h
-		_ -> return ()
+toXml :: ShowResponse -> XmlNode
+toXml (SRRaw n) = n
+toXml _ = error "toXml: not implemented"
 
-makeR :: Int -> ShowResponse -> [XmlNode]
-makeR 0 (SRStream _) = begin ++ authFeatures
-makeR 1 (SRStream _) = begin' ++ capsFeatures
-makeR _ (SRStream _) = error "makeR: not implemented"
-makeR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = challengeXml
-makeR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
-makeR _ (SRResponse r dr) = let
+makeSR :: Int -> ShowResponse -> [ShowResponse]
+makeSR 0 (SRStream _) = map SRRaw $ begin ++ authFeatures
+makeSR 1 (SRStream _) = map SRRaw $ begin' ++ capsFeatures
+makeSR _ (SRStream _) = error "makeR: not implemented"
+makeSR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
+makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
+makeSR _ (SRResponse r dr) = map SRRaw $ let
 	cret = fromJust . lookup "response" $ responseToKvs True dr
 	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
 		. lookup "response" $ responseToKvs False dr in
@@ -173,37 +176,38 @@ makeR _ (SRResponse r dr) = let
 		(: []) $ XmlNode (nullQ "challenge")
 			[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
 			[XmlCharData sret]
-makeR _ SRResponseNull = (: []) $
+makeSR _ SRResponseNull = map SRRaw $ (: []) $
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-makeR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
-	(: []) $ XmlNode (nullQ "iq") []
+makeSR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
+	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
 		[(nullQ "id", i), (nullQ "type", "result")]
 		[XmlNode (nullQ "jid") [] []
 			[XmlCharData "yoshikuni@localhost/profanity"]]
-makeR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
-	(: []) $ XmlNode (nullQ "iq") []
+makeSR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
+	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
 		[	(nullQ "id", i),
 			(nullQ "type", "result"),
 			(nullQ "to", "yoshikuni@localhost/profanity")
 			] []
-makeR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
-	(: []) $ XmlNode (nullQ "iq") []
+makeSR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
+	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
 		[	(nullQ "id", i),
 			(nullQ "type", "result"),
 			(nullQ "to", "yoshikuni@localhost/profanity")
 			]
 		[XmlNode (nullQ "query") [("", "jabber:iq:roster")]
 			[(nullQ "ver", "1")] []]
-makeR _ (SRPresence _ _) =
-	(: []) $ XmlNode (nullQ "message") []
+makeSR _ (SRPresence _ _) =
+	map SRRaw $ (: []) $ XmlNode (nullQ "message") []
 		[	(nullQ "type", "chat"),
 			(nullQ "to", "yoshikuni@localhost"),
 			(nullQ "from", "yoshio@localhost/profanity"),
 			(nullQ "id", "hoge") ]
 		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
-makeR _ _ = []
+makeSR _ _ = []
 
-makeP :: (MonadState m, StateType m ~ XmppState) => Pipe ShowResponse XmlNode m ()
+makeP :: (MonadState m, StateType m ~ XmppState) =>
+	Pipe ShowResponse ShowResponse m ()
 makeP = do
 	n <- lift get
 	mr <- await
@@ -212,22 +216,18 @@ makeP = do
 			case r of
 				SRStream _ -> lift $ modify (+ 1)
 				_ -> return ()
-			mapM_ yield $ makeR n r
-			makeP
+			mapM_ yield $ makeSR (trace "here" n) r
+			trace (show $ makeSR n r) makeP
 		_ -> return ()
 
 outputXml :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) => h -> Pipe XmlNode () (HandleMonad h) ()
-outputXml h = await >>= \mx -> case mx of
-	Just x -> lift (hlPut h $ xmlString [x]) >> outputXml h
-	_ -> return ()
-
-procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
-		HandleLike h) =>
-	h -> ShowResponse -> HandleMonad h ()
-procR h r@(SRStream _) =
-	get >>= \n -> modify (+ 1) >> hlPut h (xmlString $ makeR n r)
-procR h r = hlPut h . xmlString $ makeR 0 r
+outputXml h = do
+	mx <- await
+	case trace (show mx) mx of
+		Just x -> lift (hlPut h $ xmlString [x]) >>
+			outputXml (trace "HERE" h)
+		_ -> return ()
 
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 handleP h = do
