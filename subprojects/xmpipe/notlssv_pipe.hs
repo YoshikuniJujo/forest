@@ -41,7 +41,8 @@ xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ Int,
 		HandleLike h) =>
 	h -> HandleMonad h ()
 xmpp h = do
-	voidM . runPipe $ input h =$= process h =$= printP h
+	voidM . runPipe $ input h =$= makeP =$= outputXml h
+--	voidM . runPipe $ input h =$= process h =$= printP h
 	hlPut h "</stream:stream>"
 	hlClose h
 
@@ -201,6 +202,25 @@ makeR _ (SRPresence _ _) =
 			(nullQ "id", "hoge") ]
 		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
 makeR _ _ = []
+
+makeP :: (MonadState m, StateType m ~ XmppState) => Pipe ShowResponse XmlNode m ()
+makeP = do
+	n <- lift get
+	mr <- await
+	case mr of
+		Just r -> do
+			case r of
+				SRStream _ -> lift $ modify (+ 1)
+				_ -> return ()
+			mapM_ yield $ makeR n r
+			makeP
+		_ -> return ()
+
+outputXml :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
+		HandleLike h) => h -> Pipe XmlNode () (HandleMonad h) ()
+outputXml h = await >>= \mx -> case mx of
+	Just x -> lift (hlPut h $ xmlString [x]) >> outputXml h
+	_ -> return ()
 
 procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
