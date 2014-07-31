@@ -38,13 +38,13 @@ instance PipeClass Pipe where
 	runPipe (Make _ m) = runPipe =<< m
 	runPipe _ = return Nothing
 
+	p =$= Make f m = Make f $ (p =$=) `liftM` m
 	p =$= Done f r = Done (finalizer p >> f) r
 	p =$= Ready f o p' = Ready f o $ p =$= p'
 	Need f n =$= p = Need f $ \i -> n i =$= p
 	Ready _ o p =$= Need _ n = p =$= n (Just o)
 	Done f r =$= Need f' n =
 		Done (return ()) r =$= Make f' (f >> return (n Nothing))
-	p =$= Make f m = Make f $ (p =$=) `liftM` m
 	Make f m =$= p = Make f $ (=$= p) `liftM` m
 
 	yield x = Ready (return ()) x (return ())
