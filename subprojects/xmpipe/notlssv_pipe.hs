@@ -74,7 +74,8 @@ xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
-	= SRStream [(Tag, BS.ByteString)]
+	= SRXmlDecl
+	| SRStream [(Tag, BS.ByteString)]
 	| SRAuth [(Tag, BS.ByteString)]
 	| SRResponse BS.ByteString DigestResponse
 	| SRResponseNull
@@ -157,12 +158,13 @@ toTag ((_, Just "jabber:client"), "type") = Type
 toTag n = TagRaw n
 
 toXml :: ShowResponse -> XmlNode
+toXml SRXmlDecl = XmlDecl (1, 0)
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
 makeSR :: Int -> ShowResponse -> [ShowResponse]
-makeSR 0 (SRStream _) = map SRRaw $ begin ++ authFeatures
-makeSR 1 (SRStream _) = map SRRaw $ begin' ++ capsFeatures
+makeSR 0 (SRStream _) = SRXmlDecl : begin ++ map SRRaw authFeatures
+makeSR 1 (SRStream _) = SRXmlDecl : begin' ++ map SRRaw capsFeatures
 makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
@@ -245,14 +247,13 @@ voidM = (>> return ())
 nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
 
-begin, begin' :: [XmlNode]
+begin, begin' :: [ShowResponse]
 begin  = mkBegin "83e074ac-c014-432e-9f21-d06e73f5777e"
 begin' = mkBegin "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
-mkBegin :: BS.ByteString -> [XmlNode]
+mkBegin :: BS.ByteString -> [ShowResponse]
 mkBegin i = [
-	XmlDecl (1, 0),
-	XmlStart (("stream", Nothing), "stream")
+	SRRaw $ XmlStart (("stream", Nothing), "stream")
 		[	("", "jabber:client"),
 			("stream", "http://etherx.jabber.org/streams") ]
 		[	(nullQ "id", i),
