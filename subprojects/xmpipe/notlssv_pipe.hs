@@ -153,45 +153,37 @@ process :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
 	h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
 process h = do
-	lift . hlPut h . xmlString $ begin ++ authFeatures
-	lift . hlPut h . xmlString $ challengeXml
-	processResponse h
-
-processResponse ::
-	(MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
-		HandleLike h) =>
-	h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
-processResponse h = do
 	mr <- await
 	case mr of
-		Just r -> lift (procR h r) >> yield r >> processResponse h
+		Just r -> lift (procR h r) >> yield r >> process h
 		_ -> return ()
+
+makeR :: Int -> ShowResponse -> [XmlNode]
+makeR 0 (SRStream _) = begin ++ authFeatures
+makeR 1 (SRStream _) = begin' ++ capsFeatures
+makeR _ (SRStream _) = error "makeR: not implemented"
+makeR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = challengeXml
+makeR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
+makeR _ (SRResponse r dr) = let
+	cret = fromJust . lookup "response" $ responseToKvs True dr
+	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
+		. lookup "response" $ responseToKvs False dr in
+	if (r /= cret) then error "procR: bad authentication" else
+		(: []) $ XmlNode (nullQ "challenge")
+			[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
+			[XmlCharData sret]
+makeR _ SRResponseNull = (: []) $
+	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+makeR _ _ = error "makeR: not implemented"
 
 procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
 	h -> ShowResponse -> HandleMonad h ()
-procR h (SRResponse r dr) = do
-	hlDebug h "critical" $ "REAL DR: "
-		`BS.append` BSC.pack (show r)
-		`BS.append` " "
-		`BS.append` BSC.pack (show dr)
-		`BS.append` "\n"
-	let	cret = fromJust . lookup "response" $ responseToKvs True dr
-		sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
-			. lookup "response" $ responseToKvs False dr -- sampleDR
-	hlPut h . xmlString . (: []) $ XmlNode (nullQ "challenge")
-		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
-	hlDebug h "critical" $ "RESPONSE: " `BS.append` cret `BS.append` "\n"
-	hlDebug h "critical" $ "RSPAUTH: " `BS.append` sret `BS.append` "\n"
-	unless (r == cret) $ error "procR: bad authentication"
-procR h SRResponseNull = hlPut h . xmlString . (: []) $ XmlNode (nullQ "success")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-procR h (SRStream _) = do
-	n <- get
-	modify (+ 1)
-	hlDebug h "critical" . BSC.pack . (++ "\n") $ show n
-	when (n == 1) . hlPut h . xmlString $ begin' ++ capsFeatures
-	return ()
+procR h r@(SRStream _) =
+	get >>= \n -> modify (+ 1) >> hlPut h (xmlString $ makeR n r)
+procR h r@(SRAuth [(Mechanism, "DIGEST-MD5")]) = hlPut h . xmlString $ makeR 0 r
+procR h r@(SRResponse _ _) = hlPut h . xmlString $ makeR 0 r
+procR h r@SRResponseNull = hlPut h . xmlString $ makeR 0 r
 procR h (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) = do
 	hlPut h . xmlString . (: []) $ XmlNode (nullQ "iq") []
 		[(nullQ "id", i), (nullQ "type", "result")]
@@ -239,22 +231,16 @@ nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
 
 begin, begin' :: [XmlNode]
-begin = [
+begin  = mkBegin "83e074ac-c014-432e-9f21-d06e73f5777e"
+begin' = mkBegin "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
+
+mkBegin :: BS.ByteString -> [XmlNode]
+mkBegin i = [
 	XmlDecl (1, 0),
 	XmlStart (("stream", Nothing), "stream")
 		[	("", "jabber:client"),
 			("stream", "http://etherx.jabber.org/streams") ]
-		[	(nullQ "id", "83e074ac-c014-432e-9f21-d06e73f5777e"),
-			(nullQ "from", "localhost"),
-			(nullQ "version", "1.0"),
-			((("xml", Nothing), "lang"), "en") ]
-	]
-begin' = [
-	XmlDecl (1, 0),
-	XmlStart (("stream", Nothing), "stream")
-		[	("", "jabber:client"),
-			("stream", "http://etherx.jabber.org/streams") ]
-		[	(nullQ "id", "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"),
+		[	(nullQ "id", i),
 			(nullQ "from", "localhost"),
 			(nullQ "version", "1.0"),
 			((("xml", Nothing), "lang"), "en") ]
