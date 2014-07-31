@@ -174,6 +174,17 @@ makeR _ (SRResponse r dr) = let
 			[XmlCharData sret]
 makeR _ SRResponseNull = (: []) $
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+makeR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
+	(: []) $ XmlNode (nullQ "iq") []
+		[(nullQ "id", i), (nullQ "type", "result")]
+		[XmlNode (nullQ "jid") [] []
+			[XmlCharData "yoshikuni@localhost/profanity"]]
+makeR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
+	(: []) $ XmlNode (nullQ "iq") []
+		[	(nullQ "id", i),
+			(nullQ "type", "result"),
+			(nullQ "to", "yoshikuni@localhost/profanity")
+			] []
 makeR _ _ = error "makeR: not implemented"
 
 procR :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
@@ -184,17 +195,10 @@ procR h r@(SRStream _) =
 procR h r@(SRAuth [(Mechanism, "DIGEST-MD5")]) = hlPut h . xmlString $ makeR 0 r
 procR h r@(SRResponse _ _) = hlPut h . xmlString $ makeR 0 r
 procR h r@SRResponseNull = hlPut h . xmlString $ makeR 0 r
-procR h (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) = do
-	hlPut h . xmlString . (: []) $ XmlNode (nullQ "iq") []
-		[(nullQ "id", i), (nullQ "type", "result")]
-		[XmlNode (nullQ "jid") [] [] [XmlCharData "yoshikuni@localhost/profanity"]]
-procR h (SRIq [(Id, i), (Type, "set")] [IqSession]) = do
-	hlPut h . xmlString . (: []) $ XmlNode (nullQ "iq") []
-		[	(nullQ "id", i),
-			(nullQ "type", "result"),
-			(nullQ "to", "yoshikuni@localhost/profanity")
-			]
-		[]
+procR h r@(SRIq [(Id, _), (Type, "set")] [IqBindReq Required (Resource _n)]) =
+	hlPut h . xmlString $ makeR 0 r
+procR h r@(SRIq [(Id, _), (Type, "set")] [IqSession]) =
+	hlPut h . xmlString $ makeR 0 r
 procR h (SRIq [(Id, i), (Type, "get")] [IqRoster]) = do
 	hlPut h . xmlString . (: []) $ XmlNode (nullQ "iq") []
 		[	(nullQ "id", i),
