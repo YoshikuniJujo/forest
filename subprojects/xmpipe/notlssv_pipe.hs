@@ -98,12 +98,39 @@ data ShowResponse
 	| SRStream [(Tag, BS.ByteString)]
 	| SRFeatures [Feature]
 	| SRAuth Mechanism
+	| SRChallenge Challenge
 	| SRResponse BS.ByteString DigestResponse
 	| SRResponseNull
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
+
+data Challenge
+	= Challenge {
+		crealm :: BS.ByteString,
+		cnonce :: UUID }
+	| ChallengeRaw [XmlNode]
+	deriving Show
+
+fromChallenge :: Challenge -> [XmlNode]
+fromChallenge c@Challenge{} = (: []) . XmlCharData . B64.encode $ BS.concat [
+	"realm=", BSC.pack . show $ crealm c, ",",
+	"nonce=", BSC.pack . show . toASCIIBytes $ cnonce c, ",",
+	"qop=\"auth\",",
+	"charset=utf-8,",
+	"algorithm=md5-sess" ]
+fromChallenge (ChallengeRaw ns) = ns
+
+{-
+challenge :: UUID -> BS.ByteString
+challenge u = B64.encode $ BS.concat [
+	"realm=\"localhost\",",
+	"nonce=", BSC.pack . show $ toASCIIBytes u, ",",
+	"qop=\"auth\",",
+	"charset=utf-8,",
+	"algorithm=md5-sess" ]
+	-}
 
 data Feature
 	= Mechanisms [Mechanism]
@@ -251,6 +278,8 @@ toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 	(map (first fromTag) as)
 toXml (SRFeatures fs) = XmlNode (("stream", Nothing), "features") [] [] $
 	map fromFeature fs
+toXml (SRChallenge c) = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge c
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
@@ -274,7 +303,8 @@ makeSR (1, u) (SRStream _) = [
 		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
 	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
 makeSR _ (SRStream _) = error "makeR: not implemented"
-makeSR (_, u) (SRAuth DigestMd5) = [challengeXml u]
+makeSR (_, u) (SRAuth DigestMd5) =
+	(: []) $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
 makeSR _ (SRResponse r dr) = map SRRaw $ let
 	cret = fromJust . lookup "response" $ responseToKvs True dr
@@ -358,17 +388,3 @@ nullQ = (("", Nothing) ,)
 
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
-
-challengeXml :: UUID -> ShowResponse
-challengeXml u = SRRaw $ XmlNode
-	(nullQ "challenge") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-	[XmlCharData $ challenge u]
-
-challenge :: UUID -> BS.ByteString
-challenge u = B64.encode $ BS.concat [
-	"realm=\"localhost\",",
-	"nonce=", BSC.pack . show $ toASCIIBytes u, ",",
---	"nonce=\"90972262-92fe-451d-9526-911f5b8f6e34\",",
-	"qop=\"auth\",",
-	"charset=utf-8,",
-	"algorithm=md5-sess" ]
