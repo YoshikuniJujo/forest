@@ -60,8 +60,7 @@ nextUuid = do
 	return u
 
 xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
-		HandleLike h) =>
-	h -> HandleMonad h ()
+		HandleLike h) => h -> HandleMonad h ()
 xmpp h = do
 	voidM . runPipe $ input h =$= makeP =$= output h
 	hlPut h $ xmlString [XmlEnd (("stream", Nothing), "stream")]
@@ -100,11 +99,27 @@ data ShowResponse
 	| SRAuth Mechanism
 	| SRChallenge Challenge
 	| SRResponse BS.ByteString DigestResponse
+	| SRChallengeRspauth DigestResponse
 	| SRResponseNull
+	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
+	| SRMessage MessageType [(QName, BS.ByteString)] [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
+
+data MessageType
+	= Normal | Chat | Groupchat | Headline | MTError deriving (Eq, Show)
+
+fromMessageType :: MessageType -> BS.ByteString
+fromMessageType Normal = "normal"
+fromMessageType Chat = "chat"
+fromMessageType Groupchat = "groupchat"
+fromMessageType Headline = "headline"
+fromMessageType MTError = "error"
+
+messageTypeToAtt :: MessageType -> (QName, BS.ByteString)
+messageTypeToAtt = (nullQ "type" ,) . fromMessageType
 
 data Challenge
 	= Challenge {
@@ -121,16 +136,6 @@ fromChallenge c@Challenge{} = (: []) . XmlCharData . B64.encode $ BS.concat [
 	"charset=utf-8,",
 	"algorithm=md5-sess" ]
 fromChallenge (ChallengeRaw ns) = ns
-
-{-
-challenge :: UUID -> BS.ByteString
-challenge u = B64.encode $ BS.concat [
-	"realm=\"localhost\",",
-	"nonce=", BSC.pack . show $ toASCIIBytes u, ",",
-	"qop=\"auth\",",
-	"charset=utf-8,",
-	"algorithm=md5-sess" ]
-	-}
 
 data Feature
 	= Mechanisms [Mechanism]
@@ -280,6 +285,16 @@ toXml (SRFeatures fs) = XmlNode (("stream", Nothing), "features") [] [] $
 	map fromFeature fs
 toXml (SRChallenge c) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge c
+toXml (SRChallengeRspauth dr) = let
+	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
+		. lookup "response" $ responseToKvs False dr in
+	XmlNode (nullQ "challenge")
+		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
+toXml SRSuccess =
+	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+toXml (SRMessage t as ns) = XmlNode (nullQ "message") []
+	(messageTypeToAtt t : as)
+	ns
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
@@ -306,16 +321,12 @@ makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR (_, u) (SRAuth DigestMd5) =
 	(: []) $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
-makeSR _ (SRResponse r dr) = map SRRaw $ let
-	cret = fromJust . lookup "response" $ responseToKvs True dr
-	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
-		. lookup "response" $ responseToKvs False dr in
-	if (r /= cret) then error "procR: bad authentication" else
-		(: []) $ XmlNode (nullQ "challenge")
-			[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-			[XmlCharData sret]
-makeSR _ SRResponseNull = map SRRaw $ (: []) $
-	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+makeSR _ (SRResponse r dr) = let
+	cret = fromJust . lookup "response" $ responseToKvs True dr in
+	if (r /= cret)
+		then error "procR: bad authentication"
+		else [SRChallengeRspauth dr]
+makeSR _ SRResponseNull = [SRSuccess]
 makeSR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
 	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
 		[(nullQ "id", i), (nullQ "type", "result")]
@@ -335,10 +346,8 @@ makeSR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
 			]
 		[XmlNode (nullQ "query") [("", "jabber:iq:roster")]
 			[(nullQ "ver", "1")] []]
-makeSR _ (SRPresence _ _) =
-	map SRRaw $ (: []) $ XmlNode (nullQ "message") []
-		[	(nullQ "type", "chat"),
-			(nullQ "to", "yoshikuni@localhost"),
+makeSR _ (SRPresence _ _) = (: []) $ SRMessage Chat
+		[	(nullQ "to", "yoshikuni@localhost"),
 			(nullQ "from", "yoshio@localhost/profanity"),
 			(nullQ "id", "hoge") ]
 		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
