@@ -103,10 +103,25 @@ data ShowResponse
 	| SRResponseNull
 	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
+	| SRIqRaw IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
+
+data Query
+	= JidResult Jid
+	| RosterResult BS.ByteString [XmlNode]
+	| QueryNull
+	| QueryRaw [XmlNode]
+	deriving Show
+
+fromQuery :: Query -> [XmlNode]
+fromQuery (JidResult j) = [XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
+fromQuery (RosterResult v ns) =
+	[XmlNode (nullQ "query") [("", "jabber:iq:roster")] [(nullQ "ver", v)] ns]
+fromQuery QueryNull = []
+fromQuery (QueryRaw ns) = ns
 
 data MessageType
 	= Normal | Chat | Groupchat | Headline | MTError deriving (Eq, Show)
@@ -120,6 +135,17 @@ fromMessageType MTError = "error"
 
 messageTypeToAtt :: MessageType -> (QName, BS.ByteString)
 messageTypeToAtt = (nullQ "type" ,) . fromMessageType
+
+data IqType = Get | Set | Result | ITError deriving (Eq, Show)
+
+fromIqType :: IqType -> BS.ByteString
+fromIqType Get = "get"
+fromIqType Set = "set"
+fromIqType Result = "result"
+fromIqType ITError = "error"
+
+iqTypeToAtt :: IqType -> (QName, BS.ByteString)
+iqTypeToAtt = (nullQ "type" ,) . fromIqType
 
 data Challenge
 	= Challenge {
@@ -292,6 +318,12 @@ toXml (SRChallengeRspauth dr) = let
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml SRSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+toXml (SRIqRaw tp i Nothing to q) = XmlNode (nullQ "iq") []
+	(catMaybes [
+		Just (nullQ "id", i),
+		Just $ iqTypeToAtt tp,
+		(nullQ "to" ,) . fromJid <$> to ]) 
+	(fromQuery q)
 toXml (SRMessage tp i fr to ns) = XmlNode (nullQ "message") [] [
 	messageTypeToAtt tp,
 	(nullQ "from", fromJid fr),
@@ -305,9 +337,10 @@ data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, S
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = BS.concat [a, "@", d] `BS.append` maybe "" ("/" `BS.append`) r
 
-sender, receiver :: Jid
+sender, receiver, receiver' :: Jid
 sender = Jid "yoshio" "localhost" (Just "profanity")
 receiver = Jid "yoshikuni" "localhost" Nothing
+receiver' = Jid "yoshikuni" "localhost" (Just "profanity")
 
 caps :: Feature
 caps = Caps {
@@ -339,24 +372,11 @@ makeSR _ (SRResponse r dr) = let
 		else [SRChallengeRspauth dr]
 makeSR _ SRResponseNull = [SRSuccess]
 makeSR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
-	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
-		[(nullQ "id", i), (nullQ "type", "result")]
-		[XmlNode (nullQ "jid") [] []
-			[XmlCharData "yoshikuni@localhost/profanity"]]
+	(: []) $ SRIqRaw Result i Nothing Nothing $ JidResult receiver'
 makeSR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
-	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
-		[	(nullQ "id", i),
-			(nullQ "type", "result"),
-			(nullQ "to", "yoshikuni@localhost/profanity")
-			] []
+	[SRIqRaw Result i Nothing (Just receiver') QueryNull]
 makeSR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
-	map SRRaw $ (: []) $ XmlNode (nullQ "iq") []
-		[	(nullQ "id", i),
-			(nullQ "type", "result"),
-			(nullQ "to", "yoshikuni@localhost/profanity")
-			]
-		[XmlNode (nullQ "query") [("", "jabber:iq:roster")]
-			[(nullQ "ver", "1")] []]
+	(: []) $ SRIqRaw Result i Nothing (Just receiver') $ RosterResult "1" []
 makeSR _ (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender receiver
 		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
 makeSR _ _ = []
