@@ -37,29 +37,24 @@ main = do
 	c <- readCertificateChain ["localhost.sample_crt"]
 	soc <- listenOn $ PortNumber 5222
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	void . (`runStateT` g0) . forever $ do
-		(h, _, _) <- lift $ accept soc
-		uuids <- randoms <$> lift getStdGen
-		g <- StateT $ return . cprgFork
-		liftIO . hlPut h . xmlString $ begin ++ tlsFeatures
-		voidM . liftIO . runPipe $ handleP h
-			=$= xmlEvent
-			=$= convert fromJust
-			=$= (xmlBegin >>= xmlNodeUntil isStarttls)
-			=$= checkP h
-			=$= toList
-		liftIO . hlPut h $ xmlString proceed
-		liftIO . (`run` g) $ do
-			p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
-				Nothing
-			(`evalStateT` initXmppState uuids) . xmpp $ SHandle p
-	{-
 	forever $ do
-		(h, _, _) <- accept socket
-		uuids <- randoms <$> getStdGen
-		voidM . forkIO . (`evalStateT` initXmppState uuids)
-			. xmpp $ SHandle h
-			-}
+		(h, _, _) <- accept soc
+		voidM . forkIO . (`evalStateT` g0) $ do
+			uuids <- randoms <$> lift getStdGen
+			g <- StateT $ return . cprgFork
+			liftIO . hlPut h . xmlString $ begin ++ tlsFeatures
+			voidM . liftIO . runPipe $ handleP h
+				=$= xmlEvent
+				=$= convert fromJust
+				=$= (xmlBegin >>= xmlNodeUntil isStarttls)
+				=$= checkP h
+				=$= toList
+			liftIO . hlPut h $ xmlString proceed
+			liftIO . (`run` g) $ do
+				p <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"]
+					[(k, c)] Nothing
+				(`evalStateT` initXmppState uuids) .
+					xmpp $ SHandle p
 
 xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) => h -> HandleMonad h ()
