@@ -104,7 +104,7 @@ data ShowResponse
 	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
-	| SRMessage MessageType [(QName, BS.ByteString)] [XmlNode]
+	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
 
@@ -292,11 +292,22 @@ toXml (SRChallengeRspauth dr) = let
 		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml SRSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-toXml (SRMessage t as ns) = XmlNode (nullQ "message") []
-	(messageTypeToAtt t : as)
-	ns
+toXml (SRMessage tp i fr to ns) = XmlNode (nullQ "message") [] [
+	messageTypeToAtt tp,
+	(nullQ "from", fromJid fr),
+	(nullQ "to", fromJid to),
+	(nullQ "id", i) ] ns
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
+
+data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, Show)
+
+fromJid :: Jid -> BS.ByteString
+fromJid (Jid a d r) = BS.concat [a, "@", d] `BS.append` maybe "" ("/" `BS.append`) r
+
+sender, receiver :: Jid
+sender = Jid "yoshio" "localhost" (Just "profanity")
+receiver = Jid "yoshikuni" "localhost" Nothing
 
 caps :: Feature
 caps = Caps {
@@ -346,10 +357,7 @@ makeSR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
 			]
 		[XmlNode (nullQ "query") [("", "jabber:iq:roster")]
 			[(nullQ "ver", "1")] []]
-makeSR _ (SRPresence _ _) = (: []) $ SRMessage Chat
-		[	(nullQ "to", "yoshikuni@localhost"),
-			(nullQ "from", "yoshio@localhost/profanity"),
-			(nullQ "id", "hoge") ]
+makeSR _ (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender receiver
 		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
 makeSR _ _ = []
 
