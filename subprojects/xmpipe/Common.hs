@@ -11,6 +11,12 @@ data Common
 	| SRStream [(Tag, BS.ByteString)]
 	| SRFeatures [Feature]
 	| SRAuth Mechanism
+	| SRChallenge {
+		realm :: BS.ByteString,
+		nonce :: BS.ByteString,
+		qop :: BS.ByteString,
+		charset :: BS.ByteString,
+		algorithm :: BS.ByteString }
 	deriving Show
 
 data Tag

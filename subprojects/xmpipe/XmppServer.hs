@@ -16,7 +16,6 @@ module XmppServer (
 	Tag(..),
 	Bind(..),
 	Requirement(..),
-	Challenge(..),
 	Mechanism(..), mechanismToXmlNode,
 	Feature(..),
 	XmppState(..), initXmppState,
@@ -96,7 +95,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRChallenge Challenge
 	| SRResponse BS.ByteString DigestResponse
 	| SRChallengeRspauth DigestResponse
 	| SRResponseNull
@@ -107,6 +105,15 @@ data ShowResponse
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
+
+{-
+data Challenge
+	= Challenge {
+		realm :: BS.ByteString,
+		nonce :: UUID }
+	| ChallengeRaw [XmlNode]
+	deriving Show
+	-}
 
 data Query
 	= JidResult Jid
@@ -146,21 +153,13 @@ fromIqType ITError = "error"
 iqTypeToAtt :: IqType -> (QName, BS.ByteString)
 iqTypeToAtt = (nullQ "type" ,) . fromIqType
 
-data Challenge
-	= Challenge {
-		crealm :: BS.ByteString,
-		cnonce :: UUID }
-	| ChallengeRaw [XmlNode]
-	deriving Show
-
-fromChallenge :: Challenge -> [XmlNode]
-fromChallenge c@Challenge{} = (: []) . XmlCharData . B64.encode $ BS.concat [
-	"realm=", BSC.pack . show $ crealm c, ",",
-	"nonce=", BSC.pack . show . toASCIIBytes $ cnonce c, ",",
-	"qop=\"auth\",",
-	"charset=utf-8,",
-	"algorithm=md5-sess" ]
-fromChallenge (ChallengeRaw ns) = ns
+fromChallenge :: BS.ByteString -> BS.ByteString ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString -> [XmlNode]
+fromChallenge r u q c a = (: []) . XmlCharData . B64.encode $ BS.concat [
+	"realm=", BSC.pack $ show r, ",",
+	"nonce=", BSC.pack $ show u, ",",
+	"qop=", BSC.pack $ show q, ",",
+	"charset=", c, "algorithm=", a ] -- md5-sess" ]
 
 fromFeature :: Feature -> XmlNode
 fromFeature (Mechanisms ms) = XmlNode (nullQ "mechanisms")
@@ -286,8 +285,9 @@ toXml (SRCommon (SRStream as)) = XmlStart (("stream", Nothing), "stream")
 	(map (first fromTag) as)
 toXml (SRCommon (SRFeatures fs)) = XmlNode
 	(("stream", Nothing), "features") [] [] $ map fromFeature fs
-toXml (SRChallenge c) = XmlNode (nullQ "challenge")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge c
+toXml (SRCommon c@SRChallenge{}) = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
+		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
 toXml (SRChallengeRspauth dr) = let
 	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
 		. lookup "response" $ responseToKvs False dr in
@@ -357,7 +357,12 @@ digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
 digestMd5 u = do
 	yield . SRCommon $ SRFeatures [Mechanisms [DigestMd5]]
 	Just (SRCommon (SRAuth DigestMd5)) <- await
-	yield $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
+	yield . SRCommon $ SRChallenge {
+		realm = "localhost",
+		nonce = toASCIIBytes u,
+		qop = "auth",
+		charset = "utf-8",
+		algorithm = "md5-sess" }
 	Just (SRResponse r dr@DR { drUserName = un }) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr
 	unless (r == cret) $ error "digestMd5: bad authentication"

@@ -106,12 +106,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRChallenge {
-		realm :: BS.ByteString,
-		nonce :: BS.ByteString,
-		qop :: BS.ByteString,
-		charset :: BS.ByteString,
-		algorithm :: BS.ByteString }
 	| SRResponse DigestResponse
 	| SRResponseNull
 	| SRChallengeRspauth BS.ByteString
@@ -394,7 +388,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 		Just a = parseAtts d in
 		case a of
 			[("rspauth", ra)] -> SRChallengeRspauth ra
-			_ -> SRChallenge {
+			_ -> SRCommon SRChallenge {
 				realm = fromJust $ lookup "realm" a,
 				nonce = fromJust $ lookup "nonce" a,
 				qop = fromJust $ lookup "qop" a,
@@ -566,7 +560,7 @@ digestMd5 sender = do
 		_ -> error "digestMd5: bad response"
 
 digestMd5Data :: BS.ByteString -> ShowResponse -> [ShowResponse]
-digestMd5Data sender (SRChallenge r n q c _a) = (: []) $ SRResponse DR {
+digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = (: []) $ SRResponse DR {
 	drUserName = sender, drRealm = r, drPassword = "password",
 	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
 	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
