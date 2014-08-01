@@ -76,6 +76,7 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRXmlDecl
 	| SRStream [(Tag, BS.ByteString)]
+	| SRFeatures [Feature]
 	| SRAuth Mechanism
 	| SRResponse BS.ByteString DigestResponse
 	| SRResponseNull
@@ -83,6 +84,37 @@ data ShowResponse
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
+
+data Feature
+	= Mechanisms [Mechanism]
+	| FeatureRaw XmlNode
+	deriving Show
+
+fromFeature :: Feature -> XmlNode
+fromFeature (Mechanisms ms) = XmlNode (nullQ "mechanisms")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $
+	map mechanismToXmlNode ms
+fromFeature (FeatureRaw n) = n
+
+data Mechanism
+	= ScramSha1 | DigestMd5 | Plain | MechanismRaw BS.ByteString
+	deriving (Eq, Show)
+
+toMechanism :: BS.ByteString -> Mechanism
+toMechanism "SCRAM-SHA1" = ScramSha1
+toMechanism "DIGEST-MD5" = DigestMd5
+toMechanism "PLAIN" = Plain
+toMechanism m = MechanismRaw m
+
+fromMechanism :: Mechanism -> BS.ByteString
+fromMechanism ScramSha1 = "SCRAM-SHA1"
+fromMechanism DigestMd5 = "DIGEST-MD5"
+fromMechanism Plain = "PLAIN"
+fromMechanism (MechanismRaw m) = m
+
+mechanismToXmlNode :: Mechanism -> XmlNode
+mechanismToXmlNode m =
+	XmlNode (nullQ "mechanism") [] [] [XmlCharData $ fromMechanism m]
 
 data Iq	= IqBind [XmlNode]
 	| IqBindReq Requirement Bind
@@ -149,16 +181,6 @@ data Tag
 	| TagRaw QName
 	deriving (Eq, Show)
 
-data Mechanism
-	= ScramSha1 | DigestMd5 | Plain | MechanismRaw BS.ByteString
-	deriving (Eq, Show)
-
-toMechanism :: BS.ByteString -> Mechanism
-toMechanism "SCRAM-SHA1" = ScramSha1
-toMechanism "DIGEST-MD5" = DigestMd5
-toMechanism "PLAIN" = Plain
-toMechanism m = MechanismRaw m
-
 toTag :: QName -> Tag
 toTag ((_, Just "jabber:client"), "to") = To
 toTag (("xml", Nothing), "lang") = Lang
@@ -184,21 +206,28 @@ toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
+toXml (SRFeatures fs) = XmlNode (("stream", Nothing), "features") [] [] $
+	map fromFeature fs
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
-authFeatures :: [XmlNode]
-authFeatures = [XmlNode (("stream", Nothing), "features") [] [] [mechanisms]]
+id1, id2 :: BS.ByteString
+id1 = "83e074ac-c014-432e-9f21-d06e73f5777e"
+id2 = "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
-mechanisms :: XmlNode
-mechanisms = XmlNode (nullQ "mechanisms")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-	[	XmlNode (nullQ "mechanism") [] [] [XmlCharData "SCRAM-SHA-1"],
-		XmlNode (nullQ "mechanism") [] [] [XmlCharData "DIGEST-MD5"] ]
+capsFeatures :: ShowResponse
+capsFeatures = SRRaw $ XmlNode (("stream", Nothing), "features") [] []
+	[caps, rosterver, bind, session]
 
 makeSR :: Int -> ShowResponse -> [ShowResponse]
-makeSR 0 (SRStream _) = SRXmlDecl : begin : map SRRaw authFeatures
-makeSR 1 (SRStream _) = SRXmlDecl : begin' : map SRRaw capsFeatures
+makeSR 0 (SRStream _) = [
+	SRXmlDecl,
+	SRStream [(Id, id1), (From, "localhost"), (Version, "1.0"), (Lang, "en")],
+	SRFeatures [Mechanisms [ScramSha1, DigestMd5]] ]
+makeSR 1 (SRStream _) = [
+	SRXmlDecl,
+	SRStream [(Id, id2), (From, "localhost"), (Version, "1.0"), (Lang, "en")],
+	capsFeatures ]
 makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR _ (SRAuth DigestMd5) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
@@ -280,18 +309,6 @@ voidM = (>> return ())
 
 nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
-
-begin, begin' :: ShowResponse
-begin  = mkBegin "83e074ac-c014-432e-9f21-d06e73f5777e"
-begin' = mkBegin "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
-
-mkBegin :: BS.ByteString -> ShowResponse
-mkBegin i = SRStream [
-	(Id, i), (From, "localhost"), (Version, "1.0"), (Lang, "en") ]
-
-capsFeatures :: [XmlNode]
-capsFeatures = (: []) $ XmlNode (("stream", Nothing), "features") [] []
-	[caps, rosterver, bind, session]
 
 caps :: XmlNode
 caps = XmlNode (nullQ "c")
