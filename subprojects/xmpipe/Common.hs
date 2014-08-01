@@ -20,7 +20,8 @@ data Common
 		charset :: BS.ByteString,
 		algorithm :: BS.ByteString }
 	| SRResponse BS.ByteString DigestResponse
-	| SRChallengeRspauth BS.ByteString -- DigestResponse
+	| SRChallengeRspauth BS.ByteString
+	| SRResponseNull
 	deriving Show
 
 data Tag

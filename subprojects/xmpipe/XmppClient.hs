@@ -106,7 +106,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRResponseNull
 	| SRSaslSuccess
 	| SRIq IqType BS.ByteString [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
@@ -432,7 +431,7 @@ showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
-showResponseToXmlNode SRResponseNull = drnToXmlNode
+showResponseToXmlNode (SRCommon SRResponseNull) = drnToXmlNode
 showResponseToXmlNode (SRIq it i as (IqBind b)) = XmlNode (nullQ, "iq") []
 	(t : ((nullQ, "id"), i) :  map (first fromIqTag) as) $ fromBind b
 	where
@@ -565,5 +564,5 @@ digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = [SRCommon (SRResponse
 		drUserName = sender, drRealm = r, drPassword = "password",
 		drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
 		drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
-digestMd5Data _ (SRCommon (SRChallengeRspauth _)) = [SRResponseNull]
+digestMd5Data _ (SRCommon (SRChallengeRspauth _)) = [SRCommon SRResponseNull]
 digestMd5Data _ _ = []

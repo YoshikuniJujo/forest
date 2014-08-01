@@ -95,7 +95,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRResponseNull
 	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRIqRaw IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
@@ -235,7 +234,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 	| [(Mechanism, m)] <- map (first toTag) as =
 		SRCommon . SRAuth $ toMechanism m
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] []) = SRResponseNull
+	_ [] []) = SRCommon SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] [XmlCharData cd]) = let
 		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
@@ -364,6 +363,6 @@ digestMd5 u = do
 	let sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
 		. lookup "response" $ responseToKvs False dr
 	yield . SRCommon $ SRChallengeRspauth sret
-	Just SRResponseNull <- await
+	Just (SRCommon SRResponseNull) <- await
 	yield SRSuccess
 	return un
