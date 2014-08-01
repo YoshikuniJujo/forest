@@ -22,8 +22,6 @@ import qualified Data.ByteString.Base64 as B64
 import DigestSv
 import Papillon
 
-import Debug.Trace
-
 data SHandle s h = SHandle h
 
 instance HandleLike h => HandleLike (SHandle s h) where
@@ -76,7 +74,7 @@ output h = convert toXml =$= outputXml h
 input :: HandleLike h => h -> Pipe () ShowResponse (HandleMonad h) ()
 input h = handleP h
 	=$= xmlEvent
-	=$= checkP h
+--	=$= checkP h
 	=$= convert fromJust
 	=$= xmlPipe
 	=$= convert showResponse
@@ -336,9 +334,8 @@ outputXml :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) => h -> Pipe XmlNode () (HandleMonad h) ()
 outputXml h = do
 	mx <- await
-	case trace (show mx) mx of
-		Just x -> lift (hlPut h $ xmlString [x]) >>
-			outputXml (trace "HERE" h)
+	case mx of
+		Just x -> lift (hlPut h $ xmlString [x]) >> outputXml h
 		_ -> return ()
 
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
