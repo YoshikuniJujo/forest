@@ -91,6 +91,9 @@ data Feature
 		chash :: BS.ByteString,
 		cver :: BS.ByteString,
 		cnode :: BS.ByteString }
+	| Rosterver Requirement
+	| Bind Requirement
+	| Session Requirement
 	| FeatureRaw XmlNode
 	deriving Show
 
@@ -104,6 +107,12 @@ fromFeature c@Caps{} = XmlNode (nullQ "c")
 		(nullQ "ver", cver c),
 		(nullQ "node", cnode c) ]
 	[]
+fromFeature (Rosterver r) = XmlNode (nullQ "ver")
+	[("", "urn:xmpp:features:rosterver")] [] [fromRequirement r]
+fromFeature (Bind r) = XmlNode (nullQ "bind")
+	[("", "urn:ietf:params:xml:ns:xmpp-bind")] [] [fromRequirement r]
+fromFeature (Session r) = XmlNode (nullQ "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] [fromRequirement r]
 fromFeature (FeatureRaw n) = n
 
 data Mechanism
@@ -147,6 +156,10 @@ toRequirement :: XmlNode -> Maybe Requirement
 toRequirement (XmlNode (_, "optional") _ [] []) = Just Optional
 toRequirement (XmlNode (_, "required") _ [] []) = Just Required
 toRequirement _ = Nothing
+
+fromRequirement :: Requirement -> XmlNode
+fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
+fromRequirement Required = XmlNode (nullQ "required") [] [] []
 
 data Bind
 	= Resource BS.ByteString
@@ -225,36 +238,11 @@ id1, id2 :: BS.ByteString
 id1 = "83e074ac-c014-432e-9f21-d06e73f5777e"
 id2 = "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
-capsFeatures :: ShowResponse
-capsFeatures = SRFeatures $ [
---	caps,
-	FeatureRaw rosterver,
-	FeatureRaw bind,
-	FeatureRaw session ]
-
 caps :: Feature
 caps = Caps {
 	chash = "sha-1",
 	cver = "k07nuHawZqmndRtf3ZfBm54FwL0=",
 	cnode = "http://prosody.im" }
-
-rosterver :: XmlNode
-rosterver = XmlNode (nullQ "ver")
-	[("", "urn:xmpp:features:rosterver")]
-	[]
-	[XmlNode (nullQ "optional") [] [] []]
-
-bind :: XmlNode
-bind = XmlNode (nullQ "bind")
-	[("", "urn:ietf:params:xml:ns:xmpp-bind")]
-	[]
-	[XmlNode (nullQ "required") [] [] []]
-
-session :: XmlNode
-session = XmlNode (nullQ "session")
-	[("", "urn:ietf:params:xml:ns:xmpp-session")]
-	[]
-	[XmlNode (nullQ "optional") [] [] []]
 
 makeSR :: Int -> ShowResponse -> [ShowResponse]
 makeSR 0 (SRStream _) = [
@@ -264,7 +252,7 @@ makeSR 0 (SRStream _) = [
 makeSR 1 (SRStream _) = [
 	SRXmlDecl,
 	SRStream [(Id, id2), (From, "localhost"), (Version, "1.0"), (Lang, "en")],
-	capsFeatures ]
+	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
 makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR _ (SRAuth DigestMd5) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
