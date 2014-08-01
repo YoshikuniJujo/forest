@@ -8,7 +8,6 @@ import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import Control.Concurrent (forkIO)
-import Data.Maybe
 import Data.Pipe
 import Data.HandleLike
 import Text.XML.Pipe
@@ -16,8 +15,6 @@ import Network
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
-
-import DigestSv
 
 import XmppServer
 
@@ -67,24 +64,15 @@ makeSR (0, u) (SRStream _) = [
 	SRXmlDecl,
 	SRStream [
 		(Id, toASCIIBytes u),
-		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
-	SRFeatures [Mechanisms [ScramSha1, DigestMd5]] ]
+		(From, "localhost"), (Version, "1.0"), (Lang, "en")] ]
 makeSR (1, u) (SRStream _) = [
 	SRXmlDecl,
 	SRStream [
 		(Id, toASCIIBytes u),
 		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
 	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
-makeSR _ (SRStream _) = error "makeR: not implemented"
-makeSR (_, u) (SRAuth DigestMd5) =
-	(: []) $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
-makeSR _ (SRResponse r dr) = let
-	cret = fromJust . lookup "response" $ responseToKvs True dr in
-	if (r /= cret)
-		then error "procR: bad authentication"
-		else [SRChallengeRspauth dr]
-makeSR _ SRResponseNull = [SRSuccess]
+makeSR _ (SRStream _) = error "makeR: not implemented"
 makeSR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
 	(: []) $ SRIqRaw Result i Nothing Nothing $ JidResult receiver'
 makeSR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
@@ -101,11 +89,13 @@ makeP = do
 	n <- lift $ gets sequenceNumber
 	mr <- await
 	case mr of
+		Just r@(SRStream _) -> do
+			lift . modify $ modifySequenceNumber (+ 1)
+			u <- lift nextUuid
+			mapM_ yield $ makeSR (n, u) r
+			when (n == 0) $ digestMd5 u
+			makeP
 		Just r -> do
-			case r of
-				SRStream _ -> lift . modify $
-					modifySequenceNumber (+ 1)
-				_ -> return ()
 			u <- lift nextUuid
 			mapM_ yield $ makeSR (n, u) r
 			makeP

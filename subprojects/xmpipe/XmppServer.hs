@@ -2,6 +2,7 @@
 	PackageImports #-}
 
 module XmppServer (
+	digestMd5,
 	ShowResponse(..), showResponse, toXml,
 	Jid(..),
 	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
@@ -362,3 +363,16 @@ nullQ = (("", Nothing) ,)
 
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
+
+digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
+	UUID -> Pipe ShowResponse ShowResponse m ()
+digestMd5 u = do
+	yield $ SRFeatures [Mechanisms [DigestMd5]]
+	Just (SRAuth DigestMd5) <- await
+	yield $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
+	Just (SRResponse r dr) <- await
+	let cret = fromJust . lookup "response" $ responseToKvs True dr
+	unless (r == cret) $ error "digestMd5: bad authentication"
+	yield $ SRChallengeRspauth dr
+	Just SRResponseNull <- await
+	yield $ SRSuccess
