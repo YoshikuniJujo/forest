@@ -15,7 +15,7 @@ module XmppServer (
 	Mechanism(..), mechanismToXmlNode,
 	Feature(..),
 	XmppState(..), initXmppState,
-		setReceiver, setResource, modifySequenceNumber, nextUuid,
+		setReceiver, setResource, nextUuid,
 	input,
 	output,
 	) where
@@ -50,13 +50,11 @@ instance HandleLike h => HandleLike (SHandle s h) where
 
 data XmppState = XmppState {
 	receiver :: Maybe Jid,
-	sequenceNumber :: Int,
 	uuidList :: [UUID] }
 
 initXmppState :: [UUID] -> XmppState
 initXmppState uuids = XmppState {
 	receiver = Nothing,
-	sequenceNumber = 0,
 	uuidList = uuids }
 
 setReceiver :: Jid -> XmppState -> XmppState
@@ -66,9 +64,6 @@ setResource :: BS.ByteString -> XmppState -> XmppState
 setResource r xs@XmppState{ receiver = Just (Jid a d _) } =
 	xs { receiver = Just . Jid a d $ Just r }
 setResource _ _ = error "setResource: can't set resource to Nothing"
-
-modifySequenceNumber :: (Int -> Int) -> XmppState -> XmppState
-modifySequenceNumber f xs = xs { sequenceNumber = f $ sequenceNumber xs }
 
 nextUuid :: (MonadState m, StateType m ~ XmppState) => m UUID
 nextUuid = do
