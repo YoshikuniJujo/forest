@@ -1,6 +1,10 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, FlexibleContexts,
 	PackageImports #-}
 
+import Data.UUID
+import System.Random
+
+import Control.Applicative
 import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
@@ -35,11 +39,29 @@ main = do
 	socket <- listenOn $ PortNumber 5222
 	forever $ do
 		(h, _, _) <- accept socket
-		voidM . forkIO . (`evalStateT` (0 :: Int)) . xmpp $ SHandle h
+		uuids <- randoms <$> getStdGen
+		voidM . forkIO . (`evalStateT` initXmppState uuids)
+			. xmpp $ SHandle h
 
-type XmppState = Int
+data XmppState = XmppState {
+	sequenceNumber :: Int,
+	uuidList :: [UUID] }
 
-xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ Int,
+initXmppState :: [UUID] -> XmppState
+initXmppState uuids = XmppState {
+	sequenceNumber = 0,
+	uuidList = uuids }
+
+modifySequenceNumber :: (Int -> Int) -> XmppState -> XmppState
+modifySequenceNumber f xs = xs { sequenceNumber = f $ sequenceNumber xs }
+
+nextUuid :: (MonadState m, StateType m ~ XmppState) => m UUID
+nextUuid = do
+	xs@XmppState { uuidList = u : us } <- get
+	put xs { uuidList = us }
+	return u
+
+xmpp :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) =>
 	h -> HandleMonad h ()
 xmpp h = do
@@ -234,27 +256,27 @@ toXml (SRFeatures fs) = XmlNode (("stream", Nothing), "features") [] [] $
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
-id1, id2 :: BS.ByteString
-id1 = "83e074ac-c014-432e-9f21-d06e73f5777e"
-id2 = "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
-
 caps :: Feature
 caps = Caps {
 	chash = "sha-1",
 	cver = "k07nuHawZqmndRtf3ZfBm54FwL0=",
 	cnode = "http://prosody.im" }
 
-makeSR :: Int -> ShowResponse -> [ShowResponse]
-makeSR 0 (SRStream _) = [
+makeSR :: (Int, UUID) -> ShowResponse -> [ShowResponse]
+makeSR (0, u) (SRStream _) = [
 	SRXmlDecl,
-	SRStream [(Id, id1), (From, "localhost"), (Version, "1.0"), (Lang, "en")],
+	SRStream [
+		(Id, toASCIIBytes u),
+		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
 	SRFeatures [Mechanisms [ScramSha1, DigestMd5]] ]
-makeSR 1 (SRStream _) = [
+makeSR (1, u) (SRStream _) = [
 	SRXmlDecl,
-	SRStream [(Id, id2), (From, "localhost"), (Version, "1.0"), (Lang, "en")],
+	SRStream [
+		(Id, toASCIIBytes u),
+		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
 	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
 makeSR _ (SRStream _) = error "makeR: not implemented"
-makeSR _ (SRAuth DigestMd5) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
+makeSR (_, u) (SRAuth DigestMd5) = [challengeXml u]
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
 makeSR _ (SRResponse r dr) = map SRRaw $ let
 	cret = fromJust . lookup "response" $ responseToKvs True dr
@@ -297,15 +319,17 @@ makeSR _ _ = []
 makeP :: (MonadState m, StateType m ~ XmppState) =>
 	Pipe ShowResponse ShowResponse m ()
 makeP = do
-	n <- lift get
+	n <- lift $ gets sequenceNumber
 	mr <- await
 	case mr of
 		Just r -> do
 			case r of
-				SRStream _ -> lift $ modify (+ 1)
+				SRStream _ -> lift . modify $
+					modifySequenceNumber (+ 1)
 				_ -> return ()
-			mapM_ yield $ makeSR (trace "here" n) r
-			trace (show $ makeSR n r) makeP
+			u <- lift nextUuid
+			mapM_ yield $ makeSR (n, u) r
+			makeP
 		_ -> return ()
 
 outputXml :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
@@ -338,15 +362,16 @@ nullQ = (("", Nothing) ,)
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 
-challengeXml :: [XmlNode]
-challengeXml = (: []) $ XmlNode
+challengeXml :: UUID -> ShowResponse
+challengeXml u = SRRaw $ XmlNode
 	(nullQ "challenge") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-	[XmlCharData challenge]
+	[XmlCharData $ challenge u]
 
-challenge :: BS.ByteString
-challenge = B64.encode $ BS.concat [
+challenge :: UUID -> BS.ByteString
+challenge u = B64.encode $ BS.concat [
 	"realm=\"localhost\",",
-	"nonce=\"90972262-92fe-451d-9526-911f5b8f6e34\",",
+	"nonce=", BSC.pack . show $ toASCIIBytes u, ",",
+--	"nonce=\"90972262-92fe-451d-9526-911f5b8f6e34\",",
 	"qop=\"auth\",",
 	"charset=utf-8,",
 	"algorithm=md5-sess" ]
