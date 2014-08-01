@@ -95,25 +95,12 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
+
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
+
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
-
-{-
-data Query
-	= IqBind (Maybe Requirement) Bind
-	| IqSession
-	| IqSessionNull
-	| IqRoster (Maybe Roster)
-	| QueryRaw [XmlNode]
-	deriving Show
-
-data Roster
-	= Roster (Maybe BS.ByteString) [XmlNode]
-	deriving Show
-	-}
 
 toBind :: XmlNode -> Bind
 toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
@@ -155,8 +142,6 @@ fromMessageType MTError = "error"
 
 messageTypeToAtt :: MessageType -> (QName, BS.ByteString)
 messageTypeToAtt = (nullQ "type" ,) . fromMessageType
-
-data IqType = Get | Set | Result | ITError deriving (Eq, Show)
 
 fromIqType :: IqType -> BS.ByteString
 fromIqType Get = "get"
@@ -249,7 +234,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 			drDigestUri = fromJust $ lookup "digest-uri" a,
 			drCharset = fromJust $ lookup "charset" a }
 showResponse (XmlNode ((_, Just "jabber:client"), "iq")
-	_ as [n]) = SRIq tp i fr to (toIq n)
+	_ as [n]) = SRCommon $ SRIq tp i fr to (toIq n)
 	where
 	ts = map (first toTag) as
 	tp = toIqType . fromJust $ lookup Type ts
@@ -294,7 +279,7 @@ toXml (SRCommon (SRChallengeRspauth sret)) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml (SRCommon SRSaslSuccess) =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-toXml (SRIq tp i Nothing to q) = XmlNode (nullQ "iq") []
+toXml (SRCommon (SRIq tp i Nothing to q)) = XmlNode (nullQ "iq") []
 	(catMaybes [
 		Just (nullQ "id", i),
 		Just $ iqTypeToAtt tp,

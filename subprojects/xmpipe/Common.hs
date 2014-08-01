@@ -6,6 +6,7 @@ module Common (
 	Roster(..), Identity(..), IdentityTag(..),
 	DiscoTag(..), InfoFeature(..), InfoFeatureTag(..),
 	toDiscoTag, toIdentity, toInfoFeature,
+	IqType(..),
 	) where
 
 import Control.Arrow
@@ -30,6 +31,7 @@ data Common
 	| SRChallengeRspauth BS.ByteString
 	| SRResponseNull
 	| SRSaslSuccess
+	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	deriving Show
 
 data Tag
@@ -129,3 +131,5 @@ toIdentity :: XmlNode -> Identity
 toIdentity (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "identity")
 	_ as []) = Identity $ map (first toIdentityTag) as
 toIdentity n = IdentityRaw n
+
+data IqType = Get | Set | Result | ITError deriving (Eq, Show)

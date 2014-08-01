@@ -67,7 +67,8 @@ process = await >>= \mr -> case mr of
 	Just (SRCommon (SRFeatures fs)) -> mapM_ yield binds >> process
 	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
 		-> yield (getCaps v n) >> process
-	Just (SRIq Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)]))
+	Just (SRCommon (SRIq
+		Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)])))
 		| fromJid to == sender `BS.append` "@localhost/profanity" -> do
 			yield $ resultCaps i (fromJid f) n
 			yield $ SRMessageRaw Chat "prof_3" recipient message
@@ -80,19 +81,19 @@ begin = SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 
 binds :: [ShowResponse]
 binds = [
-	SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
+	SRCommon . SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
 		Resource "profanity",
-	SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
-	SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
+	SRCommon $ SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
+	SRCommon . SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
 	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
 
 getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse
-getCaps v n = SRIq Get "prof_caps_2" Nothing
+getCaps v n = SRCommon . SRIq Get "prof_caps_2" Nothing
 	(Just . toJid $ sender `BS.append` "@localhost/profanity") $
 	IqCapsQuery v n
 
 resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> ShowResponse
-resultCaps i t n =
+resultCaps i t n = SRCommon $
 	SRIq Result i Nothing (Just $ toJid t) (IqCapsQuery2 profanityCaps n)
 
 sender, message :: BS.ByteString

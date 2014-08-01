@@ -110,9 +110,10 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
+
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
+
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
 	| SREnd
@@ -137,8 +138,6 @@ toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 	(map toInfoFeature ns)
 toIqBody [] = IqSessionNull
 toIqBody ns = QueryRaw ns
-
-data IqType = Get | Set | Result | ITError deriving (Eq, Show)
 
 data MessageType = Normal | Chat | Groupchat | Headline | MTError
 	deriving (Eq, Show)
@@ -343,7 +342,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRCommon SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRIq t i fr to $ toIqBody ns
+	SRCommon . SRIq t i fr to $ toIqBody ns
 	where
 	ts = map (first toIqTag) as
 	Just st = lookup IqType ts
@@ -382,7 +381,7 @@ showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
 showResponseToXmlNode (SRCommon SRResponseNull) = drnToXmlNode
-showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
+showResponseToXmlNode (SRCommon (SRIq it i fr to (IqBind r b))) =
 	XmlNode (nullQ, "iq") [] as .
 		(maybe id ((:) . fromRequirement) r) $ fromBind b
 	where
@@ -396,7 +395,7 @@ showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to IqSession) =
+showResponseToXmlNode (SRCommon (SRIq it i fr to IqSession)) =
 	XmlNode (nullQ, "iq") [] as [session]
 	where
 	as = catMaybes [
@@ -409,7 +408,7 @@ showResponseToXmlNode (SRIq it i fr to IqSession) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
+showResponseToXmlNode (SRCommon (SRIq it i fr to (IqRoster Nothing))) =
 	XmlNode (nullQ, "iq") [] as [roster]
 	where
 	as = catMaybes [
@@ -422,7 +421,7 @@ showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
+showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery v n))) =
 	XmlNode (nullQ, "iq") [] as [capsQuery v n]
 	where
 	as = catMaybes [
@@ -435,7 +434,7 @@ showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqCapsQuery2 c n)) =
+showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 	XmlNode (nullQ, "iq") [] as [capsToQuery c n]
 	where
 	as = catMaybes [

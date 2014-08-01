@@ -82,17 +82,17 @@ makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
 		yield . SRCommon $ SRFeatures
 			[Rosterver Optional, Bind Required, Session Optional]
 		makeP
-	(Just (SRIq Set i Nothing Nothing
-		(IqBind (Just Required) (Resource n))), _) -> do
+	(Just (SRCommon (SRIq Set i Nothing Nothing
+		(IqBind (Just Required) (Resource n)))), _) -> do
 		lift $ modify (setResource n)
 		Just j <- lift $ gets receiver
-		yield . SRIq Result i Nothing Nothing
+		yield . SRCommon . SRIq Result i Nothing Nothing
 			. IqBind Nothing $ BJid j
 		makeP
-	(Just (SRIq Set i Nothing Nothing IqSession), mrcv) ->
-		yield (SRIq Result i Nothing mrcv IqSessionNull) >> makeP
-	(Just (SRIq Get i Nothing Nothing (IqRoster Nothing)), mrcv) -> do
-		yield . SRIq Result i Nothing mrcv
+	(Just (SRCommon (SRIq Set i Nothing Nothing IqSession)), mrcv) ->
+		yield (SRCommon $ SRIq Result i Nothing mrcv IqSessionNull) >> makeP
+	(Just (SRCommon (SRIq Get i Nothing Nothing (IqRoster Nothing))), mrcv) -> do
+		yield . SRCommon . SRIq Result i Nothing mrcv
 			. IqRoster . Just $ Roster (Just "1") []
 		makeP
 	(Just (SRPresence _ _), Just rcv) ->
