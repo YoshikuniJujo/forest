@@ -95,7 +95,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRChallengeRspauth DigestResponse
 	| SRResponseNull
 	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
@@ -287,11 +286,8 @@ toXml (SRCommon (SRFeatures fs)) = XmlNode
 toXml (SRCommon c@SRChallenge{}) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
 		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
-toXml (SRChallengeRspauth dr) = let
-	sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
-		. lookup "response" $ responseToKvs False dr in
-	XmlNode (nullQ "challenge")
-		[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
+toXml (SRCommon (SRChallengeRspauth sret)) = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml SRSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 toXml (SRIqRaw tp i Nothing to q) = XmlNode (nullQ "iq") []
@@ -365,7 +361,9 @@ digestMd5 u = do
 	Just (SRCommon (SRResponse r dr@DR { drUserName = un })) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr
 	unless (r == cret) $ error "digestMd5: bad authentication"
-	yield $ SRChallengeRspauth dr
+	let sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
+		. lookup "response" $ responseToKvs False dr
+	yield . SRCommon $ SRChallengeRspauth sret
 	Just SRResponseNull <- await
 	yield SRSuccess
 	return un

@@ -107,7 +107,6 @@ xmlPipe = do
 data ShowResponse
 	= SRCommon Common
 	| SRResponseNull
-	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
 	| SRIq IqType BS.ByteString [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
@@ -386,7 +385,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 		Right d = B64.decode c
 		Just a = parseAtts d in
 		case a of
-			[("rspauth", ra)] -> SRChallengeRspauth ra
+			[("rspauth", ra)] -> SRCommon $ SRChallengeRspauth ra
 			_ -> SRCommon SRChallenge {
 				realm = fromJust $ lookup "realm" a,
 				nonce = fromJust $ lookup "nonce" a,
@@ -551,7 +550,7 @@ digestMd5 sender = do
 		Nothing -> error "digestMd5: unexpected end of input"
 	mr' <- await
 	case mr' of
-		Just r'@(SRChallengeRspauth sa) -> do
+		Just r'@(SRCommon (SRChallengeRspauth sa)) -> do
 			sa0 <- lift get
 			unless (sa == sa0) $ error "process: bad server"
 			mapM_ yield $ digestMd5Data sender r'
@@ -566,5 +565,5 @@ digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = [SRCommon (SRResponse
 		drUserName = sender, drRealm = r, drPassword = "password",
 		drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
 		drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
-digestMd5Data _ (SRChallengeRspauth _) = [SRResponseNull]
+digestMd5Data _ (SRCommon (SRChallengeRspauth _)) = [SRResponseNull]
 digestMd5Data _ _ = []
