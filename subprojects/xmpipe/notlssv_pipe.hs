@@ -14,7 +14,6 @@ import Text.XML.Pipe
 import Network
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 
 import XmppServer
 
@@ -44,18 +43,26 @@ xmpp h = do
 	hlPut h $ xmlString [XmlEnd (("stream", Nothing), "stream")]
 	hlClose h
 
-checkP :: (HandleLike h, Show a) => h -> Pipe a a (HandleMonad h) ()
-checkP h = do
-	mx <- await
-	case mx of
-		Just x -> do
-			lift . hlDebug h "critical" . BSC.pack . (++ "\n") $ show x
-			yield x
-			checkP h
+makeP :: (MonadState m, StateType m ~ XmppState) =>
+	Pipe ShowResponse ShowResponse m ()
+makeP = do
+	n <- lift $ gets sequenceNumber
+	mr <- await
+	case mr of
+		Just r@(SRStream _) -> do
+			lift . modify $ modifySequenceNumber (+ 1)
+			u <- lift nextUuid
+			rcv <- lift $ gets receiver
+			mapM_ yield $ makeSR (n, u, rcv) r
+			when (n == 0) $ digestMd5 u >>= \un -> lift $
+				modify (setReceiver $ Jid un "localhost" Nothing)
+			makeP
+		Just r -> do
+			u <- lift nextUuid
+			rcv <- lift $ gets receiver
+			mapM_ yield $ makeSR (n, u, rcv) r
+			makeP
 		_ -> return ()
-
-sender :: Jid
-sender = Jid "yoshio" "localhost" (Just "profanity")
 
 makeSR :: (Int, UUID, Maybe Jid) -> ShowResponse -> [ShowResponse]
 makeSR (0, u, _) (SRStream _) = [
@@ -82,27 +89,6 @@ makeSR (_, _, Just j) (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender j
 	[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
 makeSR _ _ = []
 
-makeP :: (MonadState m, StateType m ~ XmppState) =>
-	Pipe ShowResponse ShowResponse m ()
-makeP = do
-	n <- lift $ gets sequenceNumber
-	mr <- await
-	case mr of
-		Just r@(SRStream _) -> do
-			lift . modify $ modifySequenceNumber (+ 1)
-			u <- lift nextUuid
-			rcv <- lift $ gets receiver
-			mapM_ yield $ makeSR (n, u, rcv) r
-			when (n == 0) $ digestMd5 u >>= \un -> lift $
-				modify (setReceiver $ Jid un "localhost" Nothing)
-			makeP
-		Just r -> do
-			u <- lift nextUuid
-			rcv <- lift $ gets receiver
-			mapM_ yield $ makeSR (n, u, rcv) r
-			makeP
-		_ -> return ()
-
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 handleP h = do
 	c <- lift $ hlGetContent h
@@ -114,3 +100,6 @@ voidM = (>> return ())
 
 nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
+
+sender :: Jid
+sender = Jid "yoshio" "localhost" (Just "profanity")
