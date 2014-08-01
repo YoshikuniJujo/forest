@@ -44,20 +44,20 @@ xmpp h = do
 makeP :: (MonadState m, StateType m ~ XmppState) =>
 	Pipe ShowResponse ShowResponse m ()
 makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
-	(Just (SRStream _), Nothing) -> do
-		yield SRXmlDecl
-		lift nextUuid >>= \u -> yield $ SRStream [
+	(Just (SRCommon (SRStream _)), Nothing) -> do
+		yield $ SRCommon SRXmlDecl
+		lift nextUuid >>= \u -> yield . SRCommon $ SRStream [
 			(Id, toASCIIBytes u),
 			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
 		lift nextUuid >>= digestMd5 >>= \un -> lift . modify .
 			setReceiver $ Jid un "localhost" Nothing
 		makeP
-	(Just (SRStream _), _) -> do
-		yield SRXmlDecl
-		lift nextUuid >>= \u -> yield $ SRStream [
+	(Just (SRCommon (SRStream _)), _) -> do
+		yield $ SRCommon SRXmlDecl
+		lift nextUuid >>= \u -> yield . SRCommon $ SRStream [
 			(Id, toASCIIBytes u),
 			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
-		yield $ SRFeatures
+		yield . SRCommon $ SRFeatures
 			[Rosterver Optional, Bind Required, Session Optional]
 		makeP
 	(Just (SRIq [(Id, i), (Type, "set")]

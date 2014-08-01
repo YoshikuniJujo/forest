@@ -51,17 +51,18 @@ xmpp h = voidM . runPipe $ input h =$= proc =$= output h
 
 proc :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
-proc = yield SRXmlDecl
-	>> yield (SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
+proc = yield (SRCommon SRXmlDecl)
+	>> yield (SRCommon $
+		SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
 	>> process
 
 process :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
 process = await >>= \mr -> case mr of
-	Just (SRFeatures [_, Mechanisms ms])
+	Just (SRCommon (SRFeatures [_, Mechanisms ms]))
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
-	Just SRSaslSuccess -> mapM_ yield [SRXmlDecl, begin] >> process
-	Just (SRFeatures fs) -> mapM_ yield binds >> process
+	Just SRSaslSuccess -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
+	Just (SRCommon (SRFeatures fs)) -> mapM_ yield binds >> process
 	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
 		-> yield (getCaps v n) >> process
 	Just (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
@@ -73,7 +74,7 @@ process = await >>= \mr -> case mr of
 	_ -> return ()
 
 begin :: ShowResponse
-begin = SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
+begin = SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 
 binds :: [ShowResponse]
 binds = [

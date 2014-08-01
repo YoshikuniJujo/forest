@@ -2,6 +2,7 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	Common(..),
 	isCaps,
 	handleP,
 	convert,
@@ -51,6 +52,8 @@ import Papillon
 import Digest
 import Caps (capsToXml, capsToQuery)
 import qualified Caps as CAPS
+
+import Common
 
 data SHandle s h = SHandle h
 
@@ -102,9 +105,7 @@ xmlPipe = do
 	when c xmlPipe
 
 data ShowResponse
-	= SRXmlDecl
-	| SRStream [(Tag, BS.ByteString)]
-	| SRFeatures [Feature]
+	= SRCommon Common
 	| SRAuth Mechanism
 	| SRChallenge {
 		realm :: BS.ByteString,
@@ -178,17 +179,6 @@ toDelay (XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ as []) = MessageDelay $
 	map (first toDelayTag) as
 toDelay n = MDRaw n
 
-data Feature
-	= Mechanisms [Mechanism]
-	| Caps {ctHash :: BS.ByteString,
-		ctNode :: BS.ByteString,
-		ctVer :: BS.ByteString } -- [(CapsTag, BS.ByteString)]
-	| Rosterver Requirement
-	| Bind Requirement
-	| Session Requirement
-	| FeatureRaw XmlNode
-	deriving (Eq, Show)
-
 isCaps :: Feature -> Bool
 isCaps Caps{} = True
 isCaps _ = False
@@ -198,9 +188,9 @@ toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")
 	_ [] ns) = Mechanisms $ map toMechanism ns
 toFeature (XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []) =
 	let h = map (first toCapsTag) as in Caps {
-		ctHash = fromJust $ lookup CTHash h,
-		ctNode = fromJust $ lookup CTNode h,
-		ctVer = (\(Right r) -> r) . B64.decode . fromJust $ lookup CTVer h }
+		chash = fromJust $ lookup CTHash h,
+		cnode = fromJust $ lookup CTNode h,
+		cver = (\(Right r) -> r) . B64.decode . fromJust $ lookup CTVer h }
 --	Caps $ map (first toCapsTag) as
 toFeature (XmlNode ((_, Just "urn:xmpp:features:rosterver"), "ver") _ [] r) =
 	Rosterver $ toRequirement r
@@ -210,24 +200,22 @@ toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session")
 	_ [] r) = Session $ toRequirement r
 toFeature n = FeatureRaw n
 
-data Requirement = Optional | Required | NoRequirement [XmlNode]
-	deriving (Eq, Show)
-
 toRequirement :: [XmlNode] -> Requirement
 toRequirement [XmlNode (_, "optional") _ [] []] = Optional
 toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
-
-data Mechanism = ScramSha1 | DigestMd5 | MechanismRaw XmlNode deriving (Eq, Show)
 
 toMechanism :: XmlNode -> Mechanism
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
 	_ [] [XmlCharData "SCRAM-SHA-1"]) = ScramSha1
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
 	_ [] [XmlCharData "DIGEST-MD5"]) = DigestMd5
-toMechanism n = MechanismRaw n
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "PLAIN"]) = Plain
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData n]) = MechanismRaw n
 
-data Tag = Id | From | To | Version | Lang | TagRaw QName deriving (Eq, Show)
+-- data Tag = Id | From | To | Version | Lang | TagRaw QName deriving (Eq, Show)
 
 qnameToTag :: QName -> Tag
 qnameToTag ((_, Just "jabber:client"), "id") = Id
@@ -398,9 +386,9 @@ toCaps ns = CapsRaw ns
 
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
-	_ atts) = SRStream $ map (first qnameToTag) atts
+	_ atts) = SRCommon . SRStream $ map (first qnameToTag) atts
 showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
-	_ [] nds) = SRFeatures $ map toFeature nds
+	_ [] nds) = SRCommon . SRFeatures $ map toFeature nds
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
 	_ [] [XmlCharData c]) = let
 		Right d = B64.decode c
@@ -439,8 +427,8 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
 showResponse n = SRRaw n
 
 showResponseToXmlNode :: ShowResponse -> XmlNode
-showResponseToXmlNode SRXmlDecl = XmlDecl (1, 0)
-showResponseToXmlNode (SRStream as) = XmlStart
+showResponseToXmlNode (SRCommon SRXmlDecl) = XmlDecl (1, 0)
+showResponseToXmlNode (SRCommon (SRStream as)) = XmlStart
 	(("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
@@ -451,7 +439,7 @@ showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ, "auth")
 showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
-showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
+-- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
 showResponseToXmlNode SRResponseNull = drnToXmlNode
 showResponseToXmlNode (SRIq it i as (IqBind b)) = XmlNode (nullQ, "iq") []

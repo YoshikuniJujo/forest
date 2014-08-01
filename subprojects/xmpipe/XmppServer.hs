@@ -2,6 +2,7 @@
 	PackageImports #-}
 
 module XmppServer (
+	Common(..),
 	convert,
 	nullQ,
 	handleP,
@@ -41,6 +42,8 @@ import qualified Data.ByteString.Base64 as B64
 
 import DigestSv
 import Papillon
+
+import Common
 
 data SHandle s h = SHandle h
 
@@ -92,9 +95,7 @@ xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
-	= SRXmlDecl
-	| SRStream [(Tag, BS.ByteString)]
-	| SRFeatures [Feature]
+	= SRCommon Common
 	| SRAuth Mechanism
 	| SRChallenge Challenge
 	| SRResponse BS.ByteString DigestResponse
@@ -162,18 +163,6 @@ fromChallenge c@Challenge{} = (: []) . XmlCharData . B64.encode $ BS.concat [
 	"algorithm=md5-sess" ]
 fromChallenge (ChallengeRaw ns) = ns
 
-data Feature
-	= Mechanisms [Mechanism]
-	| Caps {
-		chash :: BS.ByteString,
-		cver :: BS.ByteString,
-		cnode :: BS.ByteString }
-	| Rosterver Requirement
-	| Bind Requirement
-	| Session Requirement
-	| FeatureRaw XmlNode
-	deriving Show
-
 fromFeature :: Feature -> XmlNode
 fromFeature (Mechanisms ms) = XmlNode (nullQ "mechanisms")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $
@@ -191,10 +180,6 @@ fromFeature (Bind r) = XmlNode (nullQ "bind")
 fromFeature (Session r) = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] [fromRequirement r]
 fromFeature (FeatureRaw n) = n
-
-data Mechanism
-	= ScramSha1 | DigestMd5 | Plain | MechanismRaw BS.ByteString
-	deriving (Eq, Show)
 
 toMechanism :: BS.ByteString -> Mechanism
 toMechanism "SCRAM-SHA1" = ScramSha1
@@ -227,8 +212,6 @@ toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] 
 toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) = IqRoster
 toIq n = IqRaw n
 
-data Requirement = Optional | Required deriving Show
-
 toRequirement :: XmlNode -> Maybe Requirement
 toRequirement (XmlNode (_, "optional") _ [] []) = Just Optional
 toRequirement (XmlNode (_, "required") _ [] []) = Just Required
@@ -250,7 +233,7 @@ toBind n = BindRaw n
 
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
-	as) = SRStream $ map (first toTag) as
+	as) = SRCommon . SRStream $ map (first toTag) as
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 	_ as [])
 	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism m
@@ -276,11 +259,6 @@ showResponse (XmlNode ((_, Just "jabber:client"), "presence")
 	_ as ns) = SRPresence (map (first toTag) as) ns
 showResponse n = SRRaw n
 
-data Tag
-	= Id | From | To | Version | Lang | Mechanism | Type
-	| TagRaw QName
-	deriving (Eq, Show)
-
 toTag :: QName -> Tag
 toTag ((_, Just "jabber:client"), "to") = To
 toTag (("xml", Nothing), "lang") = Lang
@@ -301,13 +279,13 @@ fromTag Type = nullQ "type"
 fromTag (TagRaw n) = n
 
 toXml :: ShowResponse -> XmlNode
-toXml SRXmlDecl = XmlDecl (1, 0)
-toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
+toXml (SRCommon SRXmlDecl) = XmlDecl (1, 0)
+toXml (SRCommon (SRStream as)) = XmlStart (("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-toXml (SRFeatures fs) = XmlNode (("stream", Nothing), "features") [] [] $
-	map fromFeature fs
+toXml (SRCommon (SRFeatures fs)) = XmlNode
+	(("stream", Nothing), "features") [] [] $ map fromFeature fs
 toXml (SRChallenge c) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge c
 toXml (SRChallengeRspauth dr) = let
@@ -377,7 +355,7 @@ convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
 	UUID -> Pipe ShowResponse ShowResponse m BS.ByteString
 digestMd5 u = do
-	yield $ SRFeatures [Mechanisms [DigestMd5]]
+	yield . SRCommon $ SRFeatures [Mechanisms [DigestMd5]]
 	Just (SRAuth DigestMd5) <- await
 	yield $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
 	Just (SRResponse r dr@DR { drUserName = un }) <- await

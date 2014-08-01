@@ -26,19 +26,19 @@ xmpp h = voidM . runPipe $ input h =$= proc =$= output h
 
 proc :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
-proc = yield SRXmlDecl
-	>> yield (SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
+proc = yield (SRCommon SRXmlDecl)
+	>> yield (SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
 	>> process
 
 process :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	Pipe ShowResponse ShowResponse m ()
 process = await >>= \mr -> case mr of
-	Just (SRFeatures [Mechanisms ms])
+	Just (SRCommon (SRFeatures [Mechanisms ms]))
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
-	Just SRSaslSuccess -> mapM_ yield [SRXmlDecl, begin] >> process
-	Just (SRFeatures fs) -> do
+	Just SRSaslSuccess -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
+	Just (SRCommon (SRFeatures fs)) -> do
 		trace "HERE" (return ())
-		let Just Caps { ctNode = n, ctVer = v } = find isCaps fs
+		let Just Caps { cnode = n, cver = v } = find isCaps fs
 		trace (show $ (n, v)) (return ())
 		mapM_ yield binds
 --		yield $ getCaps "prof_caps_4492" "localhost" v n
@@ -56,7 +56,7 @@ process = await >>= \mr -> case mr of
 	_ -> return ()
 
 begin :: ShowResponse
-begin = SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
+begin = SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 
 binds :: [ShowResponse]
 binds = [
