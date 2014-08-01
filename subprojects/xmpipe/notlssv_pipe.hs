@@ -54,18 +54,16 @@ checkP h = do
 			checkP h
 		_ -> return ()
 
-sender, receiver, receiver' :: Jid
+sender :: Jid
 sender = Jid "yoshio" "localhost" (Just "profanity")
-receiver = Jid "yoshikuni" "localhost" Nothing
-receiver' = Jid "yoshikuni" "localhost" (Just "profanity")
 
-makeSR :: (Int, UUID) -> ShowResponse -> [ShowResponse]
-makeSR (0, u) (SRStream _) = [
+makeSR :: (Int, UUID, Maybe Jid) -> ShowResponse -> [ShowResponse]
+makeSR (0, u, _) (SRStream _) = [
 	SRXmlDecl,
 	SRStream [
 		(Id, toASCIIBytes u),
 		(From, "localhost"), (Version, "1.0"), (Lang, "en")] ]
-makeSR (1, u) (SRStream _) = [
+makeSR (1, u, _) (SRStream _) = [
 	SRXmlDecl,
 	SRStream [
 		(Id, toASCIIBytes u),
@@ -73,14 +71,15 @@ makeSR (1, u) (SRStream _) = [
 	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
 makeSR _ (SRStream _) = error "makeR: not implemented"
-makeSR _ (SRIq [(Id, i), (Type, "set")] [IqBindReq Required (Resource _n)]) =
-	(: []) $ SRIqRaw Result i Nothing Nothing $ JidResult receiver'
-makeSR _ (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
-	[SRIqRaw Result i Nothing (Just receiver') QueryNull]
-makeSR _ (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
-	(: []) $ SRIqRaw Result i Nothing (Just receiver') $ RosterResult "1" []
-makeSR _ (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender receiver
-		[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
+makeSR (_, _, Just j) (SRIq [(Id, i), (Type, "set")]
+	[IqBindReq Required (Resource _n)]) =
+	(: []) $ SRIqRaw Result i Nothing Nothing $ JidResult j
+makeSR (_, _, j) (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
+	[SRIqRaw Result i Nothing j QueryNull]
+makeSR (_, _, j) (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
+	(: []) $ SRIqRaw Result i Nothing j $ RosterResult "1" []
+makeSR (_, _, Just j) (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender j
+	[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
 makeSR _ _ = []
 
 makeP :: (MonadState m, StateType m ~ XmppState) =>
@@ -92,12 +91,15 @@ makeP = do
 		Just r@(SRStream _) -> do
 			lift . modify $ modifySequenceNumber (+ 1)
 			u <- lift nextUuid
-			mapM_ yield $ makeSR (n, u) r
-			when (n == 0) $ digestMd5 u
+			rcv <- lift $ gets receiver
+			mapM_ yield $ makeSR (n, u, rcv) r
+			when (n == 0) $ digestMd5 u >>= \un -> lift $
+				modify (setReceiver $ Jid un "localhost" Nothing)
 			makeP
 		Just r -> do
 			u <- lift nextUuid
-			mapM_ yield $ makeSR (n, u) r
+			rcv <- lift $ gets receiver
+			mapM_ yield $ makeSR (n, u, rcv) r
 			makeP
 		_ -> return ()
 

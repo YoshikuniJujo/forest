@@ -14,7 +14,8 @@ module XmppServer (
 	Challenge(..),
 	Mechanism(..), mechanismToXmlNode,
 	Feature(..),
-	XmppState(..), initXmppState, modifySequenceNumber, nextUuid,
+	XmppState(..), initXmppState,
+		setReceiver, setResource, modifySequenceNumber, nextUuid,
 	input,
 	output,
 	) where
@@ -48,13 +49,23 @@ instance HandleLike h => HandleLike (SHandle s h) where
 	hlDebug (SHandle h) = (lift .) . hlDebug h
 
 data XmppState = XmppState {
+	receiver :: Maybe Jid,
 	sequenceNumber :: Int,
 	uuidList :: [UUID] }
 
 initXmppState :: [UUID] -> XmppState
 initXmppState uuids = XmppState {
+	receiver = Nothing,
 	sequenceNumber = 0,
 	uuidList = uuids }
+
+setReceiver :: Jid -> XmppState -> XmppState
+setReceiver j xs = xs { receiver = Just j }
+
+setResource :: BS.ByteString -> XmppState -> XmppState
+setResource r xs@XmppState{ receiver = Just (Jid a d _) } =
+	xs { receiver = Just . Jid a d $ Just r }
+setResource _ _ = error "setResource: can't set resource to Nothing"
 
 modifySequenceNumber :: (Int -> Int) -> XmppState -> XmppState
 modifySequenceNumber f xs = xs { sequenceNumber = f $ sequenceNumber xs }
@@ -365,14 +376,15 @@ convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 
 digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
-	UUID -> Pipe ShowResponse ShowResponse m ()
+	UUID -> Pipe ShowResponse ShowResponse m BS.ByteString
 digestMd5 u = do
 	yield $ SRFeatures [Mechanisms [DigestMd5]]
 	Just (SRAuth DigestMd5) <- await
 	yield $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
-	Just (SRResponse r dr) <- await
+	Just (SRResponse r dr@DR { drUserName = un }) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr
 	unless (r == cret) $ error "digestMd5: bad authentication"
 	yield $ SRChallengeRspauth dr
 	Just SRResponseNull <- await
 	yield $ SRSuccess
+	return un
