@@ -12,6 +12,7 @@ module XmppServer (
 	Jid(..),
 	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
 	Query(..), toIq,
+	Roster(..),
 	Tag(..),
 	Bind(..),
 	Requirement(..),
@@ -100,31 +101,46 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
-toIq :: XmlNode -> Query
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
-	| Just r <- toRequirement n = IqBindReq r $ toBind n'
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
-	= IqSession
-toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) = IqRoster
-toIq n = IqRaw n
-
+{-
 data Query
-	= JidResult Jid
-	| RosterResult BS.ByteString [XmlNode]
-	| QueryNull
-	| QueryRaw [XmlNode]
-	| IqBind [XmlNode]
-	| IqBindReq Requirement Bind
+	= IqBind (Maybe Requirement) Bind
 	| IqSession
-	| IqRoster
-	| IqRaw XmlNode
+	| IqSessionNull
+	| IqRoster (Maybe Roster)
+	| QueryRaw [XmlNode]
 	deriving Show
 
+data Roster
+	= Roster (Maybe BS.ByteString) [XmlNode]
+	deriving Show
+	-}
+
+toBind :: XmlNode -> Bind
+toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
+	[XmlCharData cd]) = Resource cd
+toBind n = BindRaw n
+
+toIq :: XmlNode -> Query
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
+	| Just r <- toRequirement n = IqBind (Just r) $ toBind n'
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
+	= IqSession
+toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) =
+	IqRoster Nothing
+toIq n = QueryRaw [n]
+
 fromQuery :: Query -> [XmlNode]
-fromQuery (JidResult j) = [XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
-fromQuery (RosterResult v ns) =
-	[XmlNode (nullQ "query") [("", "jabber:iq:roster")] [(nullQ "ver", v)] ns]
-fromQuery QueryNull = []
+fromQuery (IqBind Nothing (BJid j)) =
+	[XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
+-- fromQuery (JidResult j) = [XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
+fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
+	XmlNode (nullQ "query") [("", "jabber:iq:roster")] as ns
+	where as = case mv of
+		Just v -> [(nullQ "ver", v)]
+		_ -> []
+-- fromQuery (RosterResult v ns) =
+--	[XmlNode (nullQ "query") [("", "jabber:iq:roster")] [(nullQ "ver", v)] ns]
+fromQuery IqSessionNull = []
 fromQuery (QueryRaw ns) = ns
 
 data MessageType
@@ -209,16 +225,6 @@ fromRequirement :: Requirement -> XmlNode
 fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
 fromRequirement Required = XmlNode (nullQ "required") [] [] []
 
-data Bind
-	= Resource BS.ByteString
-	| BindRaw XmlNode
-	deriving Show
-
-toBind :: XmlNode -> Bind
-toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
-	[XmlCharData cd]) = Resource cd
-toBind n = BindRaw n
-
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
 	as) = SRCommon . SRStream $ map (first toTag) as
@@ -301,8 +307,6 @@ toXml (SRMessage tp i fr to ns) = XmlNode (nullQ "message") [] [
 	(nullQ "id", i) ] ns
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
-
-data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, Show)
 
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = BS.concat [a, "@", d] `BS.append` maybe "" ("/" `BS.append`) r

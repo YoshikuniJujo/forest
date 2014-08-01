@@ -41,15 +41,15 @@ process = await >>= \mr -> case mr of
 		let Just Caps { cnode = n, cver = v } = find isCaps fs
 		trace (show $ (n, v)) (return ())
 		mapM_ yield binds
---		yield $ getCaps "prof_caps_4492" "localhost" v n
+--		yield $ getCaps "prof_caps_4492" Nothing v n
 		process
 	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) -> do
 		yield (getCaps "prof_caps_2"
-			(sender `BS.append` "@localhost/profanity") v n)
+			(Just $ sender `BS.append` "@localhost/profanity") v n)
 		process
-	Just (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
-		| to == sender `BS.append` "@localhost/profanity" -> do
-			yield $ resultCaps i f n
+	Just (SRIq Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)]))
+		| fromJid to == sender `BS.append` "@localhost/profanity" -> do
+			yield $ resultCaps i (fromJid f) n
 			yield $ SRMessageRaw Chat "prof_3" recipient message
 			yield SREnd
 	Just _ -> process
@@ -60,17 +60,20 @@ begin = SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 
 binds :: [ShowResponse]
 binds = [
-	SRIq Set "_xmpp_bind1" [] . IqBind $ Resource "profanity",
-	SRIq Set "_xmpp_session1" [] IqSession,
-	SRIq Get "_xmpp_roster1" [] $ IqRoster [],
+	SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
+		Resource "profanity",
+	SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
+	SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
 	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
 
-getCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> BS.ByteString ->
+getCaps :: BS.ByteString -> Maybe BS.ByteString -> BS.ByteString -> BS.ByteString ->
 	ShowResponse
-getCaps i t v n = SRIq Get i [(IqTo, t)] $ IqCapsQuery v n
+getCaps i (Just t) v n = SRIq Get i Nothing (Just $ toJid t) $ IqCapsQuery v n
+getCaps i _ v n = SRIq Get i Nothing Nothing $ IqCapsQuery v n
 
 resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> ShowResponse
-resultCaps i t n = SRIq Result i [(IqTo, t)] (IqCapsQuery2 profanityCaps n)
+resultCaps i t n =
+	SRIq Result i Nothing (Just $ toJid t) (IqCapsQuery2 profanityCaps n)
 
 sender, message :: BS.ByteString
 recipient :: Jid

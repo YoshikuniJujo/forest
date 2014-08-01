@@ -61,15 +61,17 @@ makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
 			[Rosterver Optional, Bind Required, Session Optional]
 		makeP
 	(Just (SRIq Set i Nothing Nothing
-		(IqBindReq Required (Resource n))), _) -> do
+		(IqBind (Just Required) (Resource n))), _) -> do
 		lift $ modify (setResource n)
 		Just j <- lift $ gets receiver
-		yield . SRIq Result i Nothing Nothing $ JidResult j
+		yield . SRIq Result i Nothing Nothing
+			. IqBind Nothing $ BJid j
 		makeP
 	(Just (SRIq Set i Nothing Nothing IqSession), mrcv) ->
-		yield (SRIq Result i Nothing mrcv QueryNull) >> makeP
-	(Just (SRIq Get i Nothing Nothing IqRoster), mrcv) -> do
-		yield . SRIq Result i Nothing mrcv $ RosterResult "1" []
+		yield (SRIq Result i Nothing mrcv IqSessionNull) >> makeP
+	(Just (SRIq Get i Nothing Nothing (IqRoster Nothing)), mrcv) -> do
+		yield . SRIq Result i Nothing mrcv
+			. IqRoster . Just $ Roster (Just "1") []
 		makeP
 	(Just (SRPresence _ _), Just rcv) ->
 		yield (SRMessage Chat "hoge" sender rcv message) >> makeP

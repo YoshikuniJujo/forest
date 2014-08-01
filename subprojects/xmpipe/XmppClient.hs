@@ -2,6 +2,8 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	fromJid,
+	toJid,
 	Common(..),
 	isCaps,
 	handleP,
@@ -11,7 +13,7 @@ module XmppClient (
 	input, output,
 	ShowResponse(..),
 	IqTag(..),
-	IqBody(..),
+	Query(..),
 	DiscoTag(..),
 	Caps(..),
 	CapsTag(..),
@@ -36,10 +38,12 @@ module XmppClient (
 	IqType(..),
 	) where
 
+import Control.Applicative
 import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import Data.Maybe
+import Data.List
 import Data.Pipe
 import Data.HandleLike
 import Text.XML.Pipe
@@ -106,7 +110,7 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRIq IqType BS.ByteString [(IqTag, BS.ByteString)] IqBody
+	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
@@ -115,15 +119,39 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
+toIqBody :: [XmlNode] -> Query
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
+	IqBind Nothing $ toBind ns
+toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []] =
+	IqRoster Nothing
+toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as ns] = IqRoster
+	. Just $ Roster (snd <$> find (\((_, v), _) -> v == "ver") as) ns
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ [] []] = IqDiscoInfo
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as []] = IqDiscoInfoNode $ map (first toDiscoTag) as
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as (i : ns)] = IqDiscoInfoFull
+	(map (first toDiscoTag) as)
+	(toIdentity i)
+	(map toInfoFeature ns)
+toIqBody [] = IqSessionNull
+toIqBody ns = QueryRaw ns
+
 data IqType = Get | Set | Result | ITError deriving (Eq, Show)
 
 data MessageType = Normal | Chat | Groupchat | Headline | MTError
 	deriving (Eq, Show)
 
-data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, Show)
-
 fromJid :: Jid -> BS.ByteString
-fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append` fromMaybe "" r
+fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append`
+	maybe "" ("/" `BS.append`) r
+
+toJid :: BS.ByteString -> Jid
+toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
+	where
+	(a, rst) = BSC.span (/= '@') j
+	(d, r) = BSC.span (/= '/') $ BS.tail rst
 
 data MessageBody
 	= MessageBody BS.ByteString
@@ -194,6 +222,11 @@ toRequirement [XmlNode (_, "optional") _ [] []] = Optional
 toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
 
+fromRequirement :: Requirement -> XmlNode
+fromRequirement Optional = XmlNode (nullQ, "optional") [] [] []
+fromRequirement Required = XmlNode (nullQ, "required") [] [] []
+fromRequirement (NoRequirement _) = undefined
+
 toMechanism :: XmlNode -> Mechanism
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
 	_ [] [XmlCharData "SCRAM-SHA-1"]) = ScramSha1
@@ -249,93 +282,9 @@ fromIqTag IqTo = (nullQ, "to")
 fromIqTag IqFrom = (nullQ, "from")
 fromIqTag (IqRaw n) = n
 
-data DiscoTag = DTNode | DTRaw QName deriving (Eq, Show)
-
-toDiscoTag :: QName -> DiscoTag
-toDiscoTag ((_, Just "http://jabber.org/protocol/disco#info"), "node") = DTNode
-toDiscoTag n = DTRaw n
-
-data IqBody
-	= IqBind Bind
-	| IqSession
-	| IqRoster [(RosterTag, BS.ByteString)] -- QueryRoster
-	| IqCapsQuery BS.ByteString BS.ByteString
-	| IqCapsQuery2 CAPS.Caps BS.ByteString
-	| IqDiscoInfo
-	| IqDiscoInfoNode [(DiscoTag, BS.ByteString)]
-	| IqDiscoInfoFull [(DiscoTag, BS.ByteString)] Identity [InfoFeature]
-	| IqBodyNull
-	| IqBodyRaw [XmlNode]
-	deriving Show
-
-toIqBody :: [XmlNode] -> IqBody
-toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
-	IqBind $ toBind ns
-toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as []] =
-	IqRoster $ map (first toRosterTag) as
-toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
-	_ [] []] = IqDiscoInfo
-toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
-	_ as []] = IqDiscoInfoNode $ map (first toDiscoTag) as
-toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
-	_ as (i : ns)] = IqDiscoInfoFull
-	(map (first toDiscoTag) as)
-	(toIdentity i)
-	(map toInfoFeature ns)
-toIqBody [] = IqBodyNull
-toIqBody ns = IqBodyRaw ns
-
 session :: XmlNode
 session = XmlNode (nullQ, "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
-
-data Identity
-	= Identity [(IdentityTag, BS.ByteString)]
-	| IdentityRaw XmlNode
-	deriving Show
-
-data IdentityTag
-	= IDTType | IDTName | IDTCategory | IDTRaw QName deriving (Eq, Show)
-
-toIdentityTag :: QName -> IdentityTag
-toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "type") = IDTType
-toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "name") = IDTName
-toIdentityTag ((_, Just "http://jabber.org/protocol/disco#info"), "category") =
-	IDTCategory
-toIdentityTag n = IDTRaw n
-
-toIdentity :: XmlNode -> Identity
-toIdentity (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "identity")
-	_ as []) = Identity $ map (first toIdentityTag) as
-toIdentity n = IdentityRaw n
-
-data InfoFeature
-	= InfoFeature BS.ByteString
-	| InfoFeatureSemiRaw [(InfoFeatureTag, BS.ByteString)]
-	| InfoFeatureRaw XmlNode
-	deriving Show
-
-data InfoFeatureTag
-	= IFTVar
-	| IFTVarRaw QName
-	deriving (Eq, Show)
-
-toInfoFeatureTag :: QName -> InfoFeatureTag
-toInfoFeatureTag ((_, Just "http://jabber.org/protocol/disco#info"), "var") = IFTVar
-toInfoFeatureTag n = IFTVarRaw n
-
-toInfoFeature :: XmlNode -> InfoFeature
-toInfoFeature (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"),
-	"feature") _ as []) = case map (first toInfoFeatureTag) as of
-		[(IFTVar, v)] -> InfoFeature v
-		atts -> InfoFeatureSemiRaw atts
-toInfoFeature n = InfoFeatureRaw n
-
-data Bind
-	= BJid BS.ByteString
-	| Resource BS.ByteString
-	| BindRaw [XmlNode]
-	deriving Show
 
 resource :: BS.ByteString -> XmlNode
 resource r = XmlNode (nullQ, "resource") [] [] [XmlCharData r]
@@ -346,7 +295,7 @@ fromBind (Resource r) = [
 	XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
 		[XmlNode (nullQ, "required") [] [] [], resource r]
 	]
-fromBind (BindRaw ns) = ns
+fromBind (BindRaw n) = [n]
 
 data RosterTag = RTVer | RTRaw QName deriving (Eq, Show)
 
@@ -356,8 +305,9 @@ toRosterTag n = RTRaw n
 
 toBind :: [XmlNode] -> Bind
 toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
-	[XmlCharData cd]] = BJid cd
-toBind ns = BindRaw ns
+	[XmlCharData cd]] = BJid $ toJid cd
+toBind [n] = BindRaw n
+toBind _ = error "toBind: bad"
 
 data Caps
 	= C [(CapsTag, BS.ByteString)]
@@ -393,12 +343,13 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRCommon SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRIq t i ts' $ toIqBody ns
+	SRIq t i fr to $ toIqBody ns
 	where
 	ts = map (first toIqTag) as
-	ts' = filter ((`notElem` [IqType, IqId]) . fst) ts
 	Just st = lookup IqType ts
 	Just i = lookup IqId ts
+	fr = toJid <$> lookup IqFrom ts
+	to = toJid <$> lookup IqTo ts
 	t = case st of
 		"get" -> Get
 		"set" -> Set
@@ -431,41 +382,67 @@ showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
 showResponseToXmlNode (SRCommon SRResponseNull) = drnToXmlNode
-showResponseToXmlNode (SRIq it i as (IqBind b)) = XmlNode (nullQ, "iq") []
-	(t : ((nullQ, "id"), i) :  map (first fromIqTag) as) $ fromBind b
+showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
+	XmlNode (nullQ, "iq") [] as .
+		(maybe id ((:) . fromRequirement) r) $ fromBind b
 	where
+	as = catMaybes [
+		Just t,
+		Just ((nullQ, "id"), i),
+		((nullQ, "from") ,) . fromJid <$> fr,
+		((nullQ, "to") ,) . fromJid <$> to ]
 	t = ((nullQ, "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i as IqSession) = XmlNode (nullQ, "iq") []
-	(t : ((nullQ, "id"), i) :  map (first fromIqTag) as) [session]
+showResponseToXmlNode (SRIq it i fr to IqSession) =
+	XmlNode (nullQ, "iq") [] as [session]
 	where
+	as = catMaybes [
+		Just t,
+		Just ((nullQ, "id"), i),
+		((nullQ, "from") ,) . fromJid <$> fr,
+		((nullQ, "to") ,) . fromJid <$> to ]
 	t = ((nullQ, "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i as (IqRoster [])) = XmlNode (nullQ, "iq") []
-	(t : ((nullQ, "id"), i) : map (first fromIqTag) as) [roster]
+showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
+	XmlNode (nullQ, "iq") [] as [roster]
 	where
+	as = catMaybes [
+		Just t,
+		Just ((nullQ, "id"), i),
+		((nullQ, "from") ,) . fromJid <$> fr,
+		((nullQ, "to") ,) . fromJid <$> to ]
 	t = ((nullQ, "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i as (IqCapsQuery v n)) = XmlNode (nullQ, "iq") []
-	(t : ((nullQ, "id"), i) : map (first fromIqTag) as) [capsQuery v n]
+showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
+	XmlNode (nullQ, "iq") [] as [capsQuery v n]
 	where
+	as = catMaybes [
+		Just t,
+		Just ((nullQ, "id"), i),
+		((nullQ, "from") ,) . fromJid <$> fr,
+		((nullQ, "to") ,) . fromJid <$> to ]
 	t = ((nullQ, "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i as (IqCapsQuery2 c n)) = XmlNode (nullQ, "iq") []
-	(t : ((nullQ, "id"), i) : map (first fromIqTag) as) [capsToQuery c n]
+showResponseToXmlNode (SRIq it i fr to (IqCapsQuery2 c n)) =
+	XmlNode (nullQ, "iq") [] as [capsToQuery c n]
 	where
+	as = catMaybes [
+		Just t,
+		Just ((nullQ, "id"), i),
+		((nullQ, "from") ,) . fromJid <$> fr,
+		((nullQ, "to") ,) . fromJid <$> to ]
 	t = ((nullQ, "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
