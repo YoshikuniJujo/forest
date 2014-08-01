@@ -95,7 +95,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRSuccess
 	| SRIq [(Tag, BS.ByteString)] [Iq]
 	| SRIqRaw IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
@@ -287,7 +286,7 @@ toXml (SRCommon c@SRChallenge{}) = XmlNode (nullQ "challenge")
 		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
 toXml (SRCommon (SRChallengeRspauth sret)) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
-toXml SRSuccess =
+toXml (SRCommon SRSaslSuccess) =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 toXml (SRIqRaw tp i Nothing to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
@@ -364,5 +363,5 @@ digestMd5 u = do
 		. lookup "response" $ responseToKvs False dr
 	yield . SRCommon $ SRChallengeRspauth sret
 	Just (SRCommon SRResponseNull) <- await
-	yield SRSuccess
+	yield $ SRCommon SRSaslSuccess
 	return un

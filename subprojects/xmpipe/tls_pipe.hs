@@ -63,7 +63,7 @@ process = await >>= \mr -> case mr of
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
 	Just (SRCommon (SRFeatures [Mechanisms ms, _]))
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
-	Just SRSaslSuccess -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
+	Just (SRCommon SRSaslSuccess) -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
 	Just (SRCommon (SRFeatures fs)) -> mapM_ yield binds >> process
 	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
 		-> yield (getCaps v n) >> process

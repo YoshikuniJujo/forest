@@ -22,6 +22,7 @@ data Common
 	| SRResponse BS.ByteString DigestResponse
 	| SRChallengeRspauth BS.ByteString
 	| SRResponseNull
+	| SRSaslSuccess
 	deriving Show
 
 data Tag

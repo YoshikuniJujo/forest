@@ -106,7 +106,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRSaslSuccess
 	| SRIq IqType BS.ByteString [(IqTag, BS.ByteString)] IqBody
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
@@ -392,7 +391,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 				charset = fromJust $ lookup "charset" a,
 				algorithm = fromJust $ lookup "algorithm" a }
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
-	_ [] []) = SRSaslSuccess
+	_ [] []) = SRCommon SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 	SRIq t i ts' $ toIqBody ns
 	where
