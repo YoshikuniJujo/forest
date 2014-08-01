@@ -17,7 +17,7 @@ import XmppClient
 import Caps (profanityCaps)
 
 main :: IO ()
-main = connectTo "localhost" (PortNumber 54492) >>= \h ->
+main = connectTo "localhost" (PortNumber 5222) >>= \h ->
 	xmpp (SHandle h) `evalStateT` ("" :: BS.ByteString)
 
 xmpp :: (HandleLike h, MonadState (HandleMonad h),

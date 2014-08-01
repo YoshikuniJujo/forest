@@ -10,6 +10,7 @@ data Common
 	= SRXmlDecl
 	| SRStream [(Tag, BS.ByteString)]
 	| SRFeatures [Feature]
+	| SRAuth Mechanism
 	deriving Show
 
 data Tag

@@ -96,7 +96,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRAuth Mechanism
 	| SRChallenge Challenge
 	| SRResponse BS.ByteString DigestResponse
 	| SRChallengeRspauth DigestResponse
@@ -236,7 +235,8 @@ showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") 
 	as) = SRCommon . SRStream $ map (first toTag) as
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 	_ as [])
-	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism m
+	| [(Mechanism, m)] <- map (first toTag) as =
+		SRCommon . SRAuth $ toMechanism m
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
@@ -356,7 +356,7 @@ digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
 	UUID -> Pipe ShowResponse ShowResponse m BS.ByteString
 digestMd5 u = do
 	yield . SRCommon $ SRFeatures [Mechanisms [DigestMd5]]
-	Just (SRAuth DigestMd5) <- await
+	Just (SRCommon (SRAuth DigestMd5)) <- await
 	yield $ SRChallenge Challenge { crealm = "localhost", cnonce = u }
 	Just (SRResponse r dr@DR { drUserName = un }) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr

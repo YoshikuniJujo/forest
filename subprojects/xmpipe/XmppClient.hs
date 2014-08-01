@@ -106,7 +106,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRAuth Mechanism
 	| SRChallenge {
 		realm :: BS.ByteString,
 		nonce :: BS.ByteString,
@@ -433,10 +432,10 @@ showResponseToXmlNode (SRCommon (SRStream as)) = XmlStart
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ, "auth")
+showResponseToXmlNode (SRCommon (SRAuth ScramSha1)) = XmlNode (nullQ, "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ, "auth")
+showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
@@ -546,7 +545,7 @@ convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 digestMd5 :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
 	BS.ByteString -> Pipe ShowResponse ShowResponse m ()
 digestMd5 sender = do
-	yield $ SRAuth DigestMd5
+	yield . SRCommon $ SRAuth DigestMd5
 	mr <- await
 	case mr of
 		Just r -> do
