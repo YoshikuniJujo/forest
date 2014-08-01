@@ -76,7 +76,7 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRXmlDecl
 	| SRStream [(Tag, BS.ByteString)]
-	| SRAuth [(Tag, BS.ByteString)]
+	| SRAuth Mechanism
 	| SRResponse BS.ByteString DigestResponse
 	| SRResponseNull
 	| SRIq [(Tag, BS.ByteString)] [Iq]
@@ -120,7 +120,8 @@ showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
 	as) = SRStream $ map (first toTag) as
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
-	_ as []) = SRAuth $ map (first toTag) as
+	_ as [])
+	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism m
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
@@ -147,6 +148,16 @@ data Tag
 	= Id | From | To | Version | Lang | Mechanism | Type
 	| TagRaw QName
 	deriving (Eq, Show)
+
+data Mechanism
+	= ScramSha1 | DigestMd5 | Plain | MechanismRaw BS.ByteString
+	deriving (Eq, Show)
+
+toMechanism :: BS.ByteString -> Mechanism
+toMechanism "SCRAM-SHA1" = ScramSha1
+toMechanism "DIGEST-MD5" = DigestMd5
+toMechanism "PLAIN" = Plain
+toMechanism m = MechanismRaw m
 
 toTag :: QName -> Tag
 toTag ((_, Just "jabber:client"), "to") = To
@@ -176,11 +187,20 @@ toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
+authFeatures :: [XmlNode]
+authFeatures = [XmlNode (("stream", Nothing), "features") [] [] [mechanisms]]
+
+mechanisms :: XmlNode
+mechanisms = XmlNode (nullQ "mechanisms")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
+	[	XmlNode (nullQ "mechanism") [] [] [XmlCharData "SCRAM-SHA-1"],
+		XmlNode (nullQ "mechanism") [] [] [XmlCharData "DIGEST-MD5"] ]
+
 makeSR :: Int -> ShowResponse -> [ShowResponse]
 makeSR 0 (SRStream _) = SRXmlDecl : begin : map SRRaw authFeatures
 makeSR 1 (SRStream _) = SRXmlDecl : begin' : map SRRaw capsFeatures
 makeSR _ (SRStream _) = error "makeR: not implemented"
-makeSR _ (SRAuth [(Mechanism, "DIGEST-MD5")]) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
+makeSR _ (SRAuth DigestMd5) = trace "HERE YOU ARE" $ map SRRaw $ challengeXml
 makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
 makeSR _ (SRResponse r dr) = map SRRaw $ let
 	cret = fromJust . lookup "response" $ responseToKvs True dr
@@ -269,9 +289,6 @@ mkBegin :: BS.ByteString -> ShowResponse
 mkBegin i = SRStream [
 	(Id, i), (From, "localhost"), (Version, "1.0"), (Lang, "en") ]
 
-authFeatures :: [XmlNode]
-authFeatures = [XmlNode (("stream", Nothing), "features") [] [] [mechanisms]]
-
 capsFeatures :: [XmlNode]
 capsFeatures = (: []) $ XmlNode (("stream", Nothing), "features") [] []
 	[caps, rosterver, bind, session]
@@ -302,12 +319,6 @@ session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")]
 	[]
 	[XmlNode (nullQ "optional") [] [] []]
-
-mechanisms :: XmlNode
-mechanisms = XmlNode (nullQ "mechanisms")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-	[	XmlNode (nullQ "mechanism") [] [] [XmlCharData "SCRAM-SHA-1"],
-		XmlNode (nullQ "mechanism") [] [] [XmlCharData "DIGEST-MD5"] ]
 
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
