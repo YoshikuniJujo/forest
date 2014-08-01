@@ -11,8 +11,7 @@ module XmppServer (
 	ShowResponse(..), showResponse, toXml,
 	Jid(..),
 	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
-	Query(..),
-	Iq(..), toIq,
+	Query(..), toIq,
 	Tag(..),
 	Bind(..),
 	Requirement(..),
@@ -95,27 +94,30 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRIq [(Tag, BS.ByteString)] [Iq]
-	| SRIqRaw IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
+	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
 	deriving Show
 
-{-
-data Challenge
-	= Challenge {
-		realm :: BS.ByteString,
-		nonce :: UUID }
-	| ChallengeRaw [XmlNode]
-	deriving Show
-	-}
+toIq :: XmlNode -> Query
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
+	| Just r <- toRequirement n = IqBindReq r $ toBind n'
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
+	= IqSession
+toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) = IqRoster
+toIq n = IqRaw n
 
 data Query
 	= JidResult Jid
 	| RosterResult BS.ByteString [XmlNode]
 	| QueryNull
 	| QueryRaw [XmlNode]
+	| IqBind [XmlNode]
+	| IqBindReq Requirement Bind
+	| IqSession
+	| IqRoster
+	| IqRaw XmlNode
 	deriving Show
 
 fromQuery :: Query -> [XmlNode]
@@ -145,6 +147,13 @@ fromIqType Get = "get"
 fromIqType Set = "set"
 fromIqType Result = "result"
 fromIqType ITError = "error"
+
+toIqType :: BS.ByteString -> IqType
+toIqType "get" = Get
+toIqType "set" = Set
+toIqType "result" = Result
+toIqType "error" = ITError
+toIqType t = error $ "toIqType: unknown iq type " ++ show t
 
 iqTypeToAtt :: IqType -> (QName, BS.ByteString)
 iqTypeToAtt = (nullQ "type" ,) . fromIqType
@@ -191,21 +200,6 @@ mechanismToXmlNode :: Mechanism -> XmlNode
 mechanismToXmlNode m =
 	XmlNode (nullQ "mechanism") [] [] [XmlCharData $ fromMechanism m]
 
-data Iq	= IqBind [XmlNode]
-	| IqBindReq Requirement Bind
-	| IqSession
-	| IqRoster
-	| IqRaw XmlNode
-	deriving Show
-
-toIq :: XmlNode -> Iq
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
-	| Just r <- toRequirement n = IqBindReq r $ toBind n'
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
-	= IqSession
-toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) = IqRoster
-toIq n = IqRaw n
-
 toRequirement :: XmlNode -> Maybe Requirement
 toRequirement (XmlNode (_, "optional") _ [] []) = Just Optional
 toRequirement (XmlNode (_, "required") _ [] []) = Just Required
@@ -249,7 +243,13 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 			drDigestUri = fromJust $ lookup "digest-uri" a,
 			drCharset = fromJust $ lookup "charset" a }
 showResponse (XmlNode ((_, Just "jabber:client"), "iq")
-	_ as ns) = SRIq (map (first toTag) as) (map toIq ns)
+	_ as [n]) = SRIq tp i fr to (toIq n)
+	where
+	ts = map (first toTag) as
+	tp = toIqType . fromJust $ lookup Type ts
+	Just i = lookup Id ts
+	fr = toJid <$> lookup From ts
+	to = toJid <$> lookup To ts
 showResponse (XmlNode ((_, Just "jabber:client"), "presence")
 	_ as ns) = SRPresence (map (first toTag) as) ns
 showResponse n = SRRaw n
@@ -288,7 +288,7 @@ toXml (SRCommon (SRChallengeRspauth sret)) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml (SRCommon SRSaslSuccess) =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-toXml (SRIqRaw tp i Nothing to q) = XmlNode (nullQ "iq") []
+toXml (SRIq tp i Nothing to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
 		Just (nullQ "id", i),
 		Just $ iqTypeToAtt tp,
@@ -306,6 +306,12 @@ data Jid = Jid BS.ByteString BS.ByteString (Maybe BS.ByteString) deriving (Eq, S
 
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = BS.concat [a, "@", d] `BS.append` maybe "" ("/" `BS.append`) r
+
+toJid :: BS.ByteString -> Jid
+toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
+	where
+	(a, rst) = BSC.span (/= '@') j
+	(d, r) = BSC.span (/= '/') $ BS.tail rst
 
 {-
 caps :: Feature
