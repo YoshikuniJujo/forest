@@ -95,7 +95,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-	| SRResponse BS.ByteString DigestResponse
 	| SRChallengeRspauth DigestResponse
 	| SRResponseNull
 	| SRSuccess
@@ -242,7 +241,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] [XmlCharData cd]) = let
 		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
 		in
-		SRResponse (fromJust $ lookup "response" a) DR {
+		SRCommon $ SRResponse (fromJust $ lookup "response" a) DR {
 			drUserName = fromJust $ lookup "username" a,
 			drRealm = fromJust $ lookup "realm" a,
 			drPassword = "password",
@@ -363,7 +362,7 @@ digestMd5 u = do
 		qop = "auth",
 		charset = "utf-8",
 		algorithm = "md5-sess" }
-	Just (SRResponse r dr@DR { drUserName = un }) <- await
+	Just (SRCommon (SRResponse r dr@DR { drUserName = un })) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr
 	unless (r == cret) $ error "digestMd5: bad authentication"
 	yield $ SRChallengeRspauth dr

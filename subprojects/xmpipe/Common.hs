@@ -6,6 +6,8 @@ module Common (
 import Text.XML.Pipe
 import qualified Data.ByteString as BS
 
+import Digest
+
 data Common
 	= SRXmlDecl
 	| SRStream [(Tag, BS.ByteString)]
@@ -17,6 +19,7 @@ data Common
 		qop :: BS.ByteString,
 		charset :: BS.ByteString,
 		algorithm :: BS.ByteString }
+	| SRResponse BS.ByteString DigestResponse
 	deriving Show
 
 data Tag

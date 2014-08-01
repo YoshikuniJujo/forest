@@ -106,7 +106,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-	| SRResponse DigestResponse
 	| SRResponseNull
 	| SRChallengeRspauth BS.ByteString
 	| SRSaslSuccess
@@ -433,7 +432,7 @@ showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
-showResponseToXmlNode (SRResponse dr) = drToXmlNode dr
+showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
 showResponseToXmlNode SRResponseNull = drnToXmlNode
 showResponseToXmlNode (SRIq it i as (IqBind b)) = XmlNode (nullQ, "iq") []
 	(t : ((nullQ, "id"), i) :  map (first fromIqTag) as) $ fromBind b
@@ -545,7 +544,7 @@ digestMd5 sender = do
 		Just r -> do
 			let ret = digestMd5Data sender r
 			case ret of
-				[SRResponse dr] -> lift . put . fromJust .
+				[SRCommon (SRResponse _ dr)] -> lift . put . fromJust .
 					lookup "response" $ responseToKvs False dr
 				_ -> return ()
 			mapM_ yield ret
@@ -560,9 +559,12 @@ digestMd5 sender = do
 		_ -> error "digestMd5: bad response"
 
 digestMd5Data :: BS.ByteString -> ShowResponse -> [ShowResponse]
-digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = (: []) $ SRResponse DR {
-	drUserName = sender, drRealm = r, drPassword = "password",
-	drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
-	drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
+digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = [SRCommon (SRResponse h dr)]
+	where
+	Just h = lookup "response" $ responseToKvs True dr
+	dr = DR {
+		drUserName = sender, drRealm = r, drPassword = "password",
+		drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
+		drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
 digestMd5Data _ (SRChallengeRspauth _) = [SRResponseNull]
 digestMd5Data _ _ = []
