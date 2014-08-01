@@ -261,7 +261,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] [XmlCharData cd]) = let
 		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
 		in
-		SRResponse (fromJust $ lookup "response" a) $ DR {
+		SRResponse (fromJust $ lookup "response" a) DR {
 			drUserName = fromJust $ lookup "username" a,
 			drRealm = fromJust $ lookup "realm" a,
 			drPassword = "password",
@@ -386,5 +386,5 @@ digestMd5 u = do
 	unless (r == cret) $ error "digestMd5: bad authentication"
 	yield $ SRChallengeRspauth dr
 	Just SRResponseNull <- await
-	yield $ SRSuccess
+	yield SRSuccess
 	return un
