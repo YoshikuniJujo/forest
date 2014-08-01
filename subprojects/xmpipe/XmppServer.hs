@@ -2,6 +2,10 @@
 	PackageImports #-}
 
 module XmppServer (
+	convert,
+	nullQ,
+	handleP,
+	checkP,
 	digestMd5,
 	ShowResponse(..), showResponse, toXml,
 	Jid(..),
