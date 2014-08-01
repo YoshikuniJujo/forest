@@ -87,6 +87,10 @@ data ShowResponse
 
 data Feature
 	= Mechanisms [Mechanism]
+	| Caps {
+		chash :: BS.ByteString,
+		cver :: BS.ByteString,
+		cnode :: BS.ByteString }
 	| FeatureRaw XmlNode
 	deriving Show
 
@@ -94,6 +98,12 @@ fromFeature :: Feature -> XmlNode
 fromFeature (Mechanisms ms) = XmlNode (nullQ "mechanisms")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $
 	map mechanismToXmlNode ms
+fromFeature c@Caps{} = XmlNode (nullQ "c")
+	[("", "http://jabber.org/protocol/caps")]
+	[	(nullQ "hash", chash c),
+		(nullQ "ver", cver c),
+		(nullQ "node", cnode c) ]
+	[]
 fromFeature (FeatureRaw n) = n
 
 data Mechanism
@@ -216,8 +226,35 @@ id1 = "83e074ac-c014-432e-9f21-d06e73f5777e"
 id2 = "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
 capsFeatures :: ShowResponse
-capsFeatures = SRRaw $ XmlNode (("stream", Nothing), "features") [] []
-	[caps, rosterver, bind, session]
+capsFeatures = SRFeatures $ [
+	caps,
+	FeatureRaw rosterver,
+	FeatureRaw bind,
+	FeatureRaw session ]
+
+caps :: Feature
+caps = Caps {
+	chash = "sha-1",
+	cver = "k07nuHawZqmndRtf3ZfBm54FwL0=",
+	cnode = "http://prosody.im" }
+
+rosterver :: XmlNode
+rosterver = XmlNode (nullQ "ver")
+	[("", "urn:xmpp:features:rosterver")]
+	[]
+	[XmlNode (nullQ "optional") [] [] []]
+
+bind :: XmlNode
+bind = XmlNode (nullQ "bind")
+	[("", "urn:ietf:params:xml:ns:xmpp-bind")]
+	[]
+	[XmlNode (nullQ "required") [] [] []]
+
+session :: XmlNode
+session = XmlNode (nullQ "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")]
+	[]
+	[XmlNode (nullQ "optional") [] [] []]
 
 makeSR :: Int -> ShowResponse -> [ShowResponse]
 makeSR 0 (SRStream _) = [
@@ -309,33 +346,6 @@ voidM = (>> return ())
 
 nullQ :: BS.ByteString -> QName
 nullQ = (("", Nothing) ,)
-
-caps :: XmlNode
-caps = XmlNode (nullQ "c")
-	[("", "http://jabber.org/protocol/caps")]
-	[	(nullQ "hash", "sha-1"),
-		(nullQ "ver", "k07nuHawZqmndRtf3ZfBm54FwL0="),
-		(nullQ "node", "http://prosody.im")
-		]
-	[]
-
-rosterver :: XmlNode
-rosterver = XmlNode (nullQ "ver")
-	[("", "urn:xmpp:features:rosterver")]
-	[]
-	[XmlNode (nullQ "optional") [] [] []]
-
-bind :: XmlNode
-bind = XmlNode (nullQ "bind")
-	[("", "urn:ietf:params:xml:ns:xmpp-bind")]
-	[]
-	[XmlNode (nullQ "required") [] [] []]
-
-session :: XmlNode
-session = XmlNode (nullQ "session")
-	[("", "urn:ietf:params:xml:ns:xmpp-session")]
-	[]
-	[XmlNode (nullQ "optional") [] [] []]
 
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
