@@ -2,6 +2,7 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	isCaps,
 	handleP,
 	convert,
 	digestMd5,
@@ -187,6 +188,10 @@ data Feature
 	| Session Requirement
 	| FeatureRaw XmlNode
 	deriving (Eq, Show)
+
+isCaps :: Feature -> Bool
+isCaps Caps{} = True
+isCaps _ = False
 
 toFeature :: XmlNode -> Feature
 toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")

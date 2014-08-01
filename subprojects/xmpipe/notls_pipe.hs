@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings, TypeFamilies, PackageImports, FlexibleContexts #-}
 
+import Debug.Trace
+
 import "monads-tf" Control.Monad.State
+import Data.List
 import Data.Pipe
 import Data.HandleLike
 import System.Environment
@@ -33,9 +36,17 @@ process = await >>= \mr -> case mr of
 	Just (SRFeatures [Mechanisms ms])
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
 	Just SRSaslSuccess -> mapM_ yield [SRXmlDecl, begin] >> process
-	Just (SRFeatures fs) -> mapM_ yield binds >> process
-	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
-		-> yield (getCaps v n) >> process
+	Just (SRFeatures fs) -> do
+		trace "HERE" (return ())
+		let Just Caps { ctNode = n, ctVer = v } = find isCaps fs
+		trace (show $ (n, v)) (return ())
+		mapM_ yield binds
+--		yield $ getCaps "prof_caps_4492" "localhost" v n
+		process
+	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) -> do
+		yield (getCaps "prof_caps_2"
+			(sender `BS.append` "@localhost/profanity") v n)
+		process
 	Just (SRIq Get i [(IqTo, to), (IqFrom, f)] (IqDiscoInfoNode [(DTNode, n)]))
 		| to == sender `BS.append` "@localhost/profanity" -> do
 			yield $ resultCaps i f n
@@ -54,9 +65,9 @@ binds = [
 	SRIq Get "_xmpp_roster1" [] $ IqRoster [],
 	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
 
-getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse
-getCaps v n = SRIq Get "prof_caps_2" [
-	(IqTo, sender `BS.append` "@localhost/profanity") ] $ IqCapsQuery v n
+getCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> BS.ByteString ->
+	ShowResponse
+getCaps i t v n = SRIq Get i [(IqTo, t)] $ IqCapsQuery v n
 
 resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> ShowResponse
 resultCaps i t n = SRIq Result i [(IqTo, t)] (IqCapsQuery2 profanityCaps n)

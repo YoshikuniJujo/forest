@@ -227,7 +227,7 @@ id2 = "5b5b55ce-8a9c-4879-b4eb-0231b25a54a4"
 
 capsFeatures :: ShowResponse
 capsFeatures = SRFeatures $ [
-	caps,
+--	caps,
 	FeatureRaw rosterver,
 	FeatureRaw bind,
 	FeatureRaw session ]
