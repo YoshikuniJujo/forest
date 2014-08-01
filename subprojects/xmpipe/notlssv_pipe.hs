@@ -13,8 +13,6 @@ import Data.HandleLike
 import Text.XML.Pipe
 import Network
 
-import qualified Data.ByteString as BS
-
 import XmppServer
 
 data SHandle s h = SHandle h
@@ -45,59 +43,43 @@ xmpp h = do
 
 makeP :: (MonadState m, StateType m ~ XmppState) =>
 	Pipe ShowResponse ShowResponse m ()
-makeP = do
-	mr <- await
-	case mr of
-		Just r@(SRStream _) -> do
-			(u, rcv) <- lift $ (,) `liftM` nextUuid `ap` gets receiver
-			mapM_ yield $ makeSR (u, rcv) r
-			case rcv of
-				Nothing -> digestMd5 u >>= \un -> lift .
-					modify . setReceiver $
-						Jid un "localhost" Nothing
-				_ -> return ()
-			makeP
-		Just r -> do
-			(u, rcv) <- lift $ (,) `liftM` nextUuid `ap` gets receiver
-			mapM_ yield $ makeSR (u, rcv) r
-			makeP
-		_ -> return ()
-
-makeSR :: (UUID, Maybe Jid) -> ShowResponse -> [ShowResponse]
-makeSR (u, Nothing) (SRStream _) = [
-	SRXmlDecl,
-	SRStream [
-		(Id, toASCIIBytes u),
-		(From, "localhost"), (Version, "1.0"), (Lang, "en")] ]
-makeSR (u, _) (SRStream _) = [
-	SRXmlDecl,
-	SRStream [
-		(Id, toASCIIBytes u),
-		(From, "localhost"), (Version, "1.0"), (Lang, "en")],
-	SRFeatures [Rosterver Optional, Bind Required, Session Optional] ]
-makeSR _ (SRAuth _) = error "makeR: not implemented auth mechanism"
-makeSR (_, Just j) (SRIq [(Id, i), (Type, "set")]
-	[IqBindReq Required (Resource _n)]) =
-	(: []) . SRIqRaw Result i Nothing Nothing $ JidResult j
-makeSR (_, j) (SRIq [(Id, i), (Type, "set")] [IqSession]) = 
-	[SRIqRaw Result i Nothing j QueryNull]
-makeSR (_, j) (SRIq [(Id, i), (Type, "get")] [IqRoster]) =
-	(: []) . SRIqRaw Result i Nothing j $ RosterResult "1" []
-makeSR (_, Just j) (SRPresence _ _) = (: []) $ SRMessage Chat "hoge" sender j
-	[XmlNode (nullQ "body") [] [] [XmlCharData "Hogeru"]]
-makeSR _ _ = []
-
-handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
-handleP h = do
-	c <- lift $ hlGetContent h
-	yield c
-	handleP h
+makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
+	(Just (SRStream _), Nothing) -> do
+		yield SRXmlDecl
+		lift nextUuid >>= \u -> yield $ SRStream [
+			(Id, toASCIIBytes u),
+			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
+		lift nextUuid >>= digestMd5 >>= \un -> lift . modify .
+			setReceiver $ Jid un "localhost" Nothing
+		makeP
+	(Just (SRStream _), _) -> do
+		yield SRXmlDecl
+		lift nextUuid >>= \u -> yield $ SRStream [
+			(Id, toASCIIBytes u),
+			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
+		yield $ SRFeatures
+			[Rosterver Optional, Bind Required, Session Optional]
+		makeP
+	(Just (SRIq [(Id, i), (Type, "set")]
+		[IqBindReq Required (Resource n)]), _) -> do
+		lift $ modify (setResource n)
+		Just j <- lift $ gets receiver
+		yield . SRIqRaw Result i Nothing Nothing $ JidResult j
+		makeP
+	(Just (SRIq [(Id, i), (Type, "set")] [IqSession]), mrcv) ->
+		yield (SRIqRaw Result i Nothing mrcv QueryNull) >> makeP
+	(Just (SRIq [(Id, i), (Type, "get")] [IqRoster]), mrcv) -> do
+		yield . SRIqRaw Result i Nothing mrcv $ RosterResult "1" []
+		makeP
+	(Just (SRPresence _ _), Just rcv) ->
+		yield (SRMessage Chat "hoge" sender rcv message) >> makeP
+	_ -> return ()
 
 voidM :: Monad m => m a -> m ()
 voidM = (>> return ())
 
-nullQ :: BS.ByteString -> QName
-nullQ = (("", Nothing) ,)
-
 sender :: Jid
 sender = Jid "yoshio" "localhost" (Just "profanity")
+
+message :: [XmlNode]
+message = [XmlNode (("", Nothing), "body") [] [] [XmlCharData "Hi!"]]
