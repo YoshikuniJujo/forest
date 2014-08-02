@@ -96,7 +96,7 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRCommon Common
 
-	| SRPresence [(Tag, BS.ByteString)] [XmlNode]
+	| SRPresence [(Tag, BS.ByteString)] Caps
 
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
 	| SRRaw XmlNode
@@ -242,7 +242,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq")
 	fr = toJid <$> lookup From ts
 	to = toJid <$> lookup To ts
 showResponse (XmlNode ((_, Just "jabber:client"), "presence")
-	_ as ns) = SRPresence (map (first toTag) as) ns
+	_ as ns) = SRPresence (map (first toTag) as) $ toCaps ns
 showResponse n = SRRaw n
 
 toTag :: QName -> Tag
