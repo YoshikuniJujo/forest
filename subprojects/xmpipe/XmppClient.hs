@@ -2,6 +2,7 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	capsToCaps,
 	fromJid,
 	toJid,
 	Common(..),
@@ -112,13 +113,45 @@ data ShowResponse
 	= SRCommon Common
 
 	| SRPresence [(Tag, BS.ByteString)] Caps
-	| SRPresenceRaw BS.ByteString BS.ByteString CAPS.Caps
+	| SRPresenceRaw BS.ByteString Caps
 
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
 	| SREnd
 	| SRRaw XmlNode
 	deriving Show
+
+data Caps
+	= C [(CapsTag, BS.ByteString)]
+	| CapsRaw [XmlNode]
+	deriving Show
+
+toCaps :: [XmlNode] -> Caps
+toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
+	C $ map (first toCapsTag) as
+toCaps ns = CapsRaw ns
+
+capsToCaps :: CAPS.Caps -> BS.ByteString -> Caps
+capsToCaps c n = C [(CTHash, "sha-1"), (CTNode, n), (CTVer, CAPS.mkHash c)]
+
+fromCaps :: Caps -> [XmlNode]
+fromCaps (C ts) = (: []) $ XmlNode (nullQ, "c")
+	[("", "http://jabber.org/protocol/caps")] (map (first fromCapsTag) ts) []
+fromCaps (CapsRaw ns) = ns
+
+data CapsTag = CTHash | CTNode | CTVer | CTRaw QName deriving (Eq, Show)
+
+toCapsTag :: QName -> CapsTag
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
+toCapsTag n = CTRaw n
+
+fromCapsTag :: CapsTag -> QName
+fromCapsTag CTHash = (nullQ, "hash")
+fromCapsTag CTVer = (nullQ, "ver")
+fromCapsTag CTNode = (nullQ, "node")
+fromCapsTag (CTRaw n) = n
 
 toIqBody :: [XmlNode] -> Query
 toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
@@ -254,17 +287,6 @@ fromTag Version = (nullQ, "version")
 fromTag Lang = (("xml", Nothing), "lang")
 fromTag (TagRaw n) = n
 
-data CapsTag = CTHash | CTNode | CTVer | CTRaw QName deriving (Eq, Show)
-
-toCapsTag :: QName -> CapsTag
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
-toCapsTag n = CTRaw n
-
--- fromCapsTag :: CapsTag -> QName
--- fromCapsTag
-
 data IqTag = IqId | IqType | IqTo | IqFrom | IqRaw QName deriving (Eq, Show)
 
 toIqTag :: QName -> IqTag
@@ -307,20 +329,6 @@ toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
 	[XmlCharData cd]] = BJid $ toJid cd
 toBind [n] = BindRaw n
 toBind _ = error "toBind: bad"
-
-data Caps
-	= C [(CapsTag, BS.ByteString)]
-	| CapsRaw [XmlNode]
-	deriving Show
-
-toCaps :: [XmlNode] -> Caps
-toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
-	C $ map (first toCapsTag) as
-toCaps ns = CapsRaw ns
-
--- fromCaps :: Caps -> [XmlNode]
--- fromCaps 
--- fromCaps (CapsRaw ns) = ns
 
 showResponse :: XmlNode -> ShowResponse
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
@@ -447,8 +455,8 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRPresenceRaw i n c) =
-	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] [capsToXml c n]
+showResponseToXmlNode (SRPresenceRaw i c) =
+	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] (fromCaps c) -- [capsToXml c n]
 --			[capsToXml profanityCaps "http://www.profanity.im"] ]
 showResponseToXmlNode (SRMessageRaw mt i j m) =
 	XmlNode (nullQ, "message") []

@@ -85,7 +85,8 @@ binds = [
 		Resource "profanity",
 	SRCommon $ SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
 	SRCommon . SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
-	SRPresenceRaw "prof_presence_1" "http://www.profanity.im" profanityCaps ]
+	SRPresenceRaw "prof_presence_1" $
+		capsToCaps profanityCaps "http://www.profanity.im" ]
 
 getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse
 getCaps v n = SRCommon . SRIq Get "prof_caps_2" Nothing

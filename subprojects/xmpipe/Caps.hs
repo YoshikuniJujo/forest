@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections #-}
 
-module Caps (Caps(..), Identity(..), capsToXml, capsToQuery, profanityCaps) where
+module Caps (
+	Caps(..), Identity(..), mkHash, capsToXml, capsToQuery, profanityCaps) where
 
 import Control.Applicative
 import Data.Maybe
