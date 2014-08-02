@@ -134,7 +134,7 @@ capsToCaps :: CAPS.Caps -> BS.ByteString -> Caps
 capsToCaps c n = C [(CTHash, "sha-1"), (CTNode, n), (CTVer, CAPS.mkHash c)]
 
 fromCaps :: Caps -> [XmlNode]
-fromCaps (C ts) = (: []) $ XmlNode (nullQ, "c")
+fromCaps (C ts) = (: []) $ XmlNode (nullQ "c")
 	[("", "http://jabber.org/protocol/caps")] (map (first fromCapsTag) ts) []
 fromCaps (CapsRaw ns) = ns
 
@@ -147,9 +147,9 @@ toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
 toCapsTag n = CTRaw n
 
 fromCapsTag :: CapsTag -> QName
-fromCapsTag CTHash = (nullQ, "hash")
-fromCapsTag CTVer = (nullQ, "ver")
-fromCapsTag CTNode = (nullQ, "node")
+fromCapsTag CTHash = (nullQ "hash")
+fromCapsTag CTVer = (nullQ "ver")
+fromCapsTag CTNode = (nullQ "node")
 fromCapsTag (CTRaw n) = n
 
 toIqBody :: [XmlNode] -> Query
@@ -254,8 +254,8 @@ toRequirement [XmlNode (_, "required") _ [] []] = Required
 toRequirement n = NoRequirement n
 
 fromRequirement :: Requirement -> XmlNode
-fromRequirement Optional = XmlNode (nullQ, "optional") [] [] []
-fromRequirement Required = XmlNode (nullQ, "required") [] [] []
+fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
+fromRequirement Required = XmlNode (nullQ "required") [] [] []
 fromRequirement (NoRequirement _) = undefined
 
 toMechanism :: XmlNode -> Mechanism
@@ -279,10 +279,10 @@ qnameToTag (("xml", Nothing), "lang") = Lang
 qnameToTag n = TagRaw n
 
 fromTag :: Tag -> QName
-fromTag Id = (nullQ, "id")
-fromTag From = (nullQ, "from")
-fromTag To = (nullQ, "to")
-fromTag Version = (nullQ, "version")
+fromTag Id = (nullQ "id")
+fromTag From = (nullQ "from")
+fromTag To = (nullQ "to")
+fromTag Version = (nullQ "version")
 fromTag Lang = (("xml", Nothing), "lang")
 fromTag (TagRaw n) = n
 
@@ -296,24 +296,24 @@ toIqTag ((_, Just "jabber:client"), "from") = IqFrom
 toIqTag n = IqRaw n
 
 fromIqTag :: IqTag -> QName
-fromIqTag IqId = (nullQ, "id")
-fromIqTag IqType = (nullQ, "type")
-fromIqTag IqTo = (nullQ, "to")
-fromIqTag IqFrom = (nullQ, "from")
+fromIqTag IqId = (nullQ "id")
+fromIqTag IqType = (nullQ "type")
+fromIqTag IqTo = (nullQ "to")
+fromIqTag IqFrom = (nullQ "from")
 fromIqTag (IqRaw n) = n
 
 session :: XmlNode
-session = XmlNode (nullQ, "session")
+session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
 
 resource :: BS.ByteString -> XmlNode
-resource r = XmlNode (nullQ, "resource") [] [] [XmlCharData r]
+resource r = XmlNode (nullQ "resource") [] [] [XmlCharData r]
 
 fromBind :: Bind -> [XmlNode]
 fromBind (BJid _) = error "fromBind: not implemented"
 fromBind (Resource r) = [
-	XmlNode (nullQ, "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
-		[XmlNode (nullQ, "required") [] [] [], resource r]
+	XmlNode (nullQ "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
+		[XmlNode (nullQ "required") [] [] [], resource r]
 	]
 fromBind (BindRaw n) = [n]
 
@@ -379,90 +379,89 @@ showResponseToXmlNode (SRCommon (SRStream as)) = XmlStart
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-showResponseToXmlNode (SRCommon (SRAuth ScramSha1)) = XmlNode (nullQ, "auth")
+showResponseToXmlNode (SRCommon (SRAuth ScramSha1)) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ, "auth")
+showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
 showResponseToXmlNode (SRCommon SRResponseNull) = drnToXmlNode
 showResponseToXmlNode (SRCommon (SRIq it i fr to (IqBind r b))) =
-	XmlNode (nullQ, "iq") [] as .
+	XmlNode (nullQ "iq") [] as .
 		(maybe id ((:) . fromRequirement) r) $ fromBind b
 	where
 	as = catMaybes [
 		Just t,
-		Just ((nullQ, "id"), i),
-		((nullQ, "from") ,) . fromJid <$> fr,
-		((nullQ, "to") ,) . fromJid <$> to ]
-	t = ((nullQ, "type") ,) $ case it of
+		Just (nullQ "id", i),
+		(nullQ "from" ,) . fromJid <$> fr,
+		(nullQ "to" ,) . fromJid <$> to ]
+	t = (nullQ "type" ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRIq it i fr to IqSession)) =
-	XmlNode (nullQ, "iq") [] as [session]
+	XmlNode (nullQ "iq") [] as [session]
 	where
 	as = catMaybes [
 		Just t,
-		Just ((nullQ, "id"), i),
-		((nullQ, "from") ,) . fromJid <$> fr,
-		((nullQ, "to") ,) . fromJid <$> to ]
-	t = ((nullQ, "type") ,) $ case it of
+		Just ((nullQ "id"), i),
+		((nullQ "from") ,) . fromJid <$> fr,
+		((nullQ "to") ,) . fromJid <$> to ]
+	t = ((nullQ "type") ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRIq it i fr to (IqRoster Nothing))) =
-	XmlNode (nullQ, "iq") [] as [roster]
+	XmlNode (nullQ "iq") [] as [roster]
 	where
 	as = catMaybes [
 		Just t,
-		Just ((nullQ, "id"), i),
-		((nullQ, "from") ,) . fromJid <$> fr,
-		((nullQ, "to") ,) . fromJid <$> to ]
-	t = ((nullQ, "type") ,) $ case it of
+		Just ((nullQ "id"), i),
+		(nullQ "from" ,) . fromJid <$> fr,
+		(nullQ "to" ,) . fromJid <$> to ]
+	t = (nullQ "type" ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery v n))) =
-	XmlNode (nullQ, "iq") [] as [capsQuery v n]
+	XmlNode (nullQ "iq") [] as [capsQuery v n]
 	where
 	as = catMaybes [
 		Just t,
-		Just ((nullQ, "id"), i),
-		((nullQ, "from") ,) . fromJid <$> fr,
-		((nullQ, "to") ,) . fromJid <$> to ]
-	t = ((nullQ, "type") ,) $ case it of
+		Just (nullQ "id", i),
+		(nullQ "from" ,) . fromJid <$> fr,
+		(nullQ "to" ,) . fromJid <$> to ]
+	t = (nullQ "type" ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
-	XmlNode (nullQ, "iq") [] as [capsToQuery c n]
+	XmlNode (nullQ "iq") [] as [capsToQuery c n]
 	where
 	as = catMaybes [
 		Just t,
-		Just ((nullQ, "id"), i),
-		((nullQ, "from") ,) . fromJid <$> fr,
-		((nullQ, "to") ,) . fromJid <$> to ]
-	t = ((nullQ, "type") ,) $ case it of
+		Just (nullQ "id", i),
+		(nullQ "from" ,) . fromJid <$> fr,
+		(nullQ "to" ,) . fromJid <$> to ]
+	t = (nullQ "type" ,) $ case it of
 		Get -> "get"
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
 showResponseToXmlNode (SRPresence ts c) =
-	XmlNode (nullQ, "presence") [] (map (first fromTag) ts) (fromCaps c)
---	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] (fromCaps c)
+	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 showResponseToXmlNode (SRMessageRaw mt i j m) =
-	XmlNode (nullQ, "message") []
-		[t,((nullQ, "id"), i), ((nullQ, "to"), fromJid j)]
-		[XmlNode (nullQ, "body") [] [] [XmlCharData m]]
+	XmlNode (nullQ "message") []
+		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
+		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
 	where
-	t = ((nullQ, "type") ,) $ case mt of
+	t = (nullQ "type" ,) $ case mt of
 		Normal -> "normal"
 		Chat -> "chat"
 		_ -> error "showResponseToXmlNode: not implemented yet"
@@ -488,15 +487,15 @@ drToXmlNode dr = XmlNode (("", Nothing), "response")
 	[XmlCharData . encode . kvsToS $ responseToKvs True dr]
 
 drnToXmlNode :: XmlNode
-drnToXmlNode = XmlNode (nullQ, "response")
+drnToXmlNode = XmlNode (nullQ "response")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 
 
-nullQ :: (BS.ByteString, Maybe BS.ByteString)
-nullQ = ("", Nothing)
+nullQ :: BS.ByteString -> QName
+nullQ = (("", Nothing) ,)
 
 roster :: XmlNode
-roster = XmlNode (nullQ, "query") [("", "jabber:iq:roster")] [] []
+roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []
 
 capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
 capsQuery v n = XmlNode (("", Nothing), "query")
