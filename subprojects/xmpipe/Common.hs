@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module Common (
 	Common(..), Tag(..), Mechanism(..), Requirement(..),
@@ -7,6 +7,8 @@ module Common (
 	DiscoTag(..), InfoFeature(..), InfoFeatureTag(..),
 	toDiscoTag, toIdentity, toInfoFeature,
 	IqType(..),
+	nullQ,
+	fromCaps, toCaps, CapsTag(..), Caps(..), toCapsTag, capsToCaps,
 	) where
 
 import Control.Arrow
@@ -133,3 +135,38 @@ toIdentity (XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "identit
 toIdentity n = IdentityRaw n
 
 data IqType = Get | Set | Result | ITError deriving (Eq, Show)
+
+data Caps
+	= C [(CapsTag, BS.ByteString)]
+	| CapsRaw [XmlNode]
+	deriving Show
+
+toCaps :: [XmlNode] -> Caps
+toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
+	C $ map (first toCapsTag) as
+toCaps ns = CapsRaw ns
+
+capsToCaps :: CAPS.Caps -> BS.ByteString -> Caps
+capsToCaps c n = C [(CTHash, "sha-1"), (CTNode, n), (CTVer, CAPS.mkHash c)]
+
+fromCaps :: Caps -> [XmlNode]
+fromCaps (C ts) = (: []) $ XmlNode (nullQ "c")
+	[("", "http://jabber.org/protocol/caps")] (map (first fromCapsTag) ts) []
+fromCaps (CapsRaw ns) = ns
+
+data CapsTag = CTHash | CTNode | CTVer | CTRaw QName deriving (Eq, Show)
+
+toCapsTag :: QName -> CapsTag
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
+toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
+toCapsTag n = CTRaw n
+
+fromCapsTag :: CapsTag -> QName
+fromCapsTag CTHash = (nullQ "hash")
+fromCapsTag CTVer = (nullQ "ver")
+fromCapsTag CTNode = (nullQ "node")
+fromCapsTag (CTRaw n) = n
+
+nullQ :: BS.ByteString -> QName
+nullQ = (("", Nothing) ,)

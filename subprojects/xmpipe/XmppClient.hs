@@ -120,38 +120,6 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
-data Caps
-	= C [(CapsTag, BS.ByteString)]
-	| CapsRaw [XmlNode]
-	deriving Show
-
-toCaps :: [XmlNode] -> Caps
-toCaps [XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []] =
-	C $ map (first toCapsTag) as
-toCaps ns = CapsRaw ns
-
-capsToCaps :: CAPS.Caps -> BS.ByteString -> Caps
-capsToCaps c n = C [(CTHash, "sha-1"), (CTNode, n), (CTVer, CAPS.mkHash c)]
-
-fromCaps :: Caps -> [XmlNode]
-fromCaps (C ts) = (: []) $ XmlNode (nullQ "c")
-	[("", "http://jabber.org/protocol/caps")] (map (first fromCapsTag) ts) []
-fromCaps (CapsRaw ns) = ns
-
-data CapsTag = CTHash | CTNode | CTVer | CTRaw QName deriving (Eq, Show)
-
-toCapsTag :: QName -> CapsTag
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "hash") = CTHash
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "ver") = CTVer
-toCapsTag ((_, Just "http://jabber.org/protocol/caps"), "node") = CTNode
-toCapsTag n = CTRaw n
-
-fromCapsTag :: CapsTag -> QName
-fromCapsTag CTHash = (nullQ "hash")
-fromCapsTag CTVer = (nullQ "ver")
-fromCapsTag CTNode = (nullQ "node")
-fromCapsTag (CTRaw n) = n
-
 toIqBody :: [XmlNode] -> Query
 toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
 	IqBind Nothing $ toBind ns
@@ -490,9 +458,6 @@ drnToXmlNode :: XmlNode
 drnToXmlNode = XmlNode (nullQ "response")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 
-
-nullQ :: BS.ByteString -> QName
-nullQ = (("", Nothing) ,)
 
 roster :: XmlNode
 roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []

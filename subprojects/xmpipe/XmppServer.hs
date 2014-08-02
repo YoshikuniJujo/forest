@@ -334,9 +334,6 @@ checkP h = do
 			checkP h
 		_ -> return ()
 
-nullQ :: BS.ByteString -> QName
-nullQ = (("", Nothing) ,)
-
 convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 
