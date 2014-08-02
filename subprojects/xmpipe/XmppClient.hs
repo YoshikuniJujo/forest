@@ -113,7 +113,6 @@ data ShowResponse
 	= SRCommon Common
 
 	| SRPresence [(Tag, BS.ByteString)] Caps
-	| SRPresenceRaw BS.ByteString Caps
 
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
@@ -455,9 +454,9 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRPresenceRaw i c) =
-	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] (fromCaps c) -- [capsToXml c n]
---			[capsToXml profanityCaps "http://www.profanity.im"] ]
+showResponseToXmlNode (SRPresence ts c) =
+	XmlNode (nullQ, "presence") [] (map (first fromTag) ts) (fromCaps c)
+--	XmlNode (nullQ, "presence") [] [((nullQ, "id"), i)] (fromCaps c)
 showResponseToXmlNode (SRMessageRaw mt i j m) =
 	XmlNode (nullQ, "message") []
 		[t,((nullQ, "id"), i), ((nullQ, "to"), fromJid j)]
