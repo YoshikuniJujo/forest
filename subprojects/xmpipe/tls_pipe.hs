@@ -65,7 +65,7 @@ process = await >>= \mr -> case mr of
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
 	Just (SRCommon SRSaslSuccess) -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
 	Just (SRCommon (SRFeatures fs)) -> mapM_ yield binds >> process
-	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
+	Just (SRCommon (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])))
 		-> yield (getCaps v n) >> process
 	Just (SRCommon (SRIq
 		Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)])))
@@ -85,7 +85,7 @@ binds = [
 		Resource "profanity",
 	SRCommon $ SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
 	SRCommon . SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
-	SRPresence [(Id, "prof_presence_1")] $
+	SRCommon . SRPresence [(Id, "prof_presence_1")] $
 		capsToCaps profanityCaps "http://www.profanity.im" ]
 
 getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse

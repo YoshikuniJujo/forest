@@ -95,7 +95,7 @@ makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
 		yield . SRCommon . SRIq Result i Nothing mrcv
 			. IqRoster . Just $ Roster (Just "1") []
 		makeP
-	(Just (SRPresence _ _), Just rcv) ->
+	(Just (SRCommon (SRPresence _ _)), Just rcv) ->
 		yield (SRMessage Chat "hoge" sender rcv message) >> makeP
 	_ -> return ()
 

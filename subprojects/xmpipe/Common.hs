@@ -34,6 +34,7 @@ data Common
 	| SRResponseNull
 	| SRSaslSuccess
 	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
+	| SRPresence [(Tag, BS.ByteString)] Caps
 	deriving Show
 
 data Tag

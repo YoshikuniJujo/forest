@@ -112,8 +112,6 @@ xmlPipe = do
 data ShowResponse
 	= SRCommon Common
 
-	| SRPresence [(Tag, BS.ByteString)] Caps
-
 	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
 	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
 	| SREnd
@@ -331,7 +329,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 		"error" -> ITError
 		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
-	SRPresence (map (first qnameToTag) as) $ toCaps ns
+	SRCommon . SRPresence (map (first qnameToTag) as) $ toCaps ns
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
 	(b : d : xd : [])) = SRMessage
 		(map (first toIqTag) as)
@@ -422,7 +420,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRPresence ts c) =
+showResponseToXmlNode (SRCommon (SRPresence ts c)) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 showResponseToXmlNode (SRMessageRaw mt i j m) =
 	XmlNode (nullQ "message") []

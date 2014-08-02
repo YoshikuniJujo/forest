@@ -43,7 +43,7 @@ process = await >>= \mr -> case mr of
 		mapM_ yield binds
 --		yield $ getCaps "prof_caps_4492" Nothing v n
 		process
-	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) -> do
+	Just (SRCommon (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))) -> do
 		yield (getCaps "prof_caps_2"
 			(Just $ sender `BS.append` "@localhost/profanity") v n)
 		process
@@ -65,7 +65,7 @@ binds = [
 		Resource "profanity",
 	SRCommon $ SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
 	SRCommon . SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
-	SRPresence [(Id, "prof_presence_1")] $
+	SRCommon . SRPresence [(Id, "prof_presence_1")] $
 		capsToCaps profanityCaps "http://www.profanity.im" ]
 
 getCaps :: BS.ByteString -> Maybe BS.ByteString -> BS.ByteString -> BS.ByteString ->
