@@ -13,6 +13,7 @@ module Common (
 	MessageDelay(..), DelayTag(..), toDelay,
 	MessageXDelay(..), XDelayTag(..), toXDelay,
 	MBody(..),
+	MessageType(..),
 	) where
 
 import Control.Arrow
@@ -39,6 +40,7 @@ data Common
 	| SRSaslSuccess
 	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] Caps
+	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
 	deriving Show
 
 data Tag
@@ -224,3 +226,6 @@ data MBody
 	| MBodyDelay MessageBody MessageDelay MessageXDelay
 	| MBodyRaw [XmlNode]
 	deriving Show
+
+data MessageType = Normal | Chat | Groupchat | Headline | MTError
+	deriving (Eq, Show)

@@ -51,7 +51,7 @@ process = await >>= \mr -> case mr of
 		Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)])))
 		| fromJid to == sender `BS.append` "@localhost/profanity" -> do
 			yield $ resultCaps i (fromJid f) n
-			yield . SRMessage Chat "prof_3" Nothing recipient .
+			yield . SRCommon . SRMessage Chat "prof_3" Nothing recipient .
 				MBody $ MessageBody message
 			yield SREnd
 	Just _ -> process

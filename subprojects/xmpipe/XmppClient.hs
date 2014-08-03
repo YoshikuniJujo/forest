@@ -113,8 +113,6 @@ xmlPipe = do
 data ShowResponse
 	= SRCommon Common
 
-	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
-
 	| SREnd
 	| SRRaw XmlNode
 	deriving Show
@@ -137,9 +135,6 @@ toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 	(map toInfoFeature ns)
 toIqBody [] = IqSessionNull
 toIqBody ns = QueryRaw ns
-
-data MessageType = Normal | Chat | Groupchat | Headline | MTError
-	deriving (Eq, Show)
 
 toMessageType :: BS.ByteString -> MessageType
 toMessageType "normal" = Normal
@@ -297,7 +292,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
 		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
 		XmlNode ((_, Just "jabber:x:delay"), "x") _ _ [] <- xd =
-		SRMessage tp i fr to $
+		SRCommon . SRMessage tp i fr to $
 			MBodyDelay (toBody b) (toDelay d) (toXDelay xd)
 	where
 	ts = map (first toIqTag) as
@@ -306,7 +301,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	fr = toJid <$> lookup IqFrom ts
 	to = toJid . fromJust $ lookup IqTo ts
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
-	SRMessage tp i fr to $ MBodyRaw ns
+	SRCommon . SRMessage tp i fr to $ MBodyRaw ns
 	where
 	ts = map (first toIqTag) as
 	tp = toMessageType . fromJust $ lookup IqType ts
@@ -399,7 +394,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRPresence ts c)) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
-showResponseToXmlNode (SRMessage mt i Nothing j (MBody (MessageBody m))) =
+showResponseToXmlNode (SRCommon (SRMessage mt i Nothing j (MBody (MessageBody m)))) =
 	XmlNode (nullQ "message") []
 		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
 		[XmlNode (nullQ "body") [] [] [XmlCharData m]]

@@ -98,8 +98,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRCommon Common
 
-	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
-
 	| SRRaw XmlNode
 	deriving Show
 
@@ -130,9 +128,6 @@ fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
 --	[XmlNode (nullQ "query") [("", "jabber:iq:roster")] [(nullQ "ver", v)] ns]
 fromQuery IqSessionNull = []
 fromQuery (QueryRaw ns) = ns
-
-data MessageType
-	= Normal | Chat | Groupchat | Headline | MTError deriving (Eq, Show)
 
 fromMessageType :: MessageType -> BS.ByteString
 fromMessageType Normal = "normal"
@@ -286,7 +281,7 @@ toXml (SRCommon (SRIq tp i Nothing to q)) = XmlNode (nullQ "iq") []
 		Just $ iqTypeToAtt tp,
 		(nullQ "to" ,) . fromJid <$> to ]) 
 	(fromQuery q)
-toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
+toXml (SRCommon (SRMessage tp i (Just fr) to (MBody (MessageBody m)))) =
 	XmlNode (nullQ "message") []
 		[messageTypeToAtt tp,
 			(nullQ "from", fromJid fr),
