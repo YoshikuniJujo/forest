@@ -50,7 +50,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
-import Papillon
 import Digest
 import Caps (capsToQuery)
 
@@ -108,77 +107,6 @@ xmlPipe = do
 session :: XmlNode
 session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
-
-showResponse :: XmlNode -> Common
-showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
-	as) = SRStream $ map (first toTag) as
-showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
-	_ [] nds) = SRFeatures $ map toFeature nds
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
-	_ as [])
-	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism' m
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
-	_ [] [XmlCharData c]) = let
-		Right d = B64.decode c
-		Just a = parseAtts d in
-		case a of
-			[("rspauth", ra)] -> SRChallengeRspauth ra
-			_ -> SRChallenge {
-				realm = fromJust $ lookup "realm" a,
-				nonce = fromJust $ lookup "nonce" a,
-				qop = fromJust $ lookup "qop" a,
-				charset = fromJust $ lookup "charset" a,
-				algorithm = fromJust $ lookup "algorithm" a }
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] [XmlCharData cd]) = let
-		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
-		in
-		SRResponse (fromJust $ lookup "response" a) DR {
-			drUserName = fromJust $ lookup "username" a,
-			drRealm = fromJust $ lookup "realm" a,
-			drPassword = "password",
-			drCnonce = fromJust $ lookup "cnonce" a,
-			drNonce = fromJust $ lookup "nonce" a,
-			drNc = fromJust $ lookup "nc" a,
-			drQop = fromJust $ lookup "qop" a,
-			drDigestUri = fromJust $ lookup "digest-uri" a,
-			drCharset = fromJust $ lookup "charset" a }
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] []) = SRResponseNull
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
-	_ [] []) = SRSaslSuccess
-showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRIq tp i fr to $ toIqBody ns
-	where
-	ts = map (first toTag) as
-	tp = toIqType . fromJust $ lookup Type ts
-	Just i = lookup Id ts
-	fr = toJid <$> lookup From ts
-	to = toJid <$> lookup To ts
-showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
-	SRPresence (map (first toTag) as) $ toCaps ns
-
-showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
-	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
-		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
-		XmlNode ((_, Just "jabber:x:delay"), "x") _ _ [] <- xd =
-		SRMessage tp i fr to $
-			MBodyDelay (toBody b) (toDelay d) (toXDelay xd)
-	where
-	ts = map (first toTag) as
-	tp = toMessageType . fromJust $ lookup Type ts
-	i = fromJust $ lookup Id ts
-	fr = toJid <$> lookup From ts
-	to = toJid . fromJust $ lookup To ts
-showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
-	SRMessage tp i fr to $ MBodyRaw ns
-	where
-	ts = map (first toTag) as
-	tp = toMessageType . fromJust $ lookup Type ts
-	i = fromJust $ lookup Id ts
-	fr = toJid <$> lookup From ts
-	to = toJid . fromJust $ lookup To ts
-showResponse n = SRRaw n
 
 showResponseToXmlNode :: Common -> XmlNode
 showResponseToXmlNode (SRXmlDecl) = XmlDecl (1, 0)
