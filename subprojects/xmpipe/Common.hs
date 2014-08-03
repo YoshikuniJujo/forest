@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module Common (
-	Common(..), Tag(..), Mechanism(..), Requirement(..),
+	Common(..), Tag(..), Mechanism(..),
+	Requirement(..), toRequirement,
 	Feature(..), Bind(..), Jid(..), Query(..),
 	Roster(..), Identity(..), IdentityTag(..),
 	DiscoTag(..), InfoFeature(..), InfoFeatureTag(..),
@@ -15,12 +16,14 @@ module Common (
 	MBody(..),
 	MessageType(..),
 	fromJid, toJid,
-	toBind, fromBind,
+	toBind, fromBind, toBind',
 	toIqBody,
 	toMessageType, isCaps, toFeature,
 	fromRequirement,
 	toTag, fromTag,
 	drToXmlNode, drnToXmlNode,
+	toIq, fromQuery,
+	messageTypeToAtt, toIqType, iqTypeToAtt,
 	) where
 
 import Control.Applicative
@@ -270,6 +273,11 @@ toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
 toBind [n] = BindRaw n
 toBind _ = error "toBind: bad"
 
+toBind' :: XmlNode -> Bind
+toBind' (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
+	[XmlCharData cd]) = Resource cd
+toBind' n = BindRaw n
+
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append`
 	maybe "" ("/" `BS.append`) r
@@ -364,3 +372,49 @@ drToXmlNode dr = XmlNode (("", Nothing), "response")
 drnToXmlNode :: XmlNode
 drnToXmlNode = XmlNode (nullQ "response")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+
+toIq :: XmlNode -> Query
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
+	| r <- toRequirement [n] = IqBind (Just r) $ toBind' n'
+toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
+	= IqSession
+toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) =
+	IqRoster Nothing
+toIq n = QueryRaw [n]
+
+fromQuery :: Query -> [XmlNode]
+fromQuery (IqBind Nothing (BJid j)) =
+	[XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
+fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
+	XmlNode (nullQ "query") [("", "jabber:iq:roster")] as ns
+	where as = case mv of
+		Just v -> [(nullQ "ver", v)]
+		_ -> []
+fromQuery IqSessionNull = []
+fromQuery (QueryRaw ns) = ns
+
+fromMessageType :: MessageType -> BS.ByteString
+fromMessageType Normal = "normal"
+fromMessageType Chat = "chat"
+fromMessageType Groupchat = "groupchat"
+fromMessageType Headline = "headline"
+fromMessageType MTError = "error"
+
+messageTypeToAtt :: MessageType -> (QName, BS.ByteString)
+messageTypeToAtt = (nullQ "type" ,) . fromMessageType
+
+fromIqType :: IqType -> BS.ByteString
+fromIqType Get = "get"
+fromIqType Set = "set"
+fromIqType Result = "result"
+fromIqType ITError = "error"
+
+toIqType :: BS.ByteString -> IqType
+toIqType "get" = Get
+toIqType "set" = Set
+toIqType "result" = Result
+toIqType "error" = ITError
+toIqType t = error $ "toIqType: unknown iq type " ++ show t
+
+iqTypeToAtt :: IqType -> (QName, BS.ByteString)
+iqTypeToAtt = (nullQ "type" ,) . fromIqType

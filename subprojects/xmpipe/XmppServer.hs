@@ -95,60 +95,6 @@ input h = handleP h
 xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
-toBind' :: XmlNode -> Bind
-toBind' (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
-	[XmlCharData cd]) = Resource cd
-toBind' n = BindRaw n
-
-toIq :: XmlNode -> Query
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
-	| Just r <- toRequirement n = IqBind (Just r) $ toBind' n'
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
-	= IqSession
-toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) =
-	IqRoster Nothing
-toIq n = QueryRaw [n]
-
-fromQuery :: Query -> [XmlNode]
-fromQuery (IqBind Nothing (BJid j)) =
-	[XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
--- fromQuery (JidResult j) = [XmlNode (nullQ "jid") [] [] [XmlCharData $ fromJid j]]
-fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
-	XmlNode (nullQ "query") [("", "jabber:iq:roster")] as ns
-	where as = case mv of
-		Just v -> [(nullQ "ver", v)]
-		_ -> []
--- fromQuery (RosterResult v ns) =
---	[XmlNode (nullQ "query") [("", "jabber:iq:roster")] [(nullQ "ver", v)] ns]
-fromQuery IqSessionNull = []
-fromQuery (QueryRaw ns) = ns
-
-fromMessageType :: MessageType -> BS.ByteString
-fromMessageType Normal = "normal"
-fromMessageType Chat = "chat"
-fromMessageType Groupchat = "groupchat"
-fromMessageType Headline = "headline"
-fromMessageType MTError = "error"
-
-messageTypeToAtt :: MessageType -> (QName, BS.ByteString)
-messageTypeToAtt = (nullQ "type" ,) . fromMessageType
-
-fromIqType :: IqType -> BS.ByteString
-fromIqType Get = "get"
-fromIqType Set = "set"
-fromIqType Result = "result"
-fromIqType ITError = "error"
-
-toIqType :: BS.ByteString -> IqType
-toIqType "get" = Get
-toIqType "set" = Set
-toIqType "result" = Result
-toIqType "error" = ITError
-toIqType t = error $ "toIqType: unknown iq type " ++ show t
-
-iqTypeToAtt :: IqType -> (QName, BS.ByteString)
-iqTypeToAtt = (nullQ "type" ,) . fromIqType
-
 fromChallenge :: BS.ByteString -> BS.ByteString ->
 	BS.ByteString -> BS.ByteString -> BS.ByteString -> [XmlNode]
 fromChallenge r u q c a = (: []) . XmlCharData . B64.encode $ BS.concat [
@@ -190,11 +136,6 @@ fromMechanism (MechanismRaw m) = m
 mechanismToXmlNode :: Mechanism -> XmlNode
 mechanismToXmlNode m =
 	XmlNode (nullQ "mechanism") [] [] [XmlCharData $ fromMechanism m]
-
-toRequirement :: XmlNode -> Maybe Requirement
-toRequirement (XmlNode (_, "optional") _ [] []) = Just Optional
-toRequirement (XmlNode (_, "required") _ [] []) = Just Required
-toRequirement _ = Nothing
 
 {-
 fromRequirement :: Requirement -> XmlNode
