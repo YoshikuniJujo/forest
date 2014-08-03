@@ -13,7 +13,6 @@ module XmppClient (
 	digestMd5,
 	SHandle(..),
 	input, output,
-	IqTag(..),
 	Query(..),
 	DiscoTag(..),
 	Caps(..),
@@ -106,29 +105,9 @@ xmlPipe = do
 	c <- xmlBegin >>= xmlNode
 	when c xmlPipe
 
-data IqTag = IqId | IqType | IqTo | IqFrom | IqRaw QName deriving (Eq, Show)
-
-toIqTag :: QName -> IqTag
-toIqTag ((_, Just "jabber:client"), "id") = IqId
-toIqTag ((_, Just "jabber:client"), "type") = IqType
-toIqTag ((_, Just "jabber:client"), "to") = IqTo
-toIqTag ((_, Just "jabber:client"), "from") = IqFrom
-toIqTag n = IqRaw n
-
 session :: XmlNode
 session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
-
-resource :: BS.ByteString -> XmlNode
-resource r = XmlNode (nullQ "resource") [] [] [XmlCharData r]
-
-fromBind :: Bind -> [XmlNode]
-fromBind (BJid _) = error "fromBind: not implemented"
-fromBind (Resource r) = [
-	XmlNode (nullQ "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
-		[XmlNode (nullQ "required") [] [] [], resource r]
-	]
-fromBind (BindRaw n) = [n]
 
 showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
@@ -152,11 +131,11 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 	SRIq t i fr to $ toIqBody ns
 	where
-	ts = map (first toIqTag) as
-	Just st = lookup IqType ts
-	Just i = lookup IqId ts
-	fr = toJid <$> lookup IqFrom ts
-	to = toJid <$> lookup IqTo ts
+	ts = map (first toTag) as
+	Just st = lookup Type ts
+	Just i = lookup Id ts
+	fr = toJid <$> lookup From ts
+	to = toJid <$> lookup To ts
 	t = case st of
 		"get" -> Get
 		"set" -> Set
@@ -172,19 +151,19 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 		SRMessage tp i fr to $
 			MBodyDelay (toBody b) (toDelay d) (toXDelay xd)
 	where
-	ts = map (first toIqTag) as
-	tp = toMessageType . fromJust $ lookup IqType ts
-	i = fromJust $ lookup IqId ts
-	fr = toJid <$> lookup IqFrom ts
-	to = toJid . fromJust $ lookup IqTo ts
+	ts = map (first toTag) as
+	tp = toMessageType . fromJust $ lookup Type ts
+	i = fromJust $ lookup Id ts
+	fr = toJid <$> lookup From ts
+	to = toJid . fromJust $ lookup To ts
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
 	SRMessage tp i fr to $ MBodyRaw ns
 	where
-	ts = map (first toIqTag) as
-	tp = toMessageType . fromJust $ lookup IqType ts
-	i = fromJust $ lookup IqId ts
-	fr = toJid <$> lookup IqFrom ts
-	to = toJid . fromJust $ lookup IqTo ts
+	ts = map (first toTag) as
+	tp = toMessageType . fromJust $ lookup Type ts
+	i = fromJust $ lookup Id ts
+	fr = toJid <$> lookup From ts
+	to = toJid . fromJust $ lookup To ts
 showResponse n = SRRaw n
 
 showResponseToXmlNode :: Common -> XmlNode
@@ -200,7 +179,6 @@ showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ "auth")
 showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
--- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
 showResponseToXmlNode (SRResponse _ dr) = drToXmlNode dr
 showResponseToXmlNode SRResponseNull = drnToXmlNode
 showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
@@ -295,16 +273,6 @@ output h = do
 				_ -> return ()
 			output h
 		_ -> return ()
-
-drToXmlNode :: DigestResponse -> XmlNode
-drToXmlNode dr = XmlNode (("", Nothing), "response")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
-	[XmlCharData . encode . kvsToS $ responseToKvs True dr]
-
-drnToXmlNode :: XmlNode
-drnToXmlNode = XmlNode (nullQ "response")
-	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-
 
 roster :: XmlNode
 roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []

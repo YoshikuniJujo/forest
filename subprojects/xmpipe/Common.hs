@@ -14,10 +14,13 @@ module Common (
 	MessageXDelay(..), XDelayTag(..), toXDelay,
 	MBody(..),
 	MessageType(..),
-	fromJid, toJid, toBind, toIqBody,
+	fromJid, toJid,
+	toBind, fromBind,
+	toIqBody,
 	toMessageType, isCaps, toFeature,
 	fromRequirement,
 	toTag, fromTag,
+	drToXmlNode, drnToXmlNode,
 	) where
 
 import Control.Applicative
@@ -341,3 +344,23 @@ fromTag Version = nullQ "version"
 fromTag Lang = (("xml", Nothing), "lang")
 fromTag Mechanism = nullQ "mechanism"
 fromTag (TagRaw n) = n
+
+fromBind :: Bind -> [XmlNode]
+fromBind (BJid _) = error "fromBind: not implemented"
+fromBind (Resource r) = [
+	XmlNode (nullQ "bind") [("", "urn:ietf:params:xml:ns:xmpp-bind")] []
+		[XmlNode (nullQ "required") [] [] [], resource r]
+	]
+fromBind (BindRaw n) = [n]
+
+resource :: BS.ByteString -> XmlNode
+resource r = XmlNode (nullQ "resource") [] [] [XmlCharData r]
+
+drToXmlNode :: DigestResponse -> XmlNode
+drToXmlNode dr = XmlNode (("", Nothing), "response")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] []
+	[XmlCharData . encode . kvsToS $ responseToKvs True dr]
+
+drnToXmlNode :: XmlNode
+drnToXmlNode = XmlNode (nullQ "response")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
