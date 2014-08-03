@@ -10,7 +10,7 @@ module XmppServer (
 	handleP,
 	checkP,
 	digestMd5,
-	ShowResponse(..), showResponse, toXml,
+	showResponse, toXml,
 	Jid(..),
 	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
 	Query(..), toIq,
@@ -80,10 +80,10 @@ nextUuid = do
 	return u
 
 output :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
-	HandleLike h) => h -> Pipe ShowResponse () (HandleMonad h) ()
+	HandleLike h) => h -> Pipe Common () (HandleMonad h) ()
 output h = convert toXml =$= outputXml h
 
-input :: HandleLike h => h -> Pipe () ShowResponse (HandleMonad h) ()
+input :: HandleLike h => h -> Pipe () Common (HandleMonad h) ()
 input h = handleP h
 	=$= xmlEvent
 --	=$= checkP h
@@ -94,10 +94,6 @@ input h = handleP h
 
 xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
-
-data ShowResponse
-	= SRCommon Common
-	deriving Show
 
 toBind :: XmlNode -> Bind
 toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
@@ -204,20 +200,20 @@ fromRequirement :: Requirement -> XmlNode
 fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
 fromRequirement Required = XmlNode (nullQ "required") [] [] []
 
-showResponse :: XmlNode -> ShowResponse
+showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
-	as) = SRCommon . SRStream $ map (first toTag) as
+	as) = SRStream $ map (first toTag) as
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 	_ as [])
 	| [(Mechanism, m)] <- map (first toTag) as =
-		SRCommon . SRAuth $ toMechanism m
+		SRAuth $ toMechanism m
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] []) = SRCommon SRResponseNull
+	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] [XmlCharData cd]) = let
 		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
 		in
-		SRCommon $ SRResponse (fromJust $ lookup "response" a) DR {
+		SRResponse (fromJust $ lookup "response" a) DR {
 			drUserName = fromJust $ lookup "username" a,
 			drRealm = fromJust $ lookup "realm" a,
 			drPassword = "password",
@@ -228,7 +224,7 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 			drDigestUri = fromJust $ lookup "digest-uri" a,
 			drCharset = fromJust $ lookup "charset" a }
 showResponse (XmlNode ((_, Just "jabber:client"), "iq")
-	_ as [n]) = SRCommon $ SRIq tp i fr to (toIq n)
+	_ as [n]) = SRIq tp i fr to (toIq n)
 	where
 	ts = map (first toTag) as
 	tp = toIqType . fromJust $ lookup Type ts
@@ -236,8 +232,8 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq")
 	fr = toJid <$> lookup From ts
 	to = toJid <$> lookup To ts
 showResponse (XmlNode ((_, Just "jabber:client"), "presence")
-	_ as ns) = SRCommon . SRPresence (map (first toTag) as) $ toCaps ns
-showResponse n = SRCommon $ SRRaw n
+	_ as ns) = SRPresence (map (first toTag) as) $ toCaps ns
+showResponse n = SRRaw n
 
 toTag :: QName -> Tag
 toTag ((_, Just "jabber:client"), "to") = To
@@ -258,35 +254,35 @@ fromTag Mechanism = nullQ "mechanism"
 fromTag Type = nullQ "type"
 fromTag (TagRaw n) = n
 
-toXml :: ShowResponse -> XmlNode
-toXml (SRCommon SRXmlDecl) = XmlDecl (1, 0)
-toXml (SRCommon (SRStream as)) = XmlStart (("stream", Nothing), "stream")
+toXml :: Common -> XmlNode
+toXml (SRXmlDecl) = XmlDecl (1, 0)
+toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-toXml (SRCommon (SRFeatures fs)) = XmlNode
+toXml (SRFeatures fs) = XmlNode
 	(("stream", Nothing), "features") [] [] $ map fromFeature fs
-toXml (SRCommon c@SRChallenge{}) = XmlNode (nullQ "challenge")
+toXml c@SRChallenge{} = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
 		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
-toXml (SRCommon (SRChallengeRspauth sret)) = XmlNode (nullQ "challenge")
+toXml (SRChallengeRspauth sret) = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
-toXml (SRCommon SRSaslSuccess) =
+toXml SRSaslSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-toXml (SRCommon (SRIq tp i Nothing to q)) = XmlNode (nullQ "iq") []
+toXml (SRIq tp i Nothing to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
 		Just (nullQ "id", i),
 		Just $ iqTypeToAtt tp,
 		(nullQ "to" ,) . fromJid <$> to ]) 
 	(fromQuery q)
-toXml (SRCommon (SRMessage tp i (Just fr) to (MBody (MessageBody m)))) =
+toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[messageTypeToAtt tp,
 			(nullQ "from", fromJid fr),
 			(nullQ "to", fromJid to),
 			(nullQ "id", i) ]
 		[XmlNode (nullQ "body") [][] [XmlCharData m]]
-toXml (SRCommon (SRRaw n)) = n
+toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
 fromJid :: Jid -> BS.ByteString
@@ -334,22 +330,22 @@ convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 
 digestMd5 :: (MonadState m, StateType m ~ XmppState) =>
-	UUID -> Pipe ShowResponse ShowResponse m BS.ByteString
+	UUID -> Pipe Common Common m BS.ByteString
 digestMd5 u = do
-	yield . SRCommon $ SRFeatures [Mechanisms [DigestMd5]]
-	Just (SRCommon (SRAuth DigestMd5)) <- await
-	yield . SRCommon $ SRChallenge {
+	yield $ SRFeatures [Mechanisms [DigestMd5]]
+	Just (SRAuth DigestMd5) <- await
+	yield $ SRChallenge {
 		realm = "localhost",
 		nonce = toASCIIBytes u,
 		qop = "auth",
 		charset = "utf-8",
 		algorithm = "md5-sess" }
-	Just (SRCommon (SRResponse r dr@DR { drUserName = un })) <- await
+	Just (SRResponse r dr@DR { drUserName = un }) <- await
 	let cret = fromJust . lookup "response" $ responseToKvs True dr
 	unless (r == cret) $ error "digestMd5: bad authentication"
 	let sret = B64.encode . ("rspauth=" `BS.append`) . fromJust
 		. lookup "response" $ responseToKvs False dr
-	yield . SRCommon $ SRChallengeRspauth sret
-	Just (SRCommon SRResponseNull) <- await
-	yield $ SRCommon SRSaslSuccess
+	yield $ SRChallengeRspauth sret
+	Just SRResponseNull <- await
+	yield SRSaslSuccess
 	return un

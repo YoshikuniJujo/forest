@@ -64,39 +64,39 @@ xmpp h = do
 	hlClose h
 
 makeP :: (MonadState m, StateType m ~ XmppState) =>
-	Pipe ShowResponse ShowResponse m ()
+	Pipe Common Common m ()
 makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
-	(Just (SRCommon (SRStream _)), Nothing) -> do
-		yield $ SRCommon SRXmlDecl
-		lift nextUuid >>= \u -> yield . SRCommon $ SRStream [
+	(Just (SRStream _), Nothing) -> do
+		yield SRXmlDecl
+		lift nextUuid >>= \u -> yield $ SRStream [
 			(Id, toASCIIBytes u),
 			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
 		lift nextUuid >>= digestMd5 >>= \un -> lift . modify .
 			setReceiver $ Jid un "localhost" Nothing
 		makeP
-	(Just (SRCommon (SRStream _)), _) -> do
-		yield $ SRCommon SRXmlDecl
-		lift nextUuid >>= \u -> yield . SRCommon $ SRStream [
+	(Just (SRStream _), _) -> do
+		yield SRXmlDecl
+		lift nextUuid >>= \u -> yield $ SRStream [
 			(Id, toASCIIBytes u),
 			(From, "localhost"), (Version, "1.0"), (Lang, "en") ]
-		yield . SRCommon $ SRFeatures
+		yield $ SRFeatures
 			[Rosterver Optional, Bind Required, Session Optional]
 		makeP
-	(Just (SRCommon (SRIq Set i Nothing Nothing
-		(IqBind (Just Required) (Resource n)))), _) -> do
+	(Just (SRIq Set i Nothing Nothing
+		(IqBind (Just Required) (Resource n))), _) -> do
 		lift $ modify (setResource n)
 		Just j <- lift $ gets receiver
-		yield . SRCommon . SRIq Result i Nothing Nothing
+		yield . SRIq Result i Nothing Nothing
 			. IqBind Nothing $ BJid j
 		makeP
-	(Just (SRCommon (SRIq Set i Nothing Nothing IqSession)), mrcv) ->
-		yield (SRCommon $ SRIq Result i Nothing mrcv IqSessionNull) >> makeP
-	(Just (SRCommon (SRIq Get i Nothing Nothing (IqRoster Nothing))), mrcv) -> do
-		yield . SRCommon . SRIq Result i Nothing mrcv
+	(Just (SRIq Set i Nothing Nothing IqSession), mrcv) ->
+		yield (SRIq Result i Nothing mrcv IqSessionNull) >> makeP
+	(Just (SRIq Get i Nothing Nothing (IqRoster Nothing)), mrcv) -> do
+		yield . SRIq Result i Nothing mrcv
 			. IqRoster . Just $ Roster (Just "1") []
 		makeP
-	(Just (SRCommon (SRPresence _ _)), Just rcv) ->
-		yield (SRCommon . SRMessage Chat "hoge" (Just sender) rcv .
+	(Just (SRPresence _ _), Just rcv) ->
+		yield (SRMessage Chat "hoge" (Just sender) rcv .
 			MBody $ MessageBody "Hi, TLS!") >> makeP
 	_ -> return ()
 
