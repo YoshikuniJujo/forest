@@ -112,10 +112,15 @@ xmlPipe = do
 data ShowResponse
 	= SRCommon Common
 
-	| SRMessage [(IqTag, BS.ByteString)] MessageBody MessageDelay MessageXDelay
+	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
 	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
 	| SREnd
 	| SRRaw XmlNode
+	deriving Show
+
+data MBody
+	= MBody MessageBody MessageDelay MessageXDelay
+	| MBodyRaw [XmlNode]
 	deriving Show
 
 toIqBody :: [XmlNode] -> Query
@@ -139,6 +144,11 @@ toIqBody ns = QueryRaw ns
 
 data MessageType = Normal | Chat | Groupchat | Headline | MTError
 	deriving (Eq, Show)
+
+toMessageType :: BS.ByteString -> MessageType
+toMessageType "normal" = Normal
+toMessageType "chat" = Chat
+toMessageType _ = error "toMessageType: bad"
 
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append`
@@ -330,12 +340,25 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
 	SRCommon . SRPresence (map (first qnameToTag) as) $ toCaps ns
-showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as
-	(b : d : xd : [])) = SRMessage
-		(map (first toIqTag) as)
-		(toBody b)
-		(toDelay d)
-		(toXDelay xd)
+showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
+	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
+		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
+		XmlNode ((_, Just "jabber:x:delay"), "x") _ _ [] <- xd =
+		SRMessage tp i fr to $ MBody (toBody b) (toDelay d) (toXDelay xd)
+	where
+	ts = map (first toIqTag) as
+	tp = toMessageType . fromJust $ lookup IqType ts
+	i = fromJust $ lookup IqId ts
+	fr = toJid <$> lookup IqFrom ts
+	to = toJid . fromJust $ lookup IqTo ts
+showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
+	SRMessage tp i fr to $ MBodyRaw ns
+	where
+	ts = map (first toIqTag) as
+	tp = toMessageType . fromJust $ lookup IqType ts
+	i = fromJust $ lookup IqId ts
+	fr = toJid <$> lookup IqFrom ts
+	to = toJid . fromJust $ lookup IqTo ts
 showResponse n = SRRaw n
 
 showResponseToXmlNode :: ShowResponse -> XmlNode
