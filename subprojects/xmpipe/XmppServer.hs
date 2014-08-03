@@ -97,6 +97,7 @@ data ShowResponse
 	= SRCommon Common
 
 	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
+
 	| SRRaw XmlNode
 	deriving Show
 

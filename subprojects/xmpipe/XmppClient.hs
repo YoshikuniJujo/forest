@@ -2,6 +2,7 @@
 	PackageImports, FlexibleContexts #-}
 
 module XmppClient (
+	MBody(..),
 	capsToCaps,
 	fromJid,
 	toJid,
@@ -113,13 +114,14 @@ data ShowResponse
 	= SRCommon Common
 
 	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
-	| SRMessageRaw MessageType BS.ByteString Jid BS.ByteString
+
 	| SREnd
 	| SRRaw XmlNode
 	deriving Show
 
 data MBody
-	= MBody MessageBody MessageDelay MessageXDelay
+	= MBody MessageBody
+	| MBodyDelay MessageBody MessageDelay MessageXDelay
 	| MBodyRaw [XmlNode]
 	deriving Show
 
@@ -344,7 +346,8 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
 		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
 		XmlNode ((_, Just "jabber:x:delay"), "x") _ _ [] <- xd =
-		SRMessage tp i fr to $ MBody (toBody b) (toDelay d) (toXDelay xd)
+		SRMessage tp i fr to $
+			MBodyDelay (toBody b) (toDelay d) (toXDelay xd)
 	where
 	ts = map (first toIqTag) as
 	tp = toMessageType . fromJust $ lookup IqType ts
@@ -445,7 +448,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		ITError -> "error"
 showResponseToXmlNode (SRCommon (SRPresence ts c)) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
-showResponseToXmlNode (SRMessageRaw mt i j m) =
+showResponseToXmlNode (SRMessage mt i Nothing j (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
 		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
