@@ -41,7 +41,7 @@ pipe = await >>= maybe (return ()) yield
 awaitAll :: Monad m => Pipe a () m ()
 awaitAll = await >>= maybe (return ()) (const awaitAll)
 
-startTls :: ShowResponse
+startTls :: Common
 startTls = SRRaw $ XmlNode (("", Nothing), "starttls")
 	[("", "urn:ietf:params:xml:ns:xmpp-tls")] [] []
 
@@ -50,52 +50,49 @@ xmpp :: (HandleLike h, MonadState (HandleMonad h),
 xmpp h = voidM . runPipe $ input h =$= proc =$= output h
 
 proc :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
-	Pipe ShowResponse ShowResponse m ()
-proc = yield (SRCommon SRXmlDecl)
-	>> yield (SRCommon $
-		SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
+	Pipe Common Common m ()
+proc = yield SRXmlDecl
+	>> yield (SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")])
 	>> process
 
 process :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
-	Pipe ShowResponse ShowResponse m ()
+	Pipe Common Common m ()
 process = await >>= \mr -> case mr of
-	Just (SRCommon (SRFeatures [_, Mechanisms ms]))
+	Just (SRFeatures [_, Mechanisms ms])
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
-	Just (SRCommon (SRFeatures [Mechanisms ms, _]))
+	Just (SRFeatures [Mechanisms ms, _])
 		| DigestMd5 `elem` ms -> digestMd5 sender >> process
-	Just (SRCommon SRSaslSuccess) -> mapM_ yield [SRCommon SRXmlDecl, begin] >> process
-	Just (SRCommon (SRFeatures fs)) -> mapM_ yield binds >> process
-	Just (SRCommon (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])))
+	Just SRSaslSuccess -> mapM_ yield [SRXmlDecl, begin] >> process
+	Just (SRFeatures fs) -> mapM_ yield binds >> process
+	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)]))
 		-> yield (getCaps v n) >> process
-	Just (SRCommon (SRIq
-		Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)])))
+	Just (SRIq Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)]))
 		| fromJid to == sender `BS.append` "@localhost/profanity" -> do
 			yield $ resultCaps i (fromJid f) n
-			yield . SRCommon . SRMessage Chat "prof_3" Nothing recipient .
+			yield . SRMessage Chat "prof_3" Nothing recipient .
 				MBody $ MessageBody message
-			yield $ SRCommon SREnd
+			yield SREnd
 	Just _ -> process
 	_ -> return ()
 
-begin :: ShowResponse
-begin = SRCommon $ SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
+begin :: Common
+begin = SRStream [(To, "localhost"), (Version, "1.0"), (Lang, "en")]
 
-binds :: [ShowResponse]
-binds = [
-	SRCommon . SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
+binds :: [Common]
+binds = [SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
 		Resource "profanity",
-	SRCommon $ SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
-	SRCommon . SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
-	SRCommon . SRPresence [(Id, "prof_presence_1")] $
+	SRIq Set "_xmpp_session1" Nothing Nothing IqSession,
+	SRIq Get "_xmpp_roster1" Nothing Nothing $ IqRoster Nothing,
+	SRPresence [(Id, "prof_presence_1")] $
 		capsToCaps profanityCaps "http://www.profanity.im" ]
 
-getCaps :: BS.ByteString -> BS.ByteString -> ShowResponse
-getCaps v n = SRCommon . SRIq Get "prof_caps_2" Nothing
+getCaps :: BS.ByteString -> BS.ByteString -> Common
+getCaps v n = SRIq Get "prof_caps_2" Nothing
 	(Just . toJid $ sender `BS.append` "@localhost/profanity") $
 	IqCapsQuery v n
 
-resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> ShowResponse
-resultCaps i t n = SRCommon $
+resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> Common
+resultCaps i t n =
 	SRIq Result i Nothing (Just $ toJid t) (IqCapsQuery2 profanityCaps n)
 
 sender, message :: BS.ByteString

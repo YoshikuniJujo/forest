@@ -13,7 +13,6 @@ module XmppClient (
 	digestMd5,
 	SHandle(..),
 	input, output,
-	ShowResponse(..),
 	IqTag(..),
 	Query(..),
 	DiscoTag(..),
@@ -71,7 +70,7 @@ instance HandleLike h => HandleLike (SHandle s h) where
 	hlClose (SHandle h) = lift $ hlClose h
 	hlDebug (SHandle h) = (lift .) . hlDebug h
 
-input :: HandleLike h => h -> Pipe () ShowResponse (HandleMonad h) ()
+input :: HandleLike h => h -> Pipe () Common (HandleMonad h) ()
 input h = handleP h
 	=$= xmlEvent
 	=$= convert fromJust
@@ -94,7 +93,7 @@ checkP h = do
 		Just n -> yield n >> checkP h
 		_ -> return ()
 
-checkSR :: HandleLike h => h -> Pipe ShowResponse ShowResponse (HandleMonad h) ()
+checkSR :: HandleLike h => h -> Pipe Common Common (HandleMonad h) ()
 checkSR h = do
 	mr <- await
 	case mr of
@@ -109,10 +108,6 @@ xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = do
 	c <- xmlBegin >>= xmlNode
 	when c xmlPipe
-
-data ShowResponse
-	= SRCommon Common
-	deriving Show
 
 toIqBody :: [XmlNode] -> Query
 toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
@@ -250,27 +245,27 @@ toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
 toBind [n] = BindRaw n
 toBind _ = error "toBind: bad"
 
-showResponse :: XmlNode -> ShowResponse
+showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
-	_ atts) = SRCommon . SRStream $ map (first qnameToTag) atts
+	_ atts) = SRStream $ map (first qnameToTag) atts
 showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
-	_ [] nds) = SRCommon . SRFeatures $ map toFeature nds
+	_ [] nds) = SRFeatures $ map toFeature nds
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
 	_ [] [XmlCharData c]) = let
 		Right d = B64.decode c
 		Just a = parseAtts d in
 		case a of
-			[("rspauth", ra)] -> SRCommon $ SRChallengeRspauth ra
-			_ -> SRCommon SRChallenge {
+			[("rspauth", ra)] -> SRChallengeRspauth ra
+			_ -> SRChallenge {
 				realm = fromJust $ lookup "realm" a,
 				nonce = fromJust $ lookup "nonce" a,
 				qop = fromJust $ lookup "qop" a,
 				charset = fromJust $ lookup "charset" a,
 				algorithm = fromJust $ lookup "algorithm" a }
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
-	_ [] []) = SRCommon SRSaslSuccess
+	_ [] []) = SRSaslSuccess
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRCommon . SRIq t i fr to $ toIqBody ns
+	SRIq t i fr to $ toIqBody ns
 	where
 	ts = map (first toIqTag) as
 	Just st = lookup IqType ts
@@ -284,12 +279,12 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 		"error" -> ITError
 		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
-	SRCommon . SRPresence (map (first qnameToTag) as) $ toCaps ns
+	SRPresence (map (first qnameToTag) as) $ toCaps ns
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
 		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
 		XmlNode ((_, Just "jabber:x:delay"), "x") _ _ [] <- xd =
-		SRCommon . SRMessage tp i fr to $
+		SRMessage tp i fr to $
 			MBodyDelay (toBody b) (toDelay d) (toXDelay xd)
 	where
 	ts = map (first toIqTag) as
@@ -298,32 +293,32 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	fr = toJid <$> lookup IqFrom ts
 	to = toJid . fromJust $ lookup IqTo ts
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
-	SRCommon . SRMessage tp i fr to $ MBodyRaw ns
+	SRMessage tp i fr to $ MBodyRaw ns
 	where
 	ts = map (first toIqTag) as
 	tp = toMessageType . fromJust $ lookup IqType ts
 	i = fromJust $ lookup IqId ts
 	fr = toJid <$> lookup IqFrom ts
 	to = toJid . fromJust $ lookup IqTo ts
-showResponse n = SRCommon $ SRRaw n
+showResponse n = SRRaw n
 
-showResponseToXmlNode :: ShowResponse -> XmlNode
-showResponseToXmlNode (SRCommon SRXmlDecl) = XmlDecl (1, 0)
-showResponseToXmlNode (SRCommon (SRStream as)) = XmlStart
+showResponseToXmlNode :: Common -> XmlNode
+showResponseToXmlNode (SRXmlDecl) = XmlDecl (1, 0)
+showResponseToXmlNode (SRStream as) = XmlStart
 	(("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-showResponseToXmlNode (SRCommon (SRAuth ScramSha1)) = XmlNode (nullQ "auth")
+showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-showResponseToXmlNode (SRCommon (SRAuth DigestMd5)) = XmlNode (nullQ "auth")
+showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 -- showResponseToXmlNode (SRAuth (MechanismRaw n)) = n
-showResponseToXmlNode (SRCommon (SRResponse _ dr)) = drToXmlNode dr
-showResponseToXmlNode (SRCommon SRResponseNull) = drnToXmlNode
-showResponseToXmlNode (SRCommon (SRIq it i fr to (IqBind r b))) =
+showResponseToXmlNode (SRResponse _ dr) = drToXmlNode dr
+showResponseToXmlNode SRResponseNull = drnToXmlNode
+showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
 	XmlNode (nullQ "iq") [] as .
 		(maybe id ((:) . fromRequirement) r) $ fromBind b
 	where
@@ -337,7 +332,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqBind r b))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRCommon (SRIq it i fr to IqSession)) =
+showResponseToXmlNode (SRIq it i fr to IqSession) =
 	XmlNode (nullQ "iq") [] as [session]
 	where
 	as = catMaybes [
@@ -350,7 +345,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to IqSession)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRCommon (SRIq it i fr to (IqRoster Nothing))) =
+showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
 	XmlNode (nullQ "iq") [] as [roster]
 	where
 	as = catMaybes [
@@ -363,7 +358,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqRoster Nothing))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery v n))) =
+showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
 	XmlNode (nullQ "iq") [] as [capsQuery v n]
 	where
 	as = catMaybes [
@@ -376,7 +371,7 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery v n))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
+showResponseToXmlNode (SRIq it i fr to (IqCapsQuery2 c n)) =
 	XmlNode (nullQ "iq") [] as [capsToQuery c n]
 	where
 	as = catMaybes [
@@ -389,9 +384,9 @@ showResponseToXmlNode (SRCommon (SRIq it i fr to (IqCapsQuery2 c n))) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRCommon (SRPresence ts c)) =
+showResponseToXmlNode (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
-showResponseToXmlNode (SRCommon (SRMessage mt i Nothing j (MBody (MessageBody m)))) =
+showResponseToXmlNode (SRMessage mt i Nothing j (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
 		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
@@ -400,18 +395,18 @@ showResponseToXmlNode (SRCommon (SRMessage mt i Nothing j (MBody (MessageBody m)
 		Normal -> "normal"
 		Chat -> "chat"
 		_ -> error "showResponseToXmlNode: not implemented yet"
-showResponseToXmlNode (SRCommon SREnd) = XmlEnd (("stream", Nothing), "stream")
-showResponseToXmlNode (SRCommon (SRRaw n)) = n
+showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
+showResponseToXmlNode (SRRaw n) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
-output :: HandleLike h => h -> Pipe ShowResponse () (HandleMonad h) ()
+output :: HandleLike h => h -> Pipe Common () (HandleMonad h) ()
 output h = do
 	mn <- await
 	case mn of
 		Just n -> do
 			lift (hlPut h $ xmlString [showResponseToXmlNode n])
 			case n of
-				(SRCommon SREnd) -> lift $ hlClose h
+				SREnd -> lift $ hlClose h
 				_ -> return ()
 			output h
 		_ -> return ()
@@ -447,35 +442,35 @@ convert :: Monad m => (a -> b) -> Pipe a b m ()
 convert f = await >>= maybe (return ()) (\x -> yield (f x) >> convert f)
 
 digestMd5 :: (Monad m, MonadState m, StateType m ~ BS.ByteString) =>
-	BS.ByteString -> Pipe ShowResponse ShowResponse m ()
+	BS.ByteString -> Pipe Common Common m ()
 digestMd5 sender = do
-	yield . SRCommon $ SRAuth DigestMd5
+	yield $ SRAuth DigestMd5
 	mr <- await
 	case mr of
 		Just r -> do
 			let ret = digestMd5Data sender r
 			case ret of
-				[SRCommon (SRResponse _ dr)] -> lift . put . fromJust .
+				[SRResponse _ dr] -> lift . put . fromJust .
 					lookup "response" $ responseToKvs False dr
 				_ -> return ()
 			mapM_ yield ret
 		Nothing -> error "digestMd5: unexpected end of input"
 	mr' <- await
 	case mr' of
-		Just r'@(SRCommon (SRChallengeRspauth sa)) -> do
+		Just r'@(SRChallengeRspauth sa) -> do
 			sa0 <- lift get
 			unless (sa == sa0) $ error "process: bad server"
 			mapM_ yield $ digestMd5Data sender r'
 		Nothing -> error "digestMd5: unexpected end of input"
 		_ -> error "digestMd5: bad response"
 
-digestMd5Data :: BS.ByteString -> ShowResponse -> [ShowResponse]
-digestMd5Data sender (SRCommon (SRChallenge r n q c _a)) = [SRCommon (SRResponse h dr)]
+digestMd5Data :: BS.ByteString -> Common -> [Common]
+digestMd5Data sender (SRChallenge r n q c _a) = [SRResponse h dr]
 	where
 	Just h = lookup "response" $ responseToKvs True dr
 	dr = DR {
 		drUserName = sender, drRealm = r, drPassword = "password",
 		drCnonce = "00DEADBEEF00", drNonce = n, drNc = "00000001",
 		drQop = q, drDigestUri = "xmpp/localhost", drCharset = c }
-digestMd5Data _ (SRCommon (SRChallengeRspauth _)) = [SRCommon SRResponseNull]
+digestMd5Data _ (SRChallengeRspauth _) = [SRResponseNull]
 digestMd5Data _ _ = []
