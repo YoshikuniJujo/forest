@@ -24,6 +24,8 @@ module Common (
 	drToXmlNode, drnToXmlNode,
 	toIq, fromQuery,
 	messageTypeToAtt, toIqType, iqTypeToAtt,
+	toMechanism', fromFeature, fromChallenge,
+	mechanismToXmlNode,
 	) where
 
 import Control.Applicative
@@ -418,3 +420,45 @@ toIqType t = error $ "toIqType: unknown iq type " ++ show t
 
 iqTypeToAtt :: IqType -> (QName, BS.ByteString)
 iqTypeToAtt = (nullQ "type" ,) . fromIqType
+
+fromChallenge :: BS.ByteString -> BS.ByteString ->
+	BS.ByteString -> BS.ByteString -> BS.ByteString -> [XmlNode]
+fromChallenge r u q c a = (: []) . XmlCharData . B64.encode $ BS.concat [
+	"realm=", BSC.pack $ show r, ",",
+	"nonce=", BSC.pack $ show u, ",",
+	"qop=", BSC.pack $ show q, ",",
+	"charset=", c, "algorithm=", a ] -- md5-sess" ]
+
+fromFeature :: Feature -> XmlNode
+fromFeature (Mechanisms ms) = XmlNode (nullQ "mechanisms")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $
+	map mechanismToXmlNode ms
+fromFeature c@Caps{} = XmlNode (nullQ "c")
+	[("", "http://jabber.org/protocol/caps")]
+	[	(nullQ "hash", chash c),
+		(nullQ "ver", cver c),
+		(nullQ "node", cnode c) ]
+	[]
+fromFeature (Rosterver r) = XmlNode (nullQ "ver")
+	[("", "urn:xmpp:features:rosterver")] [] [fromRequirement r]
+fromFeature (Bind r) = XmlNode (nullQ "bind")
+	[("", "urn:ietf:params:xml:ns:xmpp-bind")] [] [fromRequirement r]
+fromFeature (Session r) = XmlNode (nullQ "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] [fromRequirement r]
+fromFeature (FeatureRaw n) = n
+
+toMechanism' :: BS.ByteString -> Mechanism
+toMechanism' "SCRAM-SHA1" = ScramSha1
+toMechanism' "DIGEST-MD5" = DigestMd5
+toMechanism' "PLAIN" = Plain
+toMechanism' m = MechanismRaw m
+
+fromMechanism :: Mechanism -> BS.ByteString
+fromMechanism ScramSha1 = "SCRAM-SHA1"
+fromMechanism DigestMd5 = "DIGEST-MD5"
+fromMechanism Plain = "PLAIN"
+fromMechanism (MechanismRaw m) = m
+
+mechanismToXmlNode :: Mechanism -> XmlNode
+mechanismToXmlNode m =
+	XmlNode (nullQ "mechanism") [] [] [XmlCharData $ fromMechanism m]
