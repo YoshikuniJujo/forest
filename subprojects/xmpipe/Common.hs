@@ -14,13 +14,18 @@ module Common (
 	MessageXDelay(..), XDelayTag(..), toXDelay,
 	MBody(..),
 	MessageType(..),
+	fromJid, toJid, toBind, toIqBody
 	) where
 
+import Control.Applicative
 import Control.Arrow
+import Data.List
 import Text.XML.Pipe
-import qualified Data.ByteString as BS
-import qualified Caps as CAPS
 
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
+
+import qualified Caps as CAPS
 import Digest
 
 data Common
@@ -231,3 +236,38 @@ data MBody
 
 data MessageType = Normal | Chat | Groupchat | Headline | MTError
 	deriving (Eq, Show)
+
+toIqBody :: [XmlNode] -> Query
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
+	IqBind Nothing $ toBind ns
+toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []] =
+	IqRoster Nothing
+toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as ns] = IqRoster
+	. Just $ Roster (snd <$> find (\((_, v), _) -> v == "ver") as) ns
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ [] []] = IqDiscoInfo
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as []] = IqDiscoInfoNode $ map (first toDiscoTag) as
+toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
+	_ as (i : ns)] = IqDiscoInfoFull
+	(map (first toDiscoTag) as)
+	(toIdentity i)
+	(map toInfoFeature ns)
+toIqBody [] = IqSessionNull
+toIqBody ns = QueryRaw ns
+
+toBind :: [XmlNode] -> Bind
+toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
+	[XmlCharData cd]] = BJid $ toJid cd
+toBind [n] = BindRaw n
+toBind _ = error "toBind: bad"
+
+fromJid :: Jid -> BS.ByteString
+fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append`
+	maybe "" ("/" `BS.append`) r
+
+toJid :: BS.ByteString -> Jid
+toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
+	where
+	(a, rst) = BSC.span (/= '@') j
+	(d, r) = BSC.span (/= '/') $ BS.tail rst

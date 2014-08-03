@@ -95,14 +95,14 @@ input h = handleP h
 xmlPipe :: Monad m => Pipe XmlEvent XmlNode m ()
 xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
-toBind :: XmlNode -> Bind
-toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
+toBind' :: XmlNode -> Bind
+toBind' (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
 	[XmlCharData cd]) = Resource cd
-toBind n = BindRaw n
+toBind' n = BindRaw n
 
 toIq :: XmlNode -> Query
 toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
-	| Just r <- toRequirement n = IqBind (Just r) $ toBind n'
+	| Just r <- toRequirement n = IqBind (Just r) $ toBind' n'
 toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
 	= IqSession
 toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) =
@@ -285,6 +285,7 @@ toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
+{-
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = BS.concat [a, "@", d] `BS.append` maybe "" ("/" `BS.append`) r
 
@@ -293,6 +294,7 @@ toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
 	where
 	(a, rst) = BSC.span (/= '@') j
 	(d, r) = BSC.span (/= '/') $ BS.tail rst
+	-}
 
 {-
 caps :: Feature
