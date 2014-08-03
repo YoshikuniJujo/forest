@@ -147,23 +147,17 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
-
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
-	SRIq t i fr to $ toIqBody ns
+	SRIq tp i fr to $ toIqBody ns
 	where
 	ts = map (first toTag) as
-	Just st = lookup Type ts
+	tp = toIqType . fromJust $ lookup Type ts
 	Just i = lookup Id ts
 	fr = toJid <$> lookup From ts
 	to = toJid <$> lookup To ts
-	t = case st of
-		"get" -> Get
-		"set" -> Set
-		"result" -> Result
-		"error" -> ITError
-		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
 	SRPresence (map (first toTag) as) $ toCaps ns
+
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
 		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,

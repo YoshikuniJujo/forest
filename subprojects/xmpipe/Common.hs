@@ -16,13 +16,14 @@ module Common (
 	MBody(..),
 	MessageType(..),
 	fromJid, toJid,
-	toBind, fromBind, toBind',
+	fromBind,
 	toIqBody,
 	toMessageType, isCaps, toFeature,
 	fromRequirement,
 	toTag, fromTag,
 	drToXmlNode, drnToXmlNode,
-	toIq, fromQuery,
+--	toIq,
+	fromQuery,
 	messageTypeToAtt, toIqType, iqTypeToAtt,
 	toMechanism', fromFeature, fromChallenge,
 	mechanismToXmlNode,
@@ -251,8 +252,12 @@ data MessageType = Normal | Chat | Groupchat | Headline | MTError
 	deriving (Eq, Show)
 
 toIqBody :: [XmlNode] -> Query
-toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
-	IqBind Nothing $ toBind ns
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ []
+	[n]] = IqBind Nothing $ toBind n
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ []
+	[n, n']] | r <- toRequirement [n] = IqBind (Just r) $ toBind n'
+toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session")
+	_ [] []] = IqSession
 toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []] =
 	IqRoster Nothing
 toIqBody [XmlNode ((_, Just "jabber:iq:roster"), "query") _ as ns] = IqRoster
@@ -269,16 +274,10 @@ toIqBody [XmlNode ((_, Just "http://jabber.org/protocol/disco#info"), "query")
 toIqBody [] = IqSessionNull
 toIqBody ns = QueryRaw ns
 
-toBind :: [XmlNode] -> Bind
-toBind [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "jid") _ []
-	[XmlCharData cd]] = BJid $ toJid cd
-toBind [n] = BindRaw n
-toBind _ = error "toBind: bad"
-
-toBind' :: XmlNode -> Bind
-toBind' (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
+toBind :: XmlNode -> Bind
+toBind (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "resource") [] []
 	[XmlCharData cd]) = Resource cd
-toBind' n = BindRaw n
+toBind n = BindRaw n
 
 fromJid :: Jid -> BS.ByteString
 fromJid (Jid a d r) = a `BS.append` "@" `BS.append` d `BS.append`
@@ -374,15 +373,6 @@ drToXmlNode dr = XmlNode (("", Nothing), "response")
 drnToXmlNode :: XmlNode
 drnToXmlNode = XmlNode (nullQ "response")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-
-toIq :: XmlNode -> Query
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] [n, n'])
-	| r <- toRequirement [n] = IqBind (Just r) $ toBind' n'
-toIq (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session") _ [] [])
-	= IqSession
-toIq (XmlNode ((_, Just "jabber:iq:roster"), "query") _ [] []) =
-	IqRoster Nothing
-toIq n = QueryRaw [n]
 
 fromQuery :: Query -> [XmlNode]
 fromQuery (IqBind Nothing (BJid j)) =

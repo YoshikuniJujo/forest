@@ -13,7 +13,7 @@ module XmppServer (
 	showResponse, toXml,
 	Jid(..),
 	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
-	Query(..), toIq,
+	Query(..), toIqBody,
 	Roster(..),
 	Tag(..),
 	Bind(..),
@@ -133,17 +133,17 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
-
-showResponse (XmlNode ((_, Just "jabber:client"), "iq")
-	_ as [n]) = SRIq tp i fr to (toIq n)
+showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
+	SRIq tp i fr to $ toIqBody ns
 	where
 	ts = map (first toTag) as
 	tp = toIqType . fromJust $ lookup Type ts
 	Just i = lookup Id ts
 	fr = toJid <$> lookup From ts
 	to = toJid <$> lookup To ts
-showResponse (XmlNode ((_, Just "jabber:client"), "presence")
-	_ as ns) = SRPresence (map (first toTag) as) $ toCaps ns
+showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
+	SRPresence (map (first toTag) as) $ toCaps ns
+
 showResponse n = SRRaw n
 
 toXml :: Common -> XmlNode
