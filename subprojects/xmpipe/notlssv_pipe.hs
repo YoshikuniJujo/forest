@@ -75,7 +75,8 @@ makeP = (,) `liftM` await `ap` lift (gets receiver) >>= \p -> case p of
 			. IqRoster . Just $ Roster (Just "1") []
 		makeP
 	(Just (SRCommon (SRPresence _ _)), Just rcv) ->
-		yield (SRMessage Chat "hoge" sender rcv message) >> makeP
+		yield (SRMessage Chat "hoge" (Just sender) rcv .
+			MBody $ MessageBody "Hi!") >> makeP
 	_ -> return ()
 
 voidM :: Monad m => m a -> m ()
@@ -83,6 +84,3 @@ voidM = (>> return ())
 
 sender :: Jid
 sender = Jid "yoshio" "localhost" (Just "profanity")
-
-message :: [XmlNode]
-message = [XmlNode (("", Nothing), "body") [] [] [XmlCharData "Hi!"]]

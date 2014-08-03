@@ -119,12 +119,6 @@ data ShowResponse
 	| SRRaw XmlNode
 	deriving Show
 
-data MBody
-	= MBody MessageBody
-	| MBodyDelay MessageBody MessageDelay MessageXDelay
-	| MBodyRaw [XmlNode]
-	deriving Show
-
 toIqBody :: [XmlNode] -> Query
 toIqBody [XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] ns] =
 	IqBind Nothing $ toBind ns
@@ -161,49 +155,6 @@ toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
 	where
 	(a, rst) = BSC.span (/= '@') j
 	(d, r) = BSC.span (/= '/') $ BS.tail rst
-
-data MessageBody
-	= MessageBody BS.ByteString
-	| MBRaw XmlNode
-	deriving Show
-data MessageDelay
-	= MessageDelay [(DelayTag, BS.ByteString)]
-	| MDRaw XmlNode
-	deriving Show
-
-data DelayTag = DTFrom | DTStamp | DlyTRaw QName deriving Show
-
-data MessageXDelay
-	= MessageXDelay [(XDelayTag, BS.ByteString)]
-	| MXDRaw XmlNode
-	deriving Show
-
-data XDelayTag = XDTFrom | XDTStamp | XDlyTRaw QName deriving Show
-
-toXDelay :: XmlNode -> MessageXDelay
-toXDelay (XmlNode ((_, Just "jabber:x:delay"), "x") _ as []) =
-	MessageXDelay $ map (first toXDelayTag) as
-toXDelay n = MXDRaw n
-
-toXDelayTag :: QName -> XDelayTag
-toXDelayTag ((_, Just "jabber:x:delay"), "from") = XDTFrom
-toXDelayTag ((_, Just "jabber:x:delay"), "stamp") = XDTStamp
-toXDelayTag n = XDlyTRaw n
-
-toDelayTag :: QName -> DelayTag
-toDelayTag ((_, Just "urn:xmpp:delay"), "from") = DTFrom
-toDelayTag ((_, Just "urn:xmpp:delay"), "stamp") = DTStamp
-toDelayTag n = DlyTRaw n
-
-toBody :: XmlNode -> MessageBody
-toBody (XmlNode ((_, Just "jabber:client"), "body") _ [] [XmlCharData b]) =
-	MessageBody b
-toBody n = MBRaw n
-
-toDelay :: XmlNode -> MessageDelay
-toDelay (XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ as []) = MessageDelay $
-	map (first toDelayTag) as
-toDelay n = MDRaw n
 
 isCaps :: Feature -> Bool
 isCaps Caps{} = True

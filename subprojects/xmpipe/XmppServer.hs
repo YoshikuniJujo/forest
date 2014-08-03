@@ -2,6 +2,8 @@
 	PackageImports #-}
 
 module XmppServer (
+	MBody(..),
+	MessageBody(..),
 	Common(..),
 	convert,
 	nullQ,
@@ -96,7 +98,7 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 data ShowResponse
 	= SRCommon Common
 
-	| SRMessage MessageType BS.ByteString Jid Jid [XmlNode]
+	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
 
 	| SRRaw XmlNode
 	deriving Show
@@ -284,11 +286,13 @@ toXml (SRCommon (SRIq tp i Nothing to q)) = XmlNode (nullQ "iq") []
 		Just $ iqTypeToAtt tp,
 		(nullQ "to" ,) . fromJid <$> to ]) 
 	(fromQuery q)
-toXml (SRMessage tp i fr to ns) = XmlNode (nullQ "message") [] [
-	messageTypeToAtt tp,
-	(nullQ "from", fromJid fr),
-	(nullQ "to", fromJid to),
-	(nullQ "id", i) ] ns
+toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
+	XmlNode (nullQ "message") []
+		[messageTypeToAtt tp,
+			(nullQ "from", fromJid fr),
+			(nullQ "to", fromJid to),
+			(nullQ "id", i) ]
+		[XmlNode (nullQ "body") [][] [XmlCharData m]]
 toXml (SRRaw n) = n
 toXml _ = error "toXml: not implemented"
 
