@@ -112,9 +112,6 @@ xmlPipe = do
 
 data ShowResponse
 	= SRCommon Common
-
-	| SREnd
-	| SRRaw XmlNode
 	deriving Show
 
 toIqBody :: [XmlNode] -> Query
@@ -308,7 +305,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
 	i = fromJust $ lookup IqId ts
 	fr = toJid <$> lookup IqFrom ts
 	to = toJid . fromJust $ lookup IqTo ts
-showResponse n = SRRaw n
+showResponse n = SRCommon $ SRRaw n
 
 showResponseToXmlNode :: ShowResponse -> XmlNode
 showResponseToXmlNode (SRCommon SRXmlDecl) = XmlDecl (1, 0)
@@ -403,8 +400,8 @@ showResponseToXmlNode (SRCommon (SRMessage mt i Nothing j (MBody (MessageBody m)
 		Normal -> "normal"
 		Chat -> "chat"
 		_ -> error "showResponseToXmlNode: not implemented yet"
-showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
-showResponseToXmlNode (SRRaw n) = n
+showResponseToXmlNode (SRCommon SREnd) = XmlEnd (("stream", Nothing), "stream")
+showResponseToXmlNode (SRCommon (SRRaw n)) = n
 showResponseToXmlNode _ = error "not implemented yet"
 
 output :: HandleLike h => h -> Pipe ShowResponse () (HandleMonad h) ()
@@ -414,7 +411,7 @@ output h = do
 		Just n -> do
 			lift (hlPut h $ xmlString [showResponseToXmlNode n])
 			case n of
-				SREnd -> lift $ hlClose h
+				(SRCommon SREnd) -> lift $ hlClose h
 				_ -> return ()
 			output h
 		_ -> return ()

@@ -53,7 +53,7 @@ process = await >>= \mr -> case mr of
 			yield $ resultCaps i (fromJid f) n
 			yield . SRCommon . SRMessage Chat "prof_3" Nothing recipient .
 				MBody $ MessageBody message
-			yield SREnd
+			yield $ SRCommon SREnd
 	Just _ -> process
 	_ -> return ()
 

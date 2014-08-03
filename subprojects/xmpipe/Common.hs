@@ -41,6 +41,8 @@ data Common
 	| SRIq IqType BS.ByteString (Maybe Jid) (Maybe Jid) Query
 	| SRPresence [(Tag, BS.ByteString)] Caps
 	| SRMessage MessageType BS.ByteString (Maybe Jid) Jid MBody
+	| SREnd
+	| SRRaw XmlNode
 	deriving Show
 
 data Tag

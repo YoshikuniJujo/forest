@@ -97,8 +97,6 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 
 data ShowResponse
 	= SRCommon Common
-
-	| SRRaw XmlNode
 	deriving Show
 
 toBind :: XmlNode -> Bind
@@ -239,7 +237,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq")
 	to = toJid <$> lookup To ts
 showResponse (XmlNode ((_, Just "jabber:client"), "presence")
 	_ as ns) = SRCommon . SRPresence (map (first toTag) as) $ toCaps ns
-showResponse n = SRRaw n
+showResponse n = SRCommon $ SRRaw n
 
 toTag :: QName -> Tag
 toTag ((_, Just "jabber:client"), "to") = To
@@ -288,7 +286,7 @@ toXml (SRCommon (SRMessage tp i (Just fr) to (MBody (MessageBody m)))) =
 			(nullQ "to", fromJid to),
 			(nullQ "id", i) ]
 		[XmlNode (nullQ "body") [][] [XmlCharData m]]
-toXml (SRRaw n) = n
+toXml (SRCommon (SRRaw n)) = n
 toXml _ = error "toXml: not implemented"
 
 fromJid :: Jid -> BS.ByteString
