@@ -102,6 +102,13 @@ toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 	(map (first fromTag) as)
 toXml (SRFeatures fs) = XmlNode
 	(("stream", Nothing), "features") [] [] $ map fromFeature fs
+toXml (SRAuth ScramSha1) = XmlNode (nullQ "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
+toXml (SRAuth DigestMd5) = XmlNode (nullQ "quth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
+
 toXml c@SRChallenge{} = XmlNode (nullQ "challenge")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
 		(realm c) (nonce c) (qop c) (charset c) (algorithm c)

@@ -108,22 +108,24 @@ session :: XmlNode
 session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
 
-showResponseToXmlNode :: Common -> XmlNode
-showResponseToXmlNode (SRXmlDecl) = XmlDecl (1, 0)
-showResponseToXmlNode (SRStream as) = XmlStart
-	(("stream", Nothing), "stream")
+toXml :: Common -> XmlNode
+toXml (SRXmlDecl) = XmlDecl (1, 0)
+toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
 	[	("", "jabber:client"),
 		("stream", "http://etherx.jabber.org/streams") ]
 	(map (first fromTag) as)
-showResponseToXmlNode (SRAuth ScramSha1) = XmlNode (nullQ "auth")
+toXml (SRFeatures fs) = XmlNode
+	(("stream", Nothing), "features") [] [] $ map fromFeature fs
+toXml (SRAuth ScramSha1) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-showResponseToXmlNode (SRAuth DigestMd5) = XmlNode (nullQ "auth")
+toXml (SRAuth DigestMd5) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
-showResponseToXmlNode (SRResponse _ dr) = drToXmlNode dr
-showResponseToXmlNode SRResponseNull = drnToXmlNode
-showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
+
+toXml (SRResponse _ dr) = drToXmlNode dr
+toXml SRResponseNull = drnToXmlNode
+toXml (SRIq it i fr to (IqBind r b)) =
 	XmlNode (nullQ "iq") [] as .
 		(maybe id ((:) . fromRequirement) r) $ fromBind b
 	where
@@ -137,7 +139,7 @@ showResponseToXmlNode (SRIq it i fr to (IqBind r b)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to IqSession) =
+toXml (SRIq it i fr to IqSession) =
 	XmlNode (nullQ "iq") [] as [session]
 	where
 	as = catMaybes [
@@ -150,7 +152,7 @@ showResponseToXmlNode (SRIq it i fr to IqSession) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
+toXml (SRIq it i fr to (IqRoster Nothing)) =
 	XmlNode (nullQ "iq") [] as [roster]
 	where
 	as = catMaybes [
@@ -163,7 +165,7 @@ showResponseToXmlNode (SRIq it i fr to (IqRoster Nothing)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
+toXml (SRIq it i fr to (IqCapsQuery v n)) =
 	XmlNode (nullQ "iq") [] as [capsQuery v n]
 	where
 	as = catMaybes [
@@ -176,7 +178,7 @@ showResponseToXmlNode (SRIq it i fr to (IqCapsQuery v n)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRIq it i fr to (IqCapsQuery2 c n)) =
+toXml (SRIq it i fr to (IqCapsQuery2 c n)) =
 	XmlNode (nullQ "iq") [] as [capsToQuery c n]
 	where
 	as = catMaybes [
@@ -189,9 +191,9 @@ showResponseToXmlNode (SRIq it i fr to (IqCapsQuery2 c n)) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-showResponseToXmlNode (SRPresence ts c) =
+toXml (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
-showResponseToXmlNode (SRMessage mt i Nothing j (MBody (MessageBody m))) =
+toXml (SRMessage mt i Nothing j (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
 		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
@@ -199,17 +201,17 @@ showResponseToXmlNode (SRMessage mt i Nothing j (MBody (MessageBody m))) =
 	t = (nullQ "type" ,) $ case mt of
 		Normal -> "normal"
 		Chat -> "chat"
-		_ -> error "showResponseToXmlNode: not implemented yet"
-showResponseToXmlNode SREnd = XmlEnd (("stream", Nothing), "stream")
-showResponseToXmlNode (SRRaw n) = n
-showResponseToXmlNode _ = error "not implemented yet"
+		_ -> error "toXml: not implemented yet"
+toXml SREnd = XmlEnd (("stream", Nothing), "stream")
+toXml (SRRaw n) = n
+toXml _ = error "not implemented yet"
 
 output :: HandleLike h => h -> Pipe Common () (HandleMonad h) ()
 output h = do
 	mn <- await
 	case mn of
 		Just n -> do
-			lift (hlPut h $ xmlString [showResponseToXmlNode n])
+			lift (hlPut h $ xmlString [toXml n])
 			case n of
 				SREnd -> lift $ hlClose h
 				_ -> return ()
