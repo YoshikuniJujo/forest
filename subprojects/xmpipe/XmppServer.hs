@@ -237,25 +237,6 @@ showResponse (XmlNode ((_, Just "jabber:client"), "presence")
 	_ as ns) = SRPresence (map (first toTag) as) $ toCaps ns
 showResponse n = SRRaw n
 
-toTag :: QName -> Tag
-toTag ((_, Just "jabber:client"), "to") = To
-toTag (("xml", Nothing), "lang") = Lang
-toTag ((_, Just "jabber:client"), "version") = Version
-toTag ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism") = Mechanism
-toTag ((_, Just "jabber:client"), "id") = Id
-toTag ((_, Just "jabber:client"), "type") = Type
-toTag n = TagRaw n
-
-fromTag :: Tag -> QName
-fromTag Id = nullQ "id"
-fromTag From = nullQ "from"
-fromTag To = nullQ "to"
-fromTag Version = nullQ "version"
-fromTag Lang = (("xml", Nothing), "lang")
-fromTag Mechanism = nullQ "mechanism"
-fromTag Type = nullQ "type"
-fromTag (TagRaw n) = n
-
 toXml :: Common -> XmlNode
 toXml (SRXmlDecl) = XmlDecl (1, 0)
 toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")

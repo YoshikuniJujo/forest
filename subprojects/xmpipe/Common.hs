@@ -17,6 +17,7 @@ module Common (
 	fromJid, toJid, toBind, toIqBody,
 	toMessageType, isCaps, toFeature,
 	fromRequirement,
+	toTag, fromTag,
 	) where
 
 import Control.Applicative
@@ -320,3 +321,23 @@ toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
 	_ [] [XmlCharData "PLAIN"]) = Plain
 toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
 	_ [] [XmlCharData n]) = MechanismRaw n
+
+toTag :: QName -> Tag
+toTag ((_, Just "jabber:client"), "type") = Type
+toTag ((_, Just "jabber:client"), "id") = Id
+toTag ((_, Just "jabber:client"), "from") = From
+toTag ((_, Just "jabber:client"), "to") = To
+toTag ((_, Just "jabber:client"), "version") = Version
+toTag ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism") = Mechanism
+toTag (("xml", Nothing), "lang") = Lang
+toTag n = TagRaw n
+
+fromTag :: Tag -> QName
+fromTag Type = nullQ "type"
+fromTag Id = nullQ "id"
+fromTag From = nullQ "from"
+fromTag To = nullQ "to"
+fromTag Version = nullQ "version"
+fromTag Lang = (("xml", Nothing), "lang")
+fromTag Mechanism = nullQ "mechanism"
+fromTag (TagRaw n) = n

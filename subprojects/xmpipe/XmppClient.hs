@@ -30,7 +30,6 @@ module XmppClient (
 	InfoFeatureTag(..),
 	Identity(..),
 	IdentityTag(..),
-	RosterTag(..),
 	DelayTag(..),
 	XDelayTag(..),
 	voidM,
@@ -44,7 +43,6 @@ import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import Data.Maybe
-import Data.List
 import Data.Pipe
 import Data.HandleLike
 import Text.XML.Pipe
@@ -55,8 +53,7 @@ import qualified Data.ByteString.Base64 as B64
 
 import Papillon
 import Digest
-import Caps (capsToXml, capsToQuery)
-import qualified Caps as CAPS
+import Caps (capsToQuery)
 
 import Common
 
@@ -109,24 +106,6 @@ xmlPipe = do
 	c <- xmlBegin >>= xmlNode
 	when c xmlPipe
 
--- data Tag = Id | From | To | Version | Lang | TagRaw QName deriving (Eq, Show)
-
-qnameToTag :: QName -> Tag
-qnameToTag ((_, Just "jabber:client"), "id") = Id
-qnameToTag ((_, Just "jabber:client"), "from") = From
-qnameToTag ((_, Just "jabber:client"), "to") = To
-qnameToTag ((_, Just "jabber:client"), "version") = Version
-qnameToTag (("xml", Nothing), "lang") = Lang
-qnameToTag n = TagRaw n
-
-fromTag :: Tag -> QName
-fromTag Id = (nullQ "id")
-fromTag From = (nullQ "from")
-fromTag To = (nullQ "to")
-fromTag Version = (nullQ "version")
-fromTag Lang = (("xml", Nothing), "lang")
-fromTag (TagRaw n) = n
-
 data IqTag = IqId | IqType | IqTo | IqFrom | IqRaw QName deriving (Eq, Show)
 
 toIqTag :: QName -> IqTag
@@ -135,13 +114,6 @@ toIqTag ((_, Just "jabber:client"), "type") = IqType
 toIqTag ((_, Just "jabber:client"), "to") = IqTo
 toIqTag ((_, Just "jabber:client"), "from") = IqFrom
 toIqTag n = IqRaw n
-
-fromIqTag :: IqTag -> QName
-fromIqTag IqId = (nullQ "id")
-fromIqTag IqType = (nullQ "type")
-fromIqTag IqTo = (nullQ "to")
-fromIqTag IqFrom = (nullQ "from")
-fromIqTag (IqRaw n) = n
 
 session :: XmlNode
 session = XmlNode (nullQ "session")
@@ -158,15 +130,9 @@ fromBind (Resource r) = [
 	]
 fromBind (BindRaw n) = [n]
 
-data RosterTag = RTVer | RTRaw QName deriving (Eq, Show)
-
-toRosterTag :: QName -> RosterTag
-toRosterTag ((_, Just "jabber:iq:roster"), "ver") = RTVer
-toRosterTag n = RTRaw n
-
 showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
-	_ atts) = SRStream $ map (first qnameToTag) atts
+	_ atts) = SRStream $ map (first toTag) atts
 showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
 	_ [] nds) = SRFeatures $ map toFeature nds
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
@@ -198,7 +164,7 @@ showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 		"error" -> ITError
 		_ -> error "showResonse: bad"
 showResponse (XmlNode ((_, Just "jabber:client"), "presence") _ as ns) =
-	SRPresence (map (first qnameToTag) as) $ toCaps ns
+	SRPresence (map (first toTag) as) $ toCaps ns
 showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as [b, d, xd])
 	| XmlNode ((_, Just "jabber:client"), "body") _ [] _ <- b,
 		XmlNode ((_, Just "urn:xmpp:delay"), "delay") _ _ [] <- d,
