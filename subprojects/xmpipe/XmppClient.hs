@@ -122,9 +122,16 @@ toXml (SRAuth ScramSha1) = XmlNode (nullQ "auth")
 toXml (SRAuth DigestMd5) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
-
+toXml c@SRChallenge{} = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
+		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
 toXml (SRResponse _ dr) = drToXmlNode dr
+toXml (SRChallengeRspauth sret) = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
 toXml SRResponseNull = drnToXmlNode
+toXml SRSaslSuccess =
+	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+
 toXml (SRIq it i fr to (IqBind r b)) =
 	XmlNode (nullQ "iq") [] as .
 		(maybe id ((:) . fromRequirement) r) $ fromBind b
