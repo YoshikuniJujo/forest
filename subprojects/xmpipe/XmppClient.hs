@@ -109,52 +109,6 @@ xmlPipe = do
 	c <- xmlBegin >>= xmlNode
 	when c xmlPipe
 
-toMessageType :: BS.ByteString -> MessageType
-toMessageType "normal" = Normal
-toMessageType "chat" = Chat
-toMessageType _ = error "toMessageType: bad"
-
-isCaps :: Feature -> Bool
-isCaps Caps{} = True
-isCaps _ = False
-
-toFeature :: XmlNode -> Feature
-toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")
-	_ [] ns) = Mechanisms $ map toMechanism ns
-toFeature (XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []) =
-	let h = map (first toCapsTag) as in Caps {
-		chash = fromJust $ lookup CTHash h,
-		cnode = fromJust $ lookup CTNode h,
-		cver = (\(Right r) -> r) . B64.decode . fromJust $ lookup CTVer h }
---	Caps $ map (first toCapsTag) as
-toFeature (XmlNode ((_, Just "urn:xmpp:features:rosterver"), "ver") _ [] r) =
-	Rosterver $ toRequirement r
-toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] r) =
-	Bind $ toRequirement r
-toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session")
-	_ [] r) = Session $ toRequirement r
-toFeature n = FeatureRaw n
-
-toRequirement :: [XmlNode] -> Requirement
-toRequirement [XmlNode (_, "optional") _ [] []] = Optional
-toRequirement [XmlNode (_, "required") _ [] []] = Required
-toRequirement n = NoRequirement n
-
-fromRequirement :: Requirement -> XmlNode
-fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
-fromRequirement Required = XmlNode (nullQ "required") [] [] []
-fromRequirement (NoRequirement _) = undefined
-
-toMechanism :: XmlNode -> Mechanism
-toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
-	_ [] [XmlCharData "SCRAM-SHA-1"]) = ScramSha1
-toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
-	_ [] [XmlCharData "DIGEST-MD5"]) = DigestMd5
-toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
-	_ [] [XmlCharData "PLAIN"]) = Plain
-toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
-	_ [] [XmlCharData n]) = MechanismRaw n
-
 -- data Tag = Id | From | To | Version | Lang | TagRaw QName deriving (Eq, Show)
 
 qnameToTag :: QName -> Tag

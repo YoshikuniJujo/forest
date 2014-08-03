@@ -14,16 +14,20 @@ module Common (
 	MessageXDelay(..), XDelayTag(..), toXDelay,
 	MBody(..),
 	MessageType(..),
-	fromJid, toJid, toBind, toIqBody
+	fromJid, toJid, toBind, toIqBody,
+	toMessageType, isCaps, toFeature,
+	fromRequirement,
 	) where
 
 import Control.Applicative
 import Control.Arrow
 import Data.List
+import Data.Maybe
 import Text.XML.Pipe
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Base64 as B64
 
 import qualified Caps as CAPS
 import Digest
@@ -271,3 +275,48 @@ toJid j = Jid a d (if BS.null r then Nothing else Just $ BS.tail r)
 	where
 	(a, rst) = BSC.span (/= '@') j
 	(d, r) = BSC.span (/= '/') $ BS.tail rst
+
+toMessageType :: BS.ByteString -> MessageType
+toMessageType "normal" = Normal
+toMessageType "chat" = Chat
+toMessageType _ = error "toMessageType: bad"
+
+isCaps :: Feature -> Bool
+isCaps Caps{} = True
+isCaps _ = False
+
+toFeature :: XmlNode -> Feature
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanisms")
+	_ [] ns) = Mechanisms $ map toMechanism ns
+toFeature (XmlNode ((_, Just "http://jabber.org/protocol/caps"), "c") _ as []) =
+	let h = map (first toCapsTag) as in Caps {
+		chash = fromJust $ lookup CTHash h,
+		cnode = fromJust $ lookup CTNode h,
+		cver = (\(Right r) -> r) . B64.decode . fromJust $ lookup CTVer h }
+toFeature (XmlNode ((_, Just "urn:xmpp:features:rosterver"), "ver") _ [] r) =
+	Rosterver $ toRequirement r
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-bind"), "bind") _ [] r) =
+	Bind $ toRequirement r
+toFeature (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-session"), "session")
+	_ [] r) = Session $ toRequirement r
+toFeature n = FeatureRaw n
+
+toRequirement :: [XmlNode] -> Requirement
+toRequirement [XmlNode (_, "optional") _ [] []] = Optional
+toRequirement [XmlNode (_, "required") _ [] []] = Required
+toRequirement n = NoRequirement n
+
+fromRequirement :: Requirement -> XmlNode
+fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
+fromRequirement Required = XmlNode (nullQ "required") [] [] []
+fromRequirement (NoRequirement _) = undefined
+
+toMechanism :: XmlNode -> Mechanism
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "SCRAM-SHA-1"]) = ScramSha1
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "DIGEST-MD5"]) = DigestMd5
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData "PLAIN"]) = Plain
+toMechanism (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "mechanism")
+	_ [] [XmlCharData n]) = MechanismRaw n

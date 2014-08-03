@@ -196,9 +196,11 @@ toRequirement (XmlNode (_, "optional") _ [] []) = Just Optional
 toRequirement (XmlNode (_, "required") _ [] []) = Just Required
 toRequirement _ = Nothing
 
+{-
 fromRequirement :: Requirement -> XmlNode
 fromRequirement Optional = XmlNode (nullQ "optional") [] [] []
 fromRequirement Required = XmlNode (nullQ "required") [] [] []
+-}
 
 showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
