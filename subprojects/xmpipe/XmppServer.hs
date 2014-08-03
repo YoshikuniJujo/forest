@@ -98,12 +98,23 @@ xmlPipe = xmlBegin >>= xmlNode >>= flip when xmlPipe
 showResponse :: XmlNode -> Common
 showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
 	as) = SRStream $ map (first toTag) as
+showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
+	_ [] nds) = SRFeatures $ map toFeature nds
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
 	_ as [])
-	| [(Mechanism, m)] <- map (first toTag) as =
-		SRAuth $ toMechanism' m
-showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
-	_ [] []) = SRResponseNull
+	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism' m
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
+	_ [] [XmlCharData c]) = let
+		Right d = B64.decode c
+		Just a = parseAtts d in
+		case a of
+			[("rspauth", ra)] -> SRChallengeRspauth ra
+			_ -> SRChallenge {
+				realm = fromJust $ lookup "realm" a,
+				nonce = fromJust $ lookup "nonce" a,
+				qop = fromJust $ lookup "qop" a,
+				charset = fromJust $ lookup "charset" a,
+				algorithm = fromJust $ lookup "algorithm" a }
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 	_ [] [XmlCharData cd]) = let
 		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
@@ -118,6 +129,11 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
 			drQop = fromJust $ lookup "qop" a,
 			drDigestUri = fromJust $ lookup "digest-uri" a,
 			drCharset = fromJust $ lookup "charset" a }
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
+	_ [] []) = SRResponseNull
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
+	_ [] []) = SRSaslSuccess
+
 showResponse (XmlNode ((_, Just "jabber:client"), "iq")
 	_ as [n]) = SRIq tp i fr to (toIq n)
 	where

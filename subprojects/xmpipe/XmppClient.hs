@@ -110,10 +110,13 @@ session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
 
 showResponse :: XmlNode -> Common
-showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream")
-	_ atts) = SRStream $ map (first toTag) atts
+showResponse (XmlStart ((_, Just "http://etherx.jabber.org/streams"), "stream") _
+	as) = SRStream $ map (first toTag) as
 showResponse (XmlNode ((_, Just "http://etherx.jabber.org/streams"), "features")
 	_ [] nds) = SRFeatures $ map toFeature nds
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "auth")
+	_ as [])
+	| [(Mechanism, m)] <- map (first toTag) as = SRAuth $ toMechanism' m
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge")
 	_ [] [XmlCharData c]) = let
 		Right d = B64.decode c
@@ -126,8 +129,25 @@ showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "challenge"
 				qop = fromJust $ lookup "qop" a,
 				charset = fromJust $ lookup "charset" a,
 				algorithm = fromJust $ lookup "algorithm" a }
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
+	_ [] [XmlCharData cd]) = let
+		Just a = parseAtts . (\(Right s) -> s) $ B64.decode cd
+		in
+		SRResponse (fromJust $ lookup "response" a) DR {
+			drUserName = fromJust $ lookup "username" a,
+			drRealm = fromJust $ lookup "realm" a,
+			drPassword = "password",
+			drCnonce = fromJust $ lookup "cnonce" a,
+			drNonce = fromJust $ lookup "nonce" a,
+			drNc = fromJust $ lookup "nc" a,
+			drQop = fromJust $ lookup "qop" a,
+			drDigestUri = fromJust $ lookup "digest-uri" a,
+			drCharset = fromJust $ lookup "charset" a }
+showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "response")
+	_ [] []) = SRResponseNull
 showResponse (XmlNode ((_, Just "urn:ietf:params:xml:ns:xmpp-sasl"), "success")
 	_ [] []) = SRSaslSuccess
+
 showResponse (XmlNode ((_, Just "jabber:client"), "iq") _ as ns) =
 	SRIq t i fr to $ toIqBody ns
 	where
