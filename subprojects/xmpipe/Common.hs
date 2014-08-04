@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module Common (
+	toXml,
 	showResponse,
 	Common(..), Tag(..), Mechanism(..),
 	Requirement(..), toRequirement,
@@ -542,3 +543,48 @@ roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []
 session :: XmlNode
 session = XmlNode (nullQ "session")
 	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
+
+toXml :: Common -> XmlNode
+toXml (SRXmlDecl) = XmlDecl (1, 0)
+toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
+	[	("", "jabber:client"),
+		("stream", "http://etherx.jabber.org/streams") ]
+	(map (first fromTag) as)
+toXml (SRFeatures fs) = XmlNode
+	(("stream", Nothing), "features") [] [] $ map fromFeature fs
+toXml (SRAuth ScramSha1) = XmlNode (nullQ "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
+toXml (SRAuth DigestMd5) = XmlNode (nullQ "auth")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
+	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
+toXml c@SRChallenge{} = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] $ fromChallenge
+		(realm c) (nonce c) (qop c) (charset c) (algorithm c)
+toXml (SRResponse _ dr) = drToXmlNode dr
+toXml (SRChallengeRspauth sret) = XmlNode (nullQ "challenge")
+	[("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] [XmlCharData sret]
+toXml SRResponseNull = drnToXmlNode
+toXml SRSaslSuccess =
+	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
+toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
+	(catMaybes [
+		Just $ iqTypeToAtt tp,
+		Just (nullQ "id", i),
+		(nullQ "from" ,) . fromJid <$> fr,
+		(nullQ "to" ,) . fromJid <$> to ])
+	(fromQuery q)
+toXml (SRPresence ts c) =
+	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
+
+toXml (SRMessage tp i fr to (MBody (MessageBody m))) =
+	XmlNode (nullQ "message") []
+		(catMaybes [
+			Just $ messageTypeToAtt tp,
+			Just (nullQ "id", i),
+			(nullQ "from" ,) . fromJid <$> fr,
+			Just (nullQ "to", fromJid to) ])
+		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
+toXml SREnd = XmlEnd (("stream", Nothing), "stream")
+toXml (SRRaw n) = n
+toXml _ = error "toXml: not implemented yet"
