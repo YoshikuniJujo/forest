@@ -105,7 +105,7 @@ toXml (SRFeatures fs) = XmlNode
 toXml (SRAuth ScramSha1) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "SCRAM-SHA1")] []
-toXml (SRAuth DigestMd5) = XmlNode (nullQ "quth")
+toXml (SRAuth DigestMd5) = XmlNode (nullQ "auth")
 	[("", "urn:ietf:params:xml:ns:xmpp-sasl")]
 	[((("", Nothing), "mechanism"), "DIGEST-MD5")] []
 toXml c@SRChallenge{} = XmlNode (nullQ "challenge")
@@ -122,20 +122,22 @@ toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 		Just $ iqTypeToAtt tp,
 		Just (nullQ "id", i),
 		(nullQ "from" ,) . fromJid <$> fr,
-		(nullQ "to" ,) . fromJid <$> to ]) 
+		(nullQ "to" ,) . fromJid <$> to ])
 	(fromQuery q)
 toXml (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 
-toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
+toXml (SRMessage tp i fr to (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
-		[messageTypeToAtt tp,
-			(nullQ "from", fromJid fr),
-			(nullQ "to", fromJid to),
-			(nullQ "id", i) ]
-		[XmlNode (nullQ "body") [][] [XmlCharData m]]
+		(catMaybes [
+			Just $ messageTypeToAtt tp,
+			Just (nullQ "id", i),
+			(nullQ "from" ,) . fromJid <$> fr,
+			Just (nullQ "to", fromJid to) ])
+		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
+toXml SREnd = XmlEnd (("stream", Nothing), "stream")
 toXml (SRRaw n) = n
-toXml _ = error "toXml: not implemented"
+toXml _ = error "toXml: not implemented yet"
 
 outputXml :: (MonadState (HandleMonad h), StateType (HandleMonad h) ~ XmppState,
 		HandleLike h) => h -> Pipe XmlNode () (HandleMonad h) ()

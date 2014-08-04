@@ -137,18 +137,17 @@ toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 toXml (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 
-toXml (SRMessage mt i Nothing j (MBody (MessageBody m))) =
+toXml (SRMessage tp i fr to (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
-		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
+		(catMaybes [
+			Just $ messageTypeToAtt tp,
+			Just (nullQ "id", i),
+			(nullQ "from" ,) . fromJid <$> fr,
+			Just (nullQ "to", fromJid to) ])
 		[XmlNode (nullQ "body") [] [] [XmlCharData m]]
-	where
-	t = (nullQ "type" ,) $ case mt of
-		Normal -> "normal"
-		Chat -> "chat"
-		_ -> error "toXml: not implemented yet"
 toXml SREnd = XmlEnd (("stream", Nothing), "stream")
 toXml (SRRaw n) = n
-toXml _ = error "not implemented yet"
+toXml _ = error "toXml: not implemented yet"
 
 output :: HandleLike h => h -> Pipe Common () (HandleMonad h) ()
 output h = do
