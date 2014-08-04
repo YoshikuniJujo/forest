@@ -159,45 +159,15 @@ toXml (SRIq it i fr to IqSession) =
 		Set -> "set"
 		Result -> "result"
 		ITError -> "error"
-toXml (SRIq it i fr to (IqRoster Nothing)) =
-	XmlNode (nullQ "iq") [] as [roster]
-	where
-	as = catMaybes [
-		Just t,
-		Just ((nullQ "id"), i),
-		(nullQ "from" ,) . fromJid <$> fr,
-		(nullQ "to" ,) . fromJid <$> to ]
-	t = (nullQ "type" ,) $ case it of
-		Get -> "get"
-		Set -> "set"
-		Result -> "result"
-		ITError -> "error"
-toXml (SRIq it i fr to (IqCapsQuery v n)) =
-	XmlNode (nullQ "iq") [] as [capsQuery v n]
-	where
-	as = catMaybes [
-		Just t,
+
+toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
+	(catMaybes [
+		Just $ iqTypeToAtt tp,
 		Just (nullQ "id", i),
 		(nullQ "from" ,) . fromJid <$> fr,
-		(nullQ "to" ,) . fromJid <$> to ]
-	t = (nullQ "type" ,) $ case it of
-		Get -> "get"
-		Set -> "set"
-		Result -> "result"
-		ITError -> "error"
-toXml (SRIq it i fr to (IqCapsQuery2 c n)) =
-	XmlNode (nullQ "iq") [] as [capsToQuery c n]
-	where
-	as = catMaybes [
-		Just t,
-		Just (nullQ "id", i),
-		(nullQ "from" ,) . fromJid <$> fr,
-		(nullQ "to" ,) . fromJid <$> to ]
-	t = (nullQ "type" ,) $ case it of
-		Get -> "get"
-		Set -> "set"
-		Result -> "result"
-		ITError -> "error"
+		(nullQ "to" ,) . fromJid <$> to ])
+	(fromQuery q)
+
 toXml (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 toXml (SRMessage mt i Nothing j (MBody (MessageBody m))) =
@@ -224,14 +194,6 @@ output h = do
 				_ -> return ()
 			output h
 		_ -> return ()
-
-roster :: XmlNode
-roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []
-
-capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
-capsQuery v n = XmlNode (("", Nothing), "query")
-	[("", "http://jabber.org/protocol/disco#info")]
-	[((("", Nothing), "node"), n `BS.append` "#" `BS.append` v)] []
 
 handleP :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 handleP h = do

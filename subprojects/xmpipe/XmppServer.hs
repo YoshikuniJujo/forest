@@ -118,12 +118,14 @@ toXml SRResponseNull = drnToXmlNode
 toXml SRSaslSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
 
-toXml (SRIq tp i Nothing to q) = XmlNode (nullQ "iq") []
+toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
-		Just (nullQ "id", i),
 		Just $ iqTypeToAtt tp,
+		Just (nullQ "id", i),
+		(nullQ "from" ,) . fromJid <$> fr,
 		(nullQ "to" ,) . fromJid <$> to ]) 
 	(fromQuery q)
+
 toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[messageTypeToAtt tp,

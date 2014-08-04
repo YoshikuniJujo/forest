@@ -384,6 +384,9 @@ fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
 	where as = case mv of
 		Just v -> [(nullQ "ver", v)]
 		_ -> []
+fromQuery (IqRoster Nothing) = [roster]
+fromQuery (IqCapsQuery v n) = [capsQuery v n]
+fromQuery (IqCapsQuery2 c n) = [CAPS.capsToQuery c n]
 fromQuery IqSessionNull = []
 fromQuery (QueryRaw ns) = ns
 
@@ -525,3 +528,11 @@ showResponse (XmlNode ((_, Just "jabber:client"), "message") _ as ns) =
 	fr = toJid <$> lookup From ts
 	to = toJid . fromJust $ lookup To ts
 showResponse n = SRRaw n
+
+capsQuery :: BS.ByteString -> BS.ByteString -> XmlNode
+capsQuery v n = XmlNode (("", Nothing), "query")
+	[("", "http://jabber.org/protocol/disco#info")]
+	[((("", Nothing), "node"), n `BS.append` "#" `BS.append` v)] []
+
+roster :: XmlNode
+roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []
