@@ -384,6 +384,8 @@ fromQuery (IqRoster (Just (Roster mv ns))) = (: []) $
 	where as = case mv of
 		Just v -> [(nullQ "ver", v)]
 		_ -> []
+fromQuery (IqBind r b) = maybe id ((:) . fromRequirement) r $ fromBind b
+fromQuery IqSession = [session]
 fromQuery (IqRoster Nothing) = [roster]
 fromQuery (IqCapsQuery v n) = [capsQuery v n]
 fromQuery (IqCapsQuery2 c n) = [CAPS.capsToQuery c n]
@@ -536,3 +538,7 @@ capsQuery v n = XmlNode (("", Nothing), "query")
 
 roster :: XmlNode
 roster = XmlNode (nullQ "query") [("", "jabber:iq:roster")] [] []
+
+session :: XmlNode
+session = XmlNode (nullQ "session")
+	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []

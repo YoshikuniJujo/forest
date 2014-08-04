@@ -117,7 +117,6 @@ toXml (SRChallengeRspauth sret) = XmlNode (nullQ "challenge")
 toXml SRResponseNull = drnToXmlNode
 toXml SRSaslSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-
 toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
 		Just $ iqTypeToAtt tp,
@@ -125,6 +124,8 @@ toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 		(nullQ "from" ,) . fromJid <$> fr,
 		(nullQ "to" ,) . fromJid <$> to ]) 
 	(fromQuery q)
+toXml (SRPresence ts c) =
+	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
 
 toXml (SRMessage tp i (Just fr) to (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []

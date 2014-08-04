@@ -104,10 +104,6 @@ xmlPipe = do
 	c <- xmlBegin >>= xmlNode
 	when c xmlPipe
 
-session :: XmlNode
-session = XmlNode (nullQ "session")
-	[("", "urn:ietf:params:xml:ns:xmpp-session")] [] []
-
 toXml :: Common -> XmlNode
 toXml (SRXmlDecl) = XmlDecl (1, 0)
 toXml (SRStream as) = XmlStart (("stream", Nothing), "stream")
@@ -131,35 +127,6 @@ toXml (SRChallengeRspauth sret) = XmlNode (nullQ "challenge")
 toXml SRResponseNull = drnToXmlNode
 toXml SRSaslSuccess =
 	XmlNode (nullQ "success") [("", "urn:ietf:params:xml:ns:xmpp-sasl")] [] []
-
-toXml (SRIq it i fr to (IqBind r b)) =
-	XmlNode (nullQ "iq") [] as .
-		(maybe id ((:) . fromRequirement) r) $ fromBind b
-	where
-	as = catMaybes [
-		Just t,
-		Just (nullQ "id", i),
-		(nullQ "from" ,) . fromJid <$> fr,
-		(nullQ "to" ,) . fromJid <$> to ]
-	t = (nullQ "type" ,) $ case it of
-		Get -> "get"
-		Set -> "set"
-		Result -> "result"
-		ITError -> "error"
-toXml (SRIq it i fr to IqSession) =
-	XmlNode (nullQ "iq") [] as [session]
-	where
-	as = catMaybes [
-		Just t,
-		Just ((nullQ "id"), i),
-		((nullQ "from") ,) . fromJid <$> fr,
-		((nullQ "to") ,) . fromJid <$> to ]
-	t = ((nullQ "type") ,) $ case it of
-		Get -> "get"
-		Set -> "set"
-		Result -> "result"
-		ITError -> "error"
-
 toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 	(catMaybes [
 		Just $ iqTypeToAtt tp,
@@ -167,9 +134,9 @@ toXml (SRIq tp i fr to q) = XmlNode (nullQ "iq") []
 		(nullQ "from" ,) . fromJid <$> fr,
 		(nullQ "to" ,) . fromJid <$> to ])
 	(fromQuery q)
-
 toXml (SRPresence ts c) =
 	XmlNode (nullQ "presence") [] (map (first fromTag) ts) (fromCaps c)
+
 toXml (SRMessage mt i Nothing j (MBody (MessageBody m))) =
 	XmlNode (nullQ "message") []
 		[t,(nullQ "id", i), (nullQ "to", fromJid j)]
