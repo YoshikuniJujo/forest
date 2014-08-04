@@ -45,11 +45,11 @@ process = await >>= \mr -> case mr of
 		process
 	Just (SRPresence _ (C [(CTHash, "sha-1"), (CTVer, v), (CTNode, n)])) -> do
 		yield (getCaps "prof_caps_2"
-			(Just $ sender `BS.append` "@localhost/profanity") v n)
+			(Just . Jid sender  "localhost" $ Just "profanity") v n)
 		process
 	Just (SRIq Get i (Just f) (Just to) (IqDiscoInfoNode [(DTNode, n)]))
-		| fromJid to == sender `BS.append` "@localhost/profanity" -> do
-			yield $ resultCaps i (fromJid f) n
+		| to == Jid sender "localhost" (Just "profanity") -> do
+			yield $ resultCaps i f n
 			yield . SRMessage Chat "prof_3" Nothing recipient .
 				MBody $ MessageBody message
 			yield SREnd
@@ -67,14 +67,14 @@ binds = [SRIq Set "_xmpp_bind1" Nothing Nothing . IqBind Nothing $
 	SRPresence [(Id, "prof_presence_1")] $
 		capsToCaps profanityCaps "http://www.profanity.im" ]
 
-getCaps :: BS.ByteString -> Maybe BS.ByteString -> BS.ByteString -> BS.ByteString ->
+getCaps :: BS.ByteString -> Maybe Jid -> BS.ByteString -> BS.ByteString ->
 	Common
-getCaps i (Just t) v n = SRIq Get i Nothing (Just $ toJid t) $ IqCapsQuery v n
+getCaps i (Just t) v n = SRIq Get i Nothing (Just t) $ IqCapsQuery v n
 getCaps i _ v n = SRIq Get i Nothing Nothing $ IqCapsQuery v n
 
-resultCaps :: BS.ByteString -> BS.ByteString -> BS.ByteString -> Common
+resultCaps :: BS.ByteString -> Jid -> BS.ByteString -> Common
 resultCaps i t n =
-	SRIq Result i Nothing (Just $ toJid t) (IqCapsQuery2 profanityCaps n)
+	SRIq Result i Nothing (Just t) (IqCapsQuery2 profanityCaps n)
 
 sender, message :: BS.ByteString
 recipient :: Jid

@@ -12,13 +12,14 @@ module XmppServer (
 	digestMd5,
 	showResponse, toXml,
 	Jid(..),
-	MessageType(..), messageTypeToAtt, IqType(..), iqTypeToAtt,
-	Query(..), toIqBody,
+	MessageType(..), -- messageTypeToAtt,
+	IqType(..), -- iqTypeToAtt,
+	Query(..), -- toIqBody,
 	Roster(..),
 	Tag(..),
 	Bind(..),
 	Requirement(..),
-	Mechanism(..), mechanismToXmlNode,
+	Mechanism(..), -- mechanismToXmlNode,
 	Feature(..),
 	XmppState(..), initXmppState,
 		setReceiver, setResource, nextUuid,
@@ -28,8 +29,6 @@ module XmppServer (
 
 import Data.UUID
 
-import Control.Applicative
-import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import Data.Maybe

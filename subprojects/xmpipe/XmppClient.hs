@@ -4,8 +4,8 @@
 module XmppClient (
 	MBody(..),
 	capsToCaps,
-	fromJid,
-	toJid,
+--	fromJid,
+--	toJid,
 	Common(..),
 	isCaps,
 	handleP,
@@ -37,8 +37,6 @@ module XmppClient (
 	IqType(..),
 	) where
 
-import Control.Applicative
-import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import Data.Maybe
@@ -51,7 +49,6 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base64 as B64
 
 import Digest
-import Caps (capsToQuery)
 
 import Common
 
