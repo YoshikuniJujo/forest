@@ -51,6 +51,9 @@ instance IsString Priority where
 		"critical" -> Critical
 		_ -> Moderate
 
+bufferSize :: Int
+bufferSize = 65536
+
 instance HandleLike Handle where
 	type HandleMonad Handle = IO
 	hlPut = BS.hPut
@@ -58,6 +61,7 @@ instance HandleLike Handle where
 --	hlGetByte h = do [b] <- BS.unpack <$> BS.hGet h 1; return b
 	hlGetLine = (chopCR `liftM`) . BS.hGetLine
 --	hlGetContent = flip BS.hGet 1
+	hlGetContent = flip BS.hGetSome bufferSize
 	hlDebug _ Critical = BS.hPutStr stderr
 	hlDebug _ _ = const $ return ()
 	hlFlush = hFlush

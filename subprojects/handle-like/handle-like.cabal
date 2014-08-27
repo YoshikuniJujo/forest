@@ -2,7 +2,7 @@ cabal-version:	>= 1.6
 build-type:	Simple
 
 name:		handle-like
-version:	0.1.0.1
+version:	0.1.0.2
 stability:	Experimental
 author:		Yoshikuni Jujo <PAF01143@nifty.ne.jp>
 maintainer:	Yoshikuni Jujo <PAF01143@nifty.ne.jp>
