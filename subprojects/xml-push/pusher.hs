@@ -1,38 +1,89 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, ScopedTypeVariables, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
+	ScopedTypeVariables, PackageImports #-}
 
-import "monads-tf" Control.Monad.Trans
+import Prelude hiding (filter)
+
+import "monads-tf" Control.Monad.State
+import "monads-tf" Control.Monad.Writer
+import "monads-tf" Control.Monad.Error
+import Control.Monad.Base
+import Control.Concurrent hiding (yield)
+import Control.Concurrent.STM
 import Data.Maybe
 import Data.Pipe
+import Data.Pipe.Flow
+import Data.Pipe.IO (debug)
+import Data.Pipe.ByteString
 import Data.HandleLike
 import System.IO
 import Text.XML.Pipe
-
-import Control.Monad.Base
-import Control.Concurrent.STM
+import Network
+import Network.Sasl
 import Network.XMPiPe.Core.C2S.Client
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 
 class XmlPusher xp where
-	generate :: HandleLike h => h -> HandleMonad h (xp h)
-	readFrom :: xp h -> Pipe () XmlNode (HandleMonad h) ()
-	writeTo :: xp h -> Pipe XmlNode () (HandleMonad h) ()
+	generate :: (HandleLike h,
+		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
+		) => h -> HandleMonad h (xp h)
+	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
+	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
 
-data Xmpp h = Xmpp
+data Xml h = Xml
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
 
-instance XmlPusher Xmpp where
-	generate = makeXmpp
-	readFrom (Xmpp r _) = r
-	writeTo (Xmpp _ w) = w
+instance XmlPusher Xml where
+	generate = makeXml
+	readFrom (Xml r _) = r
+	writeTo (Xml _ w) = w
 
-makeXmpp :: HandleLike h => h -> HandleMonad h (Xmpp h)
-makeXmpp h = return $ Xmpp r w
+makeXml :: HandleLike h => h -> HandleMonad h (Xml h)
+makeXml h = return $ Xml r w
 	where
 	r = fromHandleLike h
 		=$= xmlEvent =$= convert fromJust =$= xmlNode [] >> return ()
 	w = convert (xmlString . (: [])) =$= toHandleLike h
+
+data Xmpp h = Xmpp
+	(Pipe () Mpi (HandleMonad h) ())
+	(Pipe Mpi () (HandleMonad h) ())
+
+instance XmlPusher Xmpp where
+	generate = makeXmpp
+	readFrom (Xmpp r _) = r
+		=$= convert fromMessage
+		=$= filter isJust
+		=$= convert fromJust
+	writeTo (Xmpp _ w) = convert toMessage
+		=$= w
+
+makeXmpp :: (HandleLike h,
+	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
+--	MonadBase IO (HandleMonad h)
+	) => h -> HandleMonad h (Xmpp h)
+makeXmpp h = do
+	let	me@(Jid un d (Just rsc)) = toJid "yoshikuni@localhost/profanity"
+		you = toJid "yoshio@localhost"
+		ss = St [
+			("username", un), ("authcid", un), ("password", "password"),
+			("cnonce", "00DEADBEEF00") ]
+	(`evalStateT` ss) . runPipe $ fromHandleLike (SHandle h)
+		=$= sasl d mechanisms
+		=$= toHandleLike (SHandle h)
+	(Just ns, _fts) <- runWriterT . runPipe $ fromHandleLike (WHandle h)
+		=$= bind d rsc
+		=@= toHandleLike (WHandle h)
+	runPipe_ $ yield (Presence tagsNull []) =$= output =$= toHandleLike h
+	let	r = fromHandleLike h =$= input ns
+		w = output =$= toHandleLike h
+	return $ Xmpp r w
+
+presence :: Mpi
+presence = Presence
+	(tagsNull { tagFrom = Just $ Jid "yoshikuni" "localhost" Nothing }) []
 
 fromHandleLike :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 fromHandleLike h = lift (hlGetContent h) >>= yield >> fromHandleLike h
@@ -40,10 +91,39 @@ fromHandleLike h = lift (hlGetContent h) >>= yield >> fromHandleLike h
 toHandleLike :: HandleLike h => h -> Pipe BS.ByteString () (HandleMonad h) ()
 toHandleLike h = await >>= maybe (return ()) ((>> toHandleLike h) . lift . hlPut h)
 
+main_ :: IO ()
+main_ = do
+	(x :: Xml (ReadWrite Handle)) <- generate $ RW stdin stdout
+	runPipe_ $ readFrom x =$= writeTo x
+
 main :: IO ()
 main = do
-	(x :: Xmpp (ReadWrite Handle)) <- generate $ RW stdin stdout
-	runPipe_ $ readFrom x =$= writeTo x
+	h <- connectTo "localhost" $ PortNumber 5222
+	Xmpp r w <- makeXmpp h
+	forkIO . runPipe_ $ r
+--		=$= convert (BSC.pack . show)
+		=$= convert fromMessage
+		=$= filter isJust
+		=$= convert fromJust
+		=$= convert (BSC.pack . show)
+		=$= toHandleLn stdout
+	runPipe_ $ fromHandle stdin =$= convert mkMessage =$= w
+
+toMessage :: XmlNode -> Mpi
+toMessage n = Message (tagsType "chat") {
+	tagId = Just "hoge",
+	tagTo = Just $ Jid "yoshio" "localhost" Nothing } [n]
+
+mkMessage :: BS.ByteString -> Mpi
+mkMessage m = Message
+	(tagsType "chat") {
+		tagId = Just "hoge",
+		tagTo = Just $ Jid "yoshio" "localhost" Nothing }
+	[XmlNode (nullQ "body") [] [] [XmlCharData m]]
+
+fromMessage :: Mpi -> Maybe XmlNode
+fromMessage (Message ts [XmlNode _ [] [] [m]]) = Just m
+fromMessage _ = Nothing
 
 data ReadWrite h = RW h h deriving Show
 
@@ -52,3 +132,25 @@ instance HandleLike h => HandleLike (ReadWrite h) where
 	hlPut (RW _ w) = hlPut w
 	hlGet (RW r _) = hlGet r
 	hlClose (RW r w) = hlClose r >> hlClose w
+
+data St = St [(BS.ByteString, BS.ByteString)]
+instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss
+
+mechanisms :: [BS.ByteString]
+mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
+
+data SHandle s h = SHandle h deriving Show
+
+instance HandleLike h => HandleLike (SHandle s h) where
+	type HandleMonad (SHandle s h) = StateT s (HandleMonad h)
+	hlPut (SHandle h) = lift . hlPut h
+	hlGet (SHandle h) = lift . hlGet h
+	hlClose (SHandle h) = lift $ hlClose h
+
+data WHandle w h = WHandle h deriving Show
+
+instance (HandleLike h, Monoid w) => HandleLike (WHandle w h) where
+	type HandleMonad (WHandle w h) = WriterT w (HandleMonad h)
+	hlPut (WHandle h) = lift . hlPut h
+	hlGet (WHandle h) = lift . hlGet h
+	hlClose (WHandle h) = lift $ hlClose h
