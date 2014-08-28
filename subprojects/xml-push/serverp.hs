@@ -19,14 +19,14 @@ main = do
 	soc <- listenOn $ PortNumber 80
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO $ do
-			r <- getRequest h
-			print $ requestPath r
-			void . runPipe $
-				requestBody r =$= printP `finally` putStrLn ""
-			putResponse h
-				. (response :: LBS.ByteString -> Response Pipe Handle)
-				. LBS.fromChunks $ map BSC.pack as
+		void . forkIO . forever $ run h as
+
+run h as = do
+	r <- getRequest h
+	print $ requestPath r
+	void . runPipe $ requestBody r =$= printP `finally` putStrLn ""
+	putResponse h . (response :: LBS.ByteString -> Response Pipe Handle)
+		. LBS.fromChunks $ map BSC.pack as
 
 printP :: MonadIO m => Pipe BSC.ByteString () m ()
 printP = await >>= maybe (return ()) (\s -> liftIO (BSC.putStr s) >> printP)
