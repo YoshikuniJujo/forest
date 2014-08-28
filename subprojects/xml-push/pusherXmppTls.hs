@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings, FlexibleContexts, ScopedTypeVariables,
  	PackageImports #-}
 
+import Prelude hiding (filter)
+
 import Control.Applicative
 import Control.Monad.Base
 import Control.Monad.Trans.Control
@@ -11,8 +13,9 @@ import Control.Concurrent hiding (yield)
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.ByteString
+import Data.Pipe.Flow
 import Data.Pipe.TChan
+import Data.Pipe.ByteString
 import System.IO
 import Text.XML.Pipe
 import Network
@@ -26,7 +29,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 class XmlPusher xp where
-	generate :: (HandleLike h,
+	generate :: (HandleLike h, ValidateHandle h,
+		MonadBaseControl IO (HandleMonad h),
 		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 		) => h -> HandleMonad h (xp h)
 	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
@@ -35,6 +39,14 @@ class XmlPusher xp where
 data Xmpp h = Xmpp
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
+
+instance XmlPusher Xmpp where
+	generate = makeXmpp
+	readFrom (Xmpp r _) = r
+		=$= convert fromMessage
+		=$= filter isJust
+		=$= convert fromJust
+	writeTo (Xmpp _ w) = convert toMessage =$= w
 
 makeXmpp :: (HandleLike h, ValidateHandle h,
 	MonadBaseControl IO (HandleMonad h),
@@ -79,15 +91,22 @@ toHandleLike h = await >>= maybe (return ()) ((>> toHandleLike h) . lift . hlPut
 main :: IO ()
 main = do
 	h <- connectTo "localhost" $ PortNumber 5222
-	Xmpp r w <- makeXmpp h
-	void . forkIO . runPipe_ $
-		r =$= convert (BSC.pack . show) =$= toHandleLn stdout
+	(x :: Xmpp Handle) <- generate h
+	void . forkIO . runPipe_ $ readFrom x
+		=$= convert (BSC.pack . show)
+		=$= toHandleLn stdout
 	runPipe_ $ fromHandle stdin
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
-		=$= convert (Message (tagsType "chat") {
-				tagId = Just "hoge",
-				tagTo = Just $ Jid "yoshio" "localhost" Nothing }
-			. (: []))
-		=$= w
+		=$= writeTo x
+
+fromMessage :: Mpi -> Maybe XmlNode
+fromMessage (Message ts [n]) = Just n
+fromMessage (Iq ts [n]) = Just n
+fromMessage _ = Nothing
+
+toMessage :: XmlNode -> Mpi
+toMessage n = Message (tagsType "chat") {
+	tagId = Just "hoge",
+	tagTo = Just $ Jid "yoshio" "localhost" Nothing } [n]
