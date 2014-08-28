@@ -99,15 +99,15 @@ main_ = do
 main :: IO ()
 main = do
 	h <- connectTo "localhost" $ PortNumber 5222
-	Xmpp r w <- makeXmpp h
-	forkIO . runPipe_ $ r
---		=$= convert (BSC.pack . show)
-		=$= convert fromMessage
-		=$= filter isJust
-		=$= convert fromJust
+	(x :: Xmpp Handle) <- generate h
+	forkIO . runPipe_ $ readFrom x
 		=$= convert (BSC.pack . show)
 		=$= toHandleLn stdout
-	runPipe_ $ fromHandle stdin =$= convert mkMessage =$= w
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= writeTo x
 
 toMessage :: XmlNode -> Mpi
 toMessage n = Message (tagsType "chat") {
@@ -122,7 +122,8 @@ mkMessage m = Message
 	[XmlNode (nullQ "body") [] [] [XmlCharData m]]
 
 fromMessage :: Mpi -> Maybe XmlNode
-fromMessage (Message ts [XmlNode _ [] [] [m]]) = Just m
+fromMessage (Message ts [n]) = Just n
+fromMessage (Iq ts [n]) = Just n
 fromMessage _ = Nothing
 
 data ReadWrite h = RW h h deriving Show
