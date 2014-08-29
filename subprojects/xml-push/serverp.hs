@@ -1,12 +1,15 @@
-{-# LANGUAGE OverloadedStrings, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, ScopedTypeVariables,
+	PackageImports #-}
 
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
+import Control.Monad.Base
+import Control.Monad.Trans.Control
 import Control.Concurrent
 import Control.Concurrent.STM
 import Data.Maybe
+import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.List
 import Data.Pipe.TChan
 import Data.Pipe.ByteString
 import System.IO
@@ -15,8 +18,30 @@ import Network
 import Network.TigHTTP.Server
 import Network.TigHTTP.Types
 
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
+
+class XmlPusher xp where
+	type PusherArg xp
+	generate :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
+		) => h -> PusherArg xp -> HandleMonad h (xp h)
+	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
+	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
+
+data HttpPull h = HttpPull
+	(Pipe () XmlNode (HandleMonad h) ())
+	(Pipe XmlNode () (HandleMonad h) ())
+
+instance XmlPusher HttpPull where
+	type PusherArg HttpPull = ()
+	generate = const . makeHttpPull
+	readFrom (HttpPull r _) = r
+	writeTo (HttpPull _ w) = w
+
+makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
+	h -> HandleMonad h (HttpPull h)
+makeHttpPull h = do
+	(inc, otc) <- run h
+	return $ HttpPull (fromTChan inc) (toTChan otc)
 
 main :: IO ()
 main = do
@@ -24,27 +49,29 @@ main = do
 	forever $ do
 		(h, _, _) <- accept soc
 		void . forkIO $ do
-			(r, w) <- run h
-			void . forkIO $ runPipe_ $
-				(fromTChan r :: Pipe () XmlNode IO ())
-					=$= convert (xmlString . (: []))
-					=$= toHandleLn stdout
+			(hp :: HttpPull Handle) <- generate h ()
+			void . forkIO $ runPipe_ $ readFrom hp
+				=$= convert (xmlString . (: []))
+				=$= toHandleLn stdout
 			runPipe_ $ fromHandle stdin
 				=$= xmlEvent
 				=$= convert fromJust
 				=$= xmlNode []
-				=$= toTChan w
+				=$= writeTo hp
 
-run :: Handle -> IO (TChan XmlNode, TChan XmlNode)
+run :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
+	h -> HandleMonad h (TChan XmlNode, TChan XmlNode)
 run h = do
-	inc <- atomically newTChan
-	otc <- atomically newTChan
-	void . forkIO . runPipe_ $ talk h inc otc
+	inc <- liftBase $ atomically newTChan
+	otc <- liftBase $ atomically newTChan
+	void . liftBaseDiscard forkIO . runPipe_ $ talk h inc otc
 	return (inc, otc)
 
+talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
+	h -> TChan XmlNode -> TChan XmlNode -> Pipe () () (HandleMonad h) ()
 talk h inc otc = do
 	r <- lift $ getRequest h
-	lift . print $ requestPath r
+	lift . liftBase . print $ requestPath r
 	requestBody r
 		=$= xmlEvent
 		=$= convert fromJust
@@ -52,6 +79,9 @@ talk h inc otc = do
 		=$= toTChan inc
 	(fromTChan otc =$=) $ (await >>=) $ maybe (return ()) $ \n ->
 		lift . putResponse h
-			. (response :: LBS.ByteString -> Response Pipe Handle)
+			. responseP
 			$ LBS.fromChunks [xmlString [n]]
 	talk h inc otc
+
+responseP :: HandleLike h => LBS.ByteString -> Response Pipe h
+responseP = response
