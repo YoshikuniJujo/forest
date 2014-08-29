@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts,
+{-# LANGUAGE OverloadedStrings, TypeFamilies, ScopedTypeVariables,
+	FlexibleContexts,
 	PackageImports #-}
 
 import Control.Applicative
@@ -25,6 +26,32 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 
+class XmlPusher xp where
+	type PusherArg xp
+	generate :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)
+		) => h -> PusherArg xp -> HandleMonad h (xp h)
+	readFrom :: xp h -> Pipe () XmlNode (HandleMonad h) ()
+	writeTo :: xp h -> Pipe XmlNode () (HandleMonad h) ()
+
+data HttpPull g h = HttpPull
+	(Pipe () XmlNode (HandleMonad h) ())
+	(Pipe XmlNode () (HandleMonad h) ())
+
+instance CPRG g => XmlPusher (HttpPull g) where
+	type PusherArg (HttpPull g) = TlsArgs g
+	generate = makeHttpPull
+	readFrom (HttpPull r _) = r
+	writeTo (HttpPull _ w) = w
+
+type TlsArgs g = (g, CertSecretKey, CertificateChain)
+
+makeHttpPull :: (
+	ValidateHandle h, CPRG g, MonadBaseControl IO (HandleMonad h)) =>
+	h -> TlsArgs g -> HandleMonad h (HttpPull g h)
+makeHttpPull h (g, k, c) = do
+	(inc, otc) <- begin h g k c
+	return $ HttpPull (fromTChan inc) (toTChan otc)
+
 begin :: (ValidateHandle h, CPRG g, MonadBaseControl IO (HandleMonad h)) =>
 	h -> g -> CertSecretKey -> CertificateChain ->
 	HandleMonad h (TChan XmlNode, TChan XmlNode)
@@ -42,15 +69,16 @@ main = do
 		(h, _, _) <- liftIO $ accept soc
 		g <- StateT $ return . cprgFork
 		liftIO . forkIO $ do
-			(inc, otc) <- begin h g k c
-			void . liftBaseDiscard forkIO . runPipe_ $ fromTChan inc
+			(hp :: HttpPull SystemRNG Handle) <- generate h (g, k, c)
+			void . liftBaseDiscard forkIO . runPipe_ $ readFrom hp
 				=$= convert (xmlString . (: []))
-				=$= (toHandleLn stdout :: Pipe BSC.ByteString () IO ())
+				=$= (toHandleLn stdout ::
+					Pipe BSC.ByteString () IO ())
 			runPipe_ $ fromHandle stdin
 				=$= xmlEvent
 				=$= convert fromJust
 				=$= xmlNode []
-				=$= toTChan otc
+				=$= writeTo hp
 
 runXml :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> HandleMonad h (TChan XmlNode, TChan XmlNode)
