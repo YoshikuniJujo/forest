@@ -29,8 +29,8 @@ import qualified Data.ByteString.Lazy as LBS
 
 class XmlPusher xp where
 	type PusherArg xp
-	generate :: (HandleLike h, ValidateHandle h,
-		MonadBaseControl IO (HandleMonad h)
+	generate :: (	HandleLike h, ValidateHandle h,
+			MonadBaseControl IO (HandleMonad h)
 		) => h -> PusherArg xp -> HandleMonad h (xp h)
 	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
@@ -74,25 +74,6 @@ main = do
 		=$= xmlNode []
 		=$= writeTo hp
 
-loop' :: (MonadBaseControl IO m, MonadIO m) =>
-	TChan XmlNode -> TChan XmlNode -> m ()
-loop' inc otc = do
-	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan inc =$= printP
-	runPipe_ $ fromHandle stdin
-		=$= xmlEvent
-		=$= convert fromJust
-		=$= xmlNode []
-		=$= toTChan otc
-
-loop :: (HandleLike h, MonadIO (HandleMonad h), MonadBase IO (HandleMonad h)
-	) => h -> String -> FilePath -> HandleMonad h ()
-loop t addr pth = runPipe_ $ fromHandle stdin
-	=$= xmlEvent
-	=$= convert fromJust
-	=$= xmlNode []
-	=$= talk t addr pth
-	=$= printP
-
 talk :: HandleLike h =>
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
 talk t addr pth = (await >>=) . (maybe (return ())) $ \n -> do
@@ -115,6 +96,6 @@ talkC t addr pth = do
 		=$= toTChan inc
 	return (inc, otc)
 
-printP :: (MonadIO m, Show a) => Pipe a () m ()
+printP :: (MonadBase IO m, Show a) => Pipe a () m ()
 printP = await >>= maybe (return ())
-	(\s -> liftIO (BSC.putStr . BSC.pack $ show s) >> printP)
+	(\s -> lift (liftBase . BSC.putStr . BSC.pack $ show s) >> printP)
