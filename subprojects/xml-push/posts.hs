@@ -1,12 +1,22 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, FlexibleContexts,
+{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, ScopedTypeVariables,
+	FlexibleContexts,
 	PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
+import Control.Monad.Base
+import Control.Monad.Trans.Control
+import Control.Concurrent
+import Control.Concurrent.STM
+import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
+import Data.Pipe.TChan
+import Data.Pipe.ByteString
+import System.IO
 import System.Environment
+import Text.XML.Pipe
 import Network
 import Network.PeyoTLS.Client
 import Network.PeyoTLS.ReadFile
@@ -17,23 +27,94 @@ import "crypto-random" Crypto.Random
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 
+class XmlPusher xp where
+	type PusherArg xp
+	generate :: (HandleLike h, ValidateHandle h,
+		MonadBaseControl IO (HandleMonad h)
+		) => h -> PusherArg xp -> HandleMonad h (xp h)
+	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
+	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
+
+data HttpPull h = HttpPull
+	(Pipe () XmlNode (HandleMonad h) ())
+	(Pipe XmlNode () (HandleMonad h) ())
+
+instance XmlPusher HttpPull where
+	type PusherArg HttpPull = (String, FilePath)
+	generate = uncurry . mkHttpPull
+	readFrom (HttpPull r _) = r
+	writeTo (HttpPull _ w) = w
+
+mkHttpPull :: (HandleLike h, ValidateHandle h,
+	MonadBaseControl IO (HandleMonad h)
+	) =>
+	h -> String -> FilePath -> HandleMonad h (HttpPull h)
+mkHttpPull h addr pth = do
+	(inc, otc) <- do
+		ca <- liftBase $ readCertificateStore ["cacert.sample_pem"]
+		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
+		(`run` g) $ do
+			t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
+			talkC t addr pth
+	let	r = fromTChan inc
+		w = toTChan otc
+	return $ HttpPull r w
+
 main :: IO ()
 main = do
-	addr : pth : msgs <- getArgs
-	ca <- readCertificateStore ["cacert.sample_pem"]
+	addr : pth : _ <- getArgs
 	h <- connectTo addr $ PortNumber 443
-	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
-	void . (`run` g) $ do
-		t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
-		loop t addr pth
 
-loop :: (HandleLike h, MonadIO (HandleMonad h)) => h ->
-	String -> FilePath -> HandleMonad h ()
-loop t addr pth = do
-	msgs <- BSC.words `liftM` liftIO BSC.getLine
-	r <- request t . post addr 443 pth . (Nothing ,) $  LBS.fromChunks msgs
-	runPipe_ $ responseBody r =$= printP
-	loop t addr pth
+	(hp :: HttpPull Handle) <- mkHttpPull h addr pth
 
-printP :: MonadIO m => Pipe BSC.ByteString () m ()
-printP = await >>= maybe (return ()) (\s -> liftIO (BSC.putStr s) >> printP)
+	void . liftBaseDiscard forkIO . runPipe_ $ readFrom hp =$= printP
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= writeTo hp
+
+loop' :: (MonadBaseControl IO m, MonadIO m) =>
+	TChan XmlNode -> TChan XmlNode -> m ()
+loop' inc otc = do
+	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan inc =$= printP
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= toTChan otc
+
+loop :: (HandleLike h, MonadIO (HandleMonad h), MonadBase IO (HandleMonad h)
+	) => h -> String -> FilePath -> HandleMonad h ()
+loop t addr pth = runPipe_ $ fromHandle stdin
+	=$= xmlEvent
+	=$= convert fromJust
+	=$= xmlNode []
+	=$= talk t addr pth
+	=$= printP
+
+talk :: HandleLike h =>
+	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
+talk t addr pth = (await >>=) . (maybe (return ())) $ \n -> do
+	r <- lift . request t . post addr 443 pth . (Nothing ,) $
+		LBS.fromChunks [xmlString [n]]
+	void $ return ()
+		=$= responseBody r
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+	talk t addr pth
+
+talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
+	h -> String -> FilePath -> HandleMonad h (TChan XmlNode, TChan XmlNode)
+talkC t addr pth = do
+	inc <- liftBase $ atomically newTChan
+	otc <- liftBase $ atomically newTChan
+	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
+		=$= talk t addr pth
+		=$= toTChan inc
+	return (inc, otc)
+
+printP :: (MonadIO m, Show a) => Pipe a () m ()
+printP = await >>= maybe (return ())
+	(\s -> liftIO (BSC.putStr . BSC.pack $ show s) >> printP)
