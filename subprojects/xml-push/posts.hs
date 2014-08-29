@@ -1,8 +1,10 @@
-{-# LANGUAGE OverloadedStrings, TupleSections, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, FlexibleContexts,
+	PackageImports #-}
 
 import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
+import Data.HandleLike
 import Data.Pipe
 import System.Environment
 import Network
@@ -23,9 +25,15 @@ main = do
 	g <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	void . (`run` g) $ do
 		t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
-		r <- request t . post addr 443 pth . (Nothing ,) .
-			LBS.fromChunks $ map BSC.pack msgs
-		runPipe $ responseBody r =$= printP
+		loop t addr pth
+
+loop :: (HandleLike h, MonadIO (HandleMonad h)) => h ->
+	String -> FilePath -> HandleMonad h ()
+loop t addr pth = do
+	msgs <- BSC.words `liftM` liftIO BSC.getLine
+	r <- request t . post addr 443 pth . (Nothing ,) $  LBS.fromChunks msgs
+	runPipe_ $ responseBody r =$= printP
+	loop t addr pth
 
 printP :: MonadIO m => Pipe BSC.ByteString () m ()
 printP = await >>= maybe (return ()) (\s -> liftIO (BSC.putStr s) >> printP)

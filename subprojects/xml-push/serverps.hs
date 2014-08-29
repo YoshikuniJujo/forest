@@ -30,15 +30,18 @@ main = do
 		void . liftIO . forkIO . (`run` g) $ do
 			t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)]
 				Nothing
-			r <- getRequest t
-			liftIO . print $ requestPath r
-			void . runPipe $
-				requestBody r =$= (printP `finally` liftIO (putStrLn ""))
-			putResponse t
-				. (response :: LBS.ByteString ->
-					Response Pipe (TlsHandle Handle SystemRNG))
-				. LBS.fromChunks $ map BSC.pack as
+			loop t as
 			hlClose t
+
+loop :: TlsHandle Handle SystemRNG -> [String] -> TlsM Handle SystemRNG ()
+loop t as =  do
+	r <- getRequest t
+	liftIO . print $ requestPath r
+	void . runPipe $ requestBody r =$= (printP `finally` liftIO (putStrLn ""))
+	putResponse t . (response :: LBS.ByteString ->
+				Response Pipe (TlsHandle Handle SystemRNG))
+		. LBS.fromChunks $ map BSC.pack as
+	loop t as
 
 printP :: MonadIO m => Pipe BSC.ByteString () m ()
 printP = await >>= maybe (return ()) (\s -> liftIO (BSC.putStr s) >> printP)
