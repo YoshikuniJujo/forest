@@ -22,21 +22,20 @@ main = do
 
 server :: IO ()
 server = do
-	soc <- listenOn $ PortNumber 80
-	forever $ do
-		(h, _, _) <- accept soc
-		void . forkIO . forever $ do
-			req <- getRequest h
-			print $ requestPath req
-			putResponse h
-				. (response ::
-					LBS.ByteString -> Response Pipe Handle)
-				. LBS.fromChunks $ map BSC.pack ["Hello", "World"]
+	soc <- listenOn $ PortNumber 8080
+	(h, _, _) <- accept soc
+	void . forever $ do
+		req <- getRequest h
+		print $ requestPath req
+		putResponse h
+			. (response ::
+				LBS.ByteString -> Response Pipe Handle)
+			. LBS.fromChunks $ map BSC.pack ["Hello", "World"]
 
 client :: IO ()
 client = do
-	h <- connectTo "google.co.jp" $ PortNumber 80
-	r <- request h $ get "google.co.jp" 80 "/"
+	h <- connectTo "localhost" $ PortNumber 80
+	r <- request h $ get "localhost" 80 "/"
 	runPipe_ $ responseBody r =$= printP
 
 printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
