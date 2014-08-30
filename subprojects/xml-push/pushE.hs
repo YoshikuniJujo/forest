@@ -48,14 +48,21 @@ server = do
 client :: IO ()
 client = do
 	h <- connectTo "localhost" $ PortNumber 80
-	clientRun h
+	runPipe_ $ fromHandle stdin =$= clientRun h
 
-clientRun :: Handle -> IO ()
+clientRun :: Handle -> Pipe BSC.ByteString () IO ()
 clientRun h = do
-	ln <- BSC.getLine
-	r <- request h $ post "localhost" 80 "/" (Nothing, LBS.fromChunks [ln])
-	runPipe_ $ responseBody r =$= printP
-	clientRun h
+	xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= clientLoop h
+
+clientLoop :: Handle -> Pipe XmlNode () IO ()
+clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
+	r <- lift . request h $ post "localhost" 80 "/"
+				(Nothing, LBS.fromChunks [xmlString [n]])
+	lift . runPipe_ $ responseBody r =$= printP
+	clientLoop h
 
 printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
 printP = await >>= maybe (return ())
