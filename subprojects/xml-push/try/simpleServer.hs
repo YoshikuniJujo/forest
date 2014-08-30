@@ -1,9 +1,14 @@
+{-# LANGUAGE FlexibleContexts, PackageImports #-}
+
 import Control.Monad
+import "monads-tf" Control.Monad.Trans
+import Control.Monad.Base
 import Control.Concurrent
 import Data.Pipe
 import System.IO
 import System.Environment
 import Network
+import Network.TigHTTP.Client
 import Network.TigHTTP.Server
 import Network.TigHTTP.Types
 
@@ -12,7 +17,11 @@ import qualified Data.ByteString.Lazy as LBS
 
 main :: IO ()
 main = do
-	as <- getArgs
+	forkIO client
+	server
+
+server :: IO ()
+server = do
 	soc <- listenOn $ PortNumber 80
 	forever $ do
 		(h, _, _) <- accept soc
@@ -22,4 +31,14 @@ main = do
 			putResponse h
 				. (response ::
 					LBS.ByteString -> Response Pipe Handle)
-				. LBS.fromChunks $ map BSC.pack as
+				. LBS.fromChunks $ map BSC.pack ["Hello", "World"]
+
+client :: IO ()
+client = do
+	h <- connectTo "google.co.jp" $ PortNumber 80
+	r <- request h $ get "google.co.jp" 80 "/"
+	runPipe_ $ responseBody r =$= printP
+
+printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
+printP = await >>= maybe (return ())
+	(\s -> lift (liftBase $ BSC.putStr s) >> printP)
