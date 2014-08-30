@@ -29,7 +29,12 @@ server = do
 	void . forever $ do
 		req <- getRequest h
 		print $ requestPath req
-		runPipe_ $ requestBody req =$= toHandle stdout
+		runPipe_ $ requestBody req
+			=$= xmlEvent
+			=$= convert fromJust
+			=$= xmlNode []
+			=$= convert (xmlString . (: []))
+			=$= toHandle stdout
 		runPipe_ $ yield "<HELLO>WORLD</HELLO>"
 			=$= xmlEvent
 			=$= convert fromJust
