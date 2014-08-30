@@ -1,10 +1,11 @@
-{-# LANGUAGE FlexibleContexts, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts, PackageImports #-}
 
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
 import Control.Concurrent
 import Data.Pipe
+import Data.Pipe.ByteString
 import System.IO
 import System.Environment
 import Network
@@ -27,6 +28,7 @@ server = do
 		void . forkIO . forever $ do
 			req <- getRequest h
 			print $ requestPath req
+			runPipe_ $ requestBody req =$= toHandle stdout
 			putResponse h
 				. (response ::
 					LBS.ByteString -> Response Pipe Handle)
@@ -35,8 +37,14 @@ server = do
 client :: IO ()
 client = do
 	h <- connectTo "localhost" $ PortNumber 8080
-	r <- request h $ get "localhost" 8080 "/"
+	clientRun h
+
+clientRun :: Handle -> IO ()
+clientRun h = do
+	ln <- BSC.getLine
+	r <- request h $ post "localhost" 8080 "/" (Nothing, LBS.fromChunks [ln])
 	runPipe_ $ responseBody r =$= printP
+	clientRun h
 
 printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
 printP = await >>= maybe (return ())
