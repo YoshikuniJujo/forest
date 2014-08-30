@@ -3,11 +3,12 @@
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
-import Control.Concurrent
+import Control.Concurrent hiding (yield)
+import Data.Maybe
 import Data.Pipe
 import Data.Pipe.ByteString
 import System.IO
-import System.Environment
+import Text.XML.Pipe
 import Network
 import Network.TigHTTP.Client
 import Network.TigHTTP.Server
@@ -18,7 +19,7 @@ import qualified Data.ByteString.Lazy as LBS
 
 main :: IO ()
 main = do
-	forkIO client
+	void $ forkIO client
 	server
 
 server :: IO ()
@@ -29,10 +30,15 @@ server = do
 		req <- getRequest h
 		print $ requestPath req
 		runPipe_ $ requestBody req =$= toHandle stdout
-		putResponse h
-			. (response ::
-				LBS.ByteString -> Response Pipe Handle)
-			. LBS.fromChunks $ map BSC.pack ["Hello", "World"]
+		runPipe_ $ yield "<HELLO>WORLD</HELLO>"
+			=$= xmlEvent
+			=$= convert fromJust
+			=$= xmlNode []
+			=$= await >>= maybe (return ()) (\n ->
+				lift . putResponse h
+					. (response :: LBS.ByteString ->
+						Response Pipe Handle)
+					$ LBS.fromChunks [xmlString [n]])
 
 client :: IO ()
 client = do
