@@ -27,19 +27,26 @@ class XmlPusher xp where
 	generate :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
 		) => h -> PusherArg xp -> HandleMonad h (xp h)
 	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
-	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
+	writeTo :: HandleLike h =>
+		xp h -> Pipe (Maybe XmlNode) () (HandleMonad h) ()
 
 main :: IO ()
 main = do
-	void $ forkIO client
-	server
-
-server :: IO ()
-server = do
+	ch <- connectTo "localhost" $ PortNumber 80
+	(cinc, cotc) <- clientC ch
 	soc <- listenOn $ PortNumber 8080
-	(h, _, _) <- accept soc
-	(inc, otc) <- talk h
-	runPipe_ $ fromTChan inc =$= (toTChan otc :: Pipe XmlNode () IO ())
+	(sh, _, _) <- accept soc
+	(sinc, sotc) <- talk sh
+
+	void . forkIO . runPipe_ $ fromTChan cinc
+		=$= convert (xmlString . (: []))
+		=$= printP
+	void . forkIO . runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= toTChan cotc
+	runPipe_ $ fromTChan sinc =$= (toTChan sotc :: Pipe XmlNode () IO ())
 
 talk :: Handle -> IO (TChan XmlNode, TChan XmlNode)
 talk h = do
@@ -59,20 +66,6 @@ talk h = do
 					Response Pipe Handle)
 				$ LBS.fromChunks [xmlString [n]])
 	return (inc, otc)
-
-client :: IO ()
-client = do
-	h <- connectTo "localhost" $ PortNumber 80
-	(inc, otc) <- clientC h
-	void . forkIO . runPipe_ $ fromTChan inc
-		=$= clientLoop h
-		=$= convert (xmlString . (: []))
-		=$= printP
-	runPipe_ $ fromHandle stdin
-		=$= xmlEvent
-		=$= convert fromJust
-		=$= xmlNode []
-		=$= toTChan otc
 
 clientC :: Handle -> IO (TChan XmlNode, TChan XmlNode)
 clientC h = do
