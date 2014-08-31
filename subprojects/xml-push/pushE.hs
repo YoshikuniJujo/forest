@@ -53,16 +53,24 @@ talk h = do
 client :: IO ()
 client = do
 	h <- connectTo "localhost" $ PortNumber 80
-	runPipe_ $ fromHandle stdin =$= clientRun h
-
-clientRun :: Handle -> Pipe BSC.ByteString () IO ()
-clientRun h = do
-	xmlEvent
-		=$= convert fromJust
-		=$= xmlNode []
+	(inc, otc) <- clientC h
+	void . forkIO . runPipe_ $ fromTChan inc
 		=$= clientLoop h
 		=$= convert (xmlString . (: []))
 		=$= printP
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= toTChan otc
+
+clientC :: Handle -> IO (TChan XmlNode, TChan XmlNode)
+clientC h = do
+	inc <- atomically newTChan
+	otc <- atomically newTChan
+	void . forkIO . runPipe_ $
+		fromTChan otc =$= clientLoop h =$= toTChan inc
+	return (inc, otc)
 
 clientLoop :: Handle -> Pipe XmlNode XmlNode IO ()
 clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
