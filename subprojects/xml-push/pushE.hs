@@ -30,14 +30,24 @@ class XmlPusher xp where
 	writeTo :: HandleLike h =>
 		xp h -> Pipe (Maybe XmlNode) () (HandleMonad h) ()
 
+data HttpPush = HttpPush {
+	needReply :: TVar Bool,
+	clientReadChan :: TChan XmlNode,
+	clientWriteChan :: TChan XmlNode,
+	serverReadChan :: TChan XmlNode,
+	serverWriteChan :: TChan XmlNode
+	}
+
 main :: IO ()
 main = do
-	ch <- connectTo "localhost" $ PortNumber 80
-	(cinc, cotc) <- clientC ch
-	soc <- listenOn $ PortNumber 8080
-	(sh, _, _) <- accept soc
-	(sinc, sotc) <- talk sh
-
+	HttpPush _ cinc cotc sinc sotc <- do
+		v <- atomically $ newTVar False
+		ch <- connectTo "localhost" $ PortNumber 80
+		(ci, co) <- clientC ch
+		soc <- listenOn $ PortNumber 8080
+		(sh, _, _) <- accept soc
+		(si, so) <- talk sh
+		return $ HttpPush v ci co si so
 	void . forkIO . runPipe_ $ fromTChan cinc
 		=$= convert (xmlString . (: []))
 		=$= printP
