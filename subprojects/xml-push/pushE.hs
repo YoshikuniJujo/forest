@@ -4,8 +4,10 @@ import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
 import Control.Concurrent hiding (yield)
+import Control.Concurrent.STM
 import Data.Maybe
 import Data.Pipe
+import Data.Pipe.TChan
 import Data.Pipe.ByteString
 import System.IO
 import Text.XML.Pipe
@@ -26,24 +28,27 @@ server :: IO ()
 server = do
 	soc <- listenOn $ PortNumber 8080
 	(h, _, _) <- accept soc
-	void . forever $ do
-		req <- getRequest h
-		print $ requestPath req
-		runPipe_ $ requestBody req
+	(inc, otc) <- talk h
+	runPipe_ $ fromTChan inc =$= (toTChan otc :: Pipe XmlNode () IO ())
+
+talk :: Handle -> IO (TChan XmlNode, TChan XmlNode)
+talk h = do
+	inc <- atomically newTChan
+	otc <- atomically newTChan
+	void . forkIO . runPipe_ . forever $ do
+		req <- lift $ getRequest h
+		lift . print $ requestPath req
+		requestBody req
 			=$= xmlEvent
 			=$= convert fromJust
 			=$= xmlNode []
-			=$= convert (xmlString . (: []))
-			=$= toHandle stdout
-		runPipe_ $ yield "<HELLO>WORLD</HELLO>"
-			=$= xmlEvent
-			=$= convert fromJust
-			=$= xmlNode []
-			=$= await >>= maybe (return ()) (\n ->
-				lift . putResponse h
-					. (response :: LBS.ByteString ->
-						Response Pipe Handle)
-					$ LBS.fromChunks [xmlString [n]])
+			=$= toTChan inc
+		fromTChan otc =$= await >>= maybe (return ()) (\n ->
+			lift . putResponse h
+				. (response :: LBS.ByteString ->
+					Response Pipe Handle)
+				$ LBS.fromChunks [xmlString [n]])
+	return (inc, otc)
 
 client :: IO ()
 client = do
