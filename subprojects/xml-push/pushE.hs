@@ -1,11 +1,14 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
+	PackageImports #-}
 
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
+import Control.Monad.Trans.Control
 import Control.Concurrent hiding (yield)
 import Control.Concurrent.STM
 import Data.Maybe
+import Data.HandleLike
 import Data.Pipe
 import Data.Pipe.TChan
 import Data.Pipe.ByteString
@@ -18,6 +21,13 @@ import Network.TigHTTP.Types
 
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
+
+class XmlPusher xp where
+	type PusherArg xp
+	generate :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
+		) => h -> PusherArg xp -> HandleMonad h (xp h)
+	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
+	writeTo :: HandleLike h => xp h -> Pipe XmlNode () (HandleMonad h) ()
 
 main :: IO ()
 main = do
