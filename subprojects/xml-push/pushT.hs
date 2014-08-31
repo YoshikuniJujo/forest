@@ -32,7 +32,7 @@ server = do
 			putResponse h
 				. (response ::
 					LBS.ByteString -> Response Pipe Handle)
-				. LBS.fromChunks $ map BSC.pack ["Hello", "World"]
+				$ "<TTT>BBB</TTT>"
 
 client :: IO ()
 client = do

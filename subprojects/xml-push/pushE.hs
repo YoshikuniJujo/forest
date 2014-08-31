@@ -56,14 +56,20 @@ clientRun h = do
 		=$= convert fromJust
 		=$= xmlNode []
 		=$= clientLoop h
+		=$= convert (xmlString . (: []))
+		=$= printP
 
-clientLoop :: Handle -> Pipe XmlNode () IO ()
+clientLoop :: Handle -> Pipe XmlNode XmlNode IO ()
 clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
 	r <- lift . request h $ post "localhost" 80 "/"
 				(Nothing, LBS.fromChunks [xmlString [n]])
-	lift . runPipe_ $ responseBody r =$= printP
+	return ()
+		=$= responseBody r
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= (xmlNode [] >> return ())
 	clientLoop h
 
-printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
+printP :: MonadBase IO m => Pipe BSC.ByteString a m ()
 printP = await >>= maybe (return ())
 	(\s -> lift (liftBase $ BSC.putStr s) >> printP)
