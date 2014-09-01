@@ -24,11 +24,14 @@ import qualified Data.ByteString.Lazy as LBS
 
 class XmlPusher xp where
 	type PusherArg xp
+	type NumOfHandle xp :: * -> *
 	generate :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
-		) => h -> h -> PusherArg xp -> HandleMonad h (xp h)
+		) => NumOfHandle xp h -> PusherArg xp -> HandleMonad h (xp h)
 	readFrom :: HandleLike h => xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: HandleLike h =>
 		xp h -> Pipe (Maybe XmlNode) () (HandleMonad h) ()
+
+data Two h = Two h h deriving Show
 
 data HttpPush h = HttpPush {
 	needReply :: TVar Bool,
@@ -40,7 +43,8 @@ data HttpPush h = HttpPush {
 
 instance XmlPusher HttpPush where
 	type PusherArg HttpPush = ()
-	generate ch sh () = mkHttpPush ch sh
+	type NumOfHandle HttpPush = Two
+	generate (Two ch sh) () = mkHttpPush ch sh
 
 mkHttpPush :: (
 	HandleLike h, MonadBaseControl IO (HandleMonad h)
@@ -56,7 +60,7 @@ main = do
 	ch <- connectTo "localhost" $ PortNumber 80
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
-	HttpPush _ cinc cotc sinc sotc <- generate ch sh ()
+	HttpPush _ cinc cotc sinc sotc <- generate (Two ch sh) ()
 	void . forkIO . runPipe_ $ fromTChan cinc
 		=$= convert (xmlString . (: []))
 		=$= printP
