@@ -74,15 +74,25 @@ mkHttpPush ch sh = do
 
 main :: IO ()
 main = do
+{-
 	inc <- atomically newTChan
 	otc <- atomically newTChan
+	-}
 	ch <- connectTo "localhost" $ PortNumber 80
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
 	(hp :: HttpPush Handle) <- generate (Two ch sh) ()
-	void . forkIO . runPipe_ $ readFrom hp =$= toTChan inc
-	void . forkIO . runPipe_ $ fromTChan otc =$= writeTo hp
+	void . forkIO . runPipe_ $ readFrom hp
+		=$= convert (xmlString . (: []))
+		=$= toHandle stdout
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= convert Just
+		=$= writeTo hp
 
+{-
 	atomically $ readTChan inc >> writeTChan otc Nothing
 	forever $ do
 		atomically $ readTChan inc >>= writeTChan otc . Just
@@ -90,6 +100,7 @@ main = do
 		atomically $ writeTChan otc . Just $ XmlNode (nullQ "msg") [] []
 			[XmlCharData "Hello, world!"]
 		threadDelay 2000000
+		-}
 
 talk :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
 	) => h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
