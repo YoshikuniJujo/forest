@@ -17,15 +17,16 @@ import Push
 main :: IO ()
 main = do
 	soc <- listenOn $ PortNumber 80
-	(sh, _, _) <- accept soc
-	ch <- connectTo "localhost" $ PortNumber 8080
-	(hp :: HttpPush Handle) <- generate (Two ch sh) ()
-	void . forkIO . runPipe_ $ readFrom hp
-		=$= convert (xmlString . (: []))
-		=$= toHandle stdout
-	runPipe_ $ fromHandle stdin
-		=$= xmlEvent
-		=$= convert fromJust
-		=$= xmlNode []
-		=$= convert Just
-		=$= writeTo hp
+	forever $ do
+		(sh, _, _) <- accept soc
+		ch <- connectTo "localhost" $ PortNumber 8080
+		(hp :: HttpPush Handle) <- generate (Two ch sh) ()
+		void . forkIO . runPipe_ $ readFrom hp
+			=$= convert (xmlString . (: []))
+			=$= toHandle stdout
+		void . forkIO . runPipe_ $ fromHandle stdin
+			=$= xmlEvent
+			=$= convert fromJust
+			=$= xmlNode []
+			=$= convert Just
+			=$= writeTo hp
