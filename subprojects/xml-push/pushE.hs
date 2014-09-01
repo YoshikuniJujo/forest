@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, TupleSections, FlexibleContexts,
-	PackageImports #-}
+{-# LANGUAGE OverloadedStrings, TupleSections, ScopedTypeVariables,
+	TypeFamilies, FlexibleContexts, PackageImports #-}
+
+import Prelude hiding (filter)
 
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
@@ -10,6 +12,7 @@ import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
+import Data.Pipe.Flow
 import Data.Pipe.TChan
 import Data.Pipe.ByteString
 import System.IO
@@ -37,7 +40,7 @@ data Two h = Two h h deriving Show
 data HttpPush h = HttpPush {
 	needReply :: TVar Bool,
 	clientReadChan :: TChan (XmlNode, Bool),
-	clientWriteChan :: TChan XmlNode,
+	clientWriteChan :: TChan (Maybe XmlNode),
 	serverReadChan :: TChan (XmlNode, Bool),
 	serverWriteChan :: TChan (Maybe XmlNode)
 	}
@@ -48,12 +51,13 @@ instance XmlPusher HttpPush where
 	generate (Two ch sh) () = mkHttpPush ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
-	writeTo hp = do
-		nr <- lift . liftBase . atomically . readTVar $ needReply hp
-		lift . liftBase . atomically $ writeTVar (needReply hp) False
-		if nr
-		then toTChan $ serverWriteChan hp
-		else convert fromJust =$= toTChan (clientWriteChan hp)
+	writeTo hp = (convert (() ,) =$=) . toTChansM $ do
+		nr <- liftBase . atomically . readTVar $ needReply hp
+		liftBase . atomically $ writeTVar (needReply hp) False
+		liftBase $ print nr
+		return [
+			(const nr, serverWriteChan hp),
+			(const True, clientWriteChan hp) ]
 
 setNeedReply :: MonadBase IO m => TVar Bool -> Pipe (a, Bool) a m ()
 setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
@@ -70,23 +74,22 @@ mkHttpPush ch sh = do
 
 main :: IO ()
 main = do
+	inc <- atomically newTChan
+	otc <- atomically newTChan
 	ch <- connectTo "localhost" $ PortNumber 80
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
-	HttpPush _ cinc cotc sinc sotc <- generate (Two ch sh) ()
-	void . forkIO . runPipe_ $ fromTChan cinc
-		=$= convert fst
-		=$= convert (xmlString . (: []))
-		=$= printP
-	void . forkIO . runPipe_ $ fromHandle stdin
-		=$= xmlEvent
-		=$= convert fromJust
-		=$= xmlNode []
-		=$= toTChan cotc
-	runPipe_ $ fromTChan sinc
-		=$= convert fst
-		=$= convert Just
-		=$= (toTChan sotc :: Pipe (Maybe XmlNode) () IO ())
+	(hp :: HttpPush Handle) <- generate (Two ch sh) ()
+	void . forkIO . runPipe_ $ readFrom hp =$= toTChan inc
+	void . forkIO . runPipe_ $ fromTChan otc =$= writeTo hp
+
+	atomically $ readTChan inc >> writeTChan otc Nothing
+	forever $ do
+		atomically $ readTChan inc >>= writeTChan otc . Just
+		threadDelay 2000000
+		atomically $ writeTChan otc . Just $ XmlNode (nullQ "msg") [] []
+			[XmlCharData "Hello, world!"]
+		threadDelay 2000000
 
 talk :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
 	) => h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
@@ -100,7 +103,7 @@ talk h = do
 			=$= xmlEvent
 			=$= convert fromJust
 			=$= xmlNode []
-			=$= convert (, False)
+			=$= convert (, True)
 			=$= toTChan inc
 		fromTChan otc =$= await >>= maybe (return ()) (\mn ->
 			lift . putResponse h . responseP $ case mn of
@@ -112,11 +115,13 @@ responseP :: HandleLike h => LBS.ByteString -> Response Pipe h
 responseP = response
 
 clientC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
-	) => h -> HandleMonad h (TChan (XmlNode, Bool), TChan XmlNode)
+	) => h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
 clientC h = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
+		=$= filter isJust
+		=$= convert fromJust
 		=$= clientLoop h
 		=$= convert (, False)
 		=$= toTChan inc

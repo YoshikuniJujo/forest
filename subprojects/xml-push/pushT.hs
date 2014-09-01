@@ -28,7 +28,9 @@ server = do
 		void . forkIO . forever $ do
 			req <- getRequest h
 			print $ requestPath req
-			runPipe_ $ requestBody req =$= toHandle stdout
+			runPipe_ $ requestBody req
+				=$= convert ("I am server: " `BSC.append`)
+				=$= toHandle stdout
 			putResponse h
 				. (response ::
 					LBS.ByteString -> Response Pipe Handle)
@@ -43,7 +45,9 @@ clientRun :: Handle -> IO ()
 clientRun h = do
 	ln <- BSC.getLine
 	r <- request h $ post "localhost" 8080 "/" (Nothing, LBS.fromChunks [ln])
-	runPipe_ $ responseBody r =$= printP
+	runPipe_ $ responseBody r
+		=$= convert ("I am client: " `BSC.append`)
+		=$=  printP
 	clientRun h
 
 printP :: MonadBase IO m => Pipe BSC.ByteString () m ()
