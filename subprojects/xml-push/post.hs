@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, ScopedTypeVariables,
+{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts, ScopedTypeVariables,
 	PackageImports #-}
 
 import Control.Monad
@@ -34,15 +34,15 @@ data HttpPull h = HttpPull
 	(Pipe XmlNode () (HandleMonad h) ())
 
 instance XmlPusher HttpPull where
-	type PusherArg HttpPull = (String, FilePath)
+	type PusherArg HttpPull = (String, FilePath, XmlNode)
 	generate = makeHttpPull
 	readFrom (HttpPull r _) = r
 	writeTo (HttpPull _ w) = w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> (String, FilePath) -> HandleMonad h (HttpPull h)
-makeHttpPull h (hn, fp) = do
-	(inc, otc) <- talkC h hn fp
+	h -> (String, FilePath, XmlNode) -> HandleMonad h (HttpPull h)
+makeHttpPull h (hn, fp, pl) = do
+	(inc, otc) <- talkC h hn fp pl
 	return $ HttpPull (fromTChan inc) (toTChan otc)
 
 main :: IO ()
@@ -53,7 +53,7 @@ main = do
 
 run' :: Handle -> String -> FilePath -> IO ()
 run' h addr pth = do
-	(hp :: HttpPull Handle) <- generate h (addr, pth)
+	(hp :: HttpPull Handle) <- generate h (addr, pth, poll)
 	void . forkIO . runPipe_ $ readFrom hp
 		=$= convert (xmlString . (: []))
 		=$= (toHandle stdout :: Pipe BSC.ByteString () IO ())
@@ -62,6 +62,9 @@ run' h addr pth = do
 		=$= convert fromJust
 		=$= xmlNode []
 		=$= writeTo hp
+
+poll :: XmlNode
+poll = XmlNode (nullQ "poll") [] [] []
 
 talk :: HandleLike h =>
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
@@ -75,12 +78,15 @@ talk h addr pth = (await >>=) . (maybe (return ())) $ \n -> do
 		=$= xmlNode []
 	talk h addr pth
 
-talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String -> FilePath -> HandleMonad h (TChan XmlNode, TChan XmlNode)
-talkC h addr pth = do
+talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) => h -> String ->
+	FilePath -> XmlNode -> HandleMonad h (TChan XmlNode, TChan XmlNode)
+talkC h addr pth pl = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= talk h addr pth
 		=$= toTChan inc
+	void . liftBaseDiscard forkIO . forever $ do
+		liftBase $ threadDelay 15000000
+		liftBase . atomically $ writeTChan otc pl
 	return (inc, otc)
