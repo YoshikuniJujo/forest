@@ -51,7 +51,7 @@ makeXml h = return $ Xml r w
 		=$= xmlEvent =$= convert fromJust =$= xmlNode [] >> return ()
 	w = convert (xmlString . (: [])) =$= toHandleLike h
 
-data Xmpp h = Xmpp (TChan BS.ByteString)
+data Xmpp h = Xmpp (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
@@ -69,7 +69,7 @@ instance XmlPusher Xmpp where
 		=$= w
 
 makeResponse :: MonadBase IO m =>
-	TChan BS.ByteString -> Pipe (XmlNode, Int) Mpi m ()
+	TChan (Maybe BS.ByteString) -> Pipe (XmlNode, Int) Mpi m ()
 makeResponse nr = (await >>=) . maybe (return ()) $ \(n, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
 	if e then yield $ toIq n r else do
@@ -77,10 +77,14 @@ makeResponse nr = (await >>=) . maybe (return ()) $ \(n, r) -> do
 		yield $ toResponse n i
 	makeResponse nr
 
-pushId :: MonadBase IO m => TChan BS.ByteString -> Pipe Mpi Mpi m ()
+pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
 pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
 	Iq Tags { tagId = Just i } _ -> do
-		lift (liftBase . atomically $ writeTChan nr i)
+		lift (liftBase . atomically . writeTChan nr $ Just i)
+		yield mpi
+		pushId nr
+	Message _ _ -> do
+		lift (liftBase . atomically $ writeTChan nr Nothing)
 		yield mpi
 		pushId nr
 	_ -> yield mpi >> pushId nr
@@ -141,10 +145,11 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-toResponse :: XmlNode -> BS.ByteString -> Mpi
-toResponse n i = Iq (tagsType "result") {
+toResponse :: XmlNode -> Maybe BS.ByteString -> Mpi
+toResponse n (Just i) = Iq (tagsType "result") {
 	tagId = Just i,
 	tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
+toResponse n _ = toMessage n
 
 toIq :: XmlNode -> Int -> Mpi
 toIq n r = Iq (tagsType "get") {

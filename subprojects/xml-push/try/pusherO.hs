@@ -62,7 +62,7 @@ instance XmlPusher Xmpp where
 		=$= filter isJust
 		=$= convert fromJust
 	writeTo (Xmpp _ w) = addRandom
-		=$= convert (uncurry toIq)
+		=$= convert (uncurry toMessageIq)
 		=$= w
 
 makeXmpp :: (HandleLike h,
@@ -119,6 +119,10 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	r <- lift $ liftBase randomIO
 	yield (x, r)
 	addRandom
+
+toMessageIq :: XmlNode -> Int -> Mpi
+toMessageIq (XmlNode (_, "i") _ _ [n]) r = toIq n r
+toMessageIq (XmlNode (_, "m") _ _ [n]) _ = toMessage n
 
 toIq :: XmlNode -> Int -> Mpi
 toIq n r = Iq (tagsType "get") {
