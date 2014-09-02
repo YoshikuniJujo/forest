@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, TypeFamilies, FlexibleContexts,
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables,
+	TypeFamilies, FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
 module Xmpp (Xmpp, One(..), testPusher) where
@@ -19,6 +20,7 @@ import System.Random
 import Text.XML.Pipe
 import Network.Sasl
 import Network.XMPiPe.Core.C2S.Client
+import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -98,10 +100,12 @@ makeXmpp :: (
 	) => One h -> (Jid, Jid) -> HandleMonad h (Xmpp h)
 makeXmpp (One h) (me, you) = do
 	nr <- liftBase $ atomically newTChan
-	let	(Jid un d (Just rsc)) = me
+	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
+	let	(cn, _g') = cprgGenerate 32 g
+		(Jid un d (Just rsc)) = me
 		ss = St [
 			("username", un), ("authcid", un), ("password", "password"),
-			("cnonce", "00DEADBEEF00") ]
+			("cnonce", cn) ]
 	void . (`evalStateT` ss) . runPipe $ fromHandleLike (THandle h)
 		=$= sasl d mechanisms
 		=$= toHandleLike (THandle h)
