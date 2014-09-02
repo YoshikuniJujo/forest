@@ -5,4 +5,4 @@ main :: IO ()
 main = testPusher
 	(undefined :: SimplePusher Handle)
 	Zero
-	("read.xml", "tmp/write.xml")
+	("xml/read.xml", "tmp/write.xml")
