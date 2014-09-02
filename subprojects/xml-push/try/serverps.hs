@@ -61,8 +61,8 @@ begin h g k c = (`run` g) $ do
 
 main :: IO ()
 main = do
-	k <- readKey "localhost.sample_key"
-	c <- readCertificateChain ["localhost.sample_crt"]
+	k <- readKey "certs/localhost.sample_key"
+	c <- readCertificateChain ["certs/localhost.sample_crt"]
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
 	soc <- listenOn $ PortNumber 443
 	void . (`runStateT` g0) . forever $ do
