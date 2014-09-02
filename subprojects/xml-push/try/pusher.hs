@@ -136,7 +136,7 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 
 toResponse :: Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
 toResponse mn (Just i) = case mn of
-	Just (n, b) -> Just $ Iq (tagsType "result") {
+	Just (n, _) -> Just $ Iq (tagsType "result") {
 			tagId = Just i,
 			tagTo = Just $
 				Jid "yoshio" "localhost" (Just "profanity") } [n]

@@ -1,13 +1,15 @@
-{-# LANGUAGE TupleSections, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TupleSections, TypeFamilies, FlexibleContexts,
+	PackageImports #-}
 
 module XmlPusher (
-	XmlPusher(..), SimplePusher, Zero(..),
+	XmlPusher(..), SimplePusher, Zero(..), One(..), Two(..),
 	testPusher,
 	) where
 
 import Prelude hiding (filter)
 
 import Control.Monad
+import "monads-tf" Control.Monad.Error
 import Control.Monad.Base
 import Control.Monad.Trans.Control
 import Control.Concurrent
@@ -23,7 +25,11 @@ import Network.PeyoTLS.Client
 class XmlPusher xp where
 	type PusherArg xp
 	type NumOfHandle xp :: * -> *
-	generate :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
+	generate :: (
+		ValidateHandle h,
+		MonadBaseControl IO (HandleMonad h),
+		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
+		) =>
 		NumOfHandle xp h -> PusherArg xp -> HandleMonad h (xp h)
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
@@ -35,6 +41,8 @@ data SimplePusher h = SimplePusher
 	(Pipe (Maybe (XmlNode, Bool)) () (HandleMonad h) ())
 
 data Zero a = Zero deriving Show
+data One a = One a deriving Show
+data Two a = Two a a deriving Show
 
 instance XmlPusher SimplePusher where
 	type PusherArg SimplePusher = (FilePath, FilePath)
@@ -70,5 +78,5 @@ testPusher tp hs as = do
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
-		=$= convert (Just . (, False))
+		=$= convert (Just . (, True))
 		=$= writeTo xp
