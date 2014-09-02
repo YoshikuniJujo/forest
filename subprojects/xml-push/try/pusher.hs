@@ -34,7 +34,7 @@ class XmlPusher xp where
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
-		xp h -> Pipe (Maybe XmlNode) () (HandleMonad h) ()
+		xp h -> Pipe (Maybe (XmlNode, Bool)) () (HandleMonad h) ()
 
 {-
 data Xml h = Xml
@@ -72,13 +72,16 @@ instance XmlPusher Xmpp where
 		=$= w
 
 makeResponse :: MonadBase IO m =>
-	TChan (Maybe BS.ByteString) -> Pipe (Maybe XmlNode, Int) Mpi m ()
+	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), Int) Mpi m ()
 makeResponse nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	if e then maybe (return ()) (yield . flip toIq r) mn else do
+	if e then maybe (return ()) (yield . makeIqMessage r) mn else do
 		i <- lift . liftBase . atomically $ readTChan nr
 		maybe (return ()) yield $ toResponse mn i
 	makeResponse nr
+
+makeIqMessage :: Int -> (XmlNode, Bool) -> Mpi
+makeIqMessage r (n, nr) = if nr then toIq n r else toMessage n
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
 pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
@@ -145,10 +148,11 @@ main = do
 		=$= checkNothing
 		=$= writeTo x
 
-checkNothing :: Monad m => Pipe XmlNode (Maybe XmlNode) m ()
+checkNothing :: Monad m => Pipe XmlNode (Maybe (XmlNode, Bool)) m ()
 checkNothing = (await >>=) . maybe (return ()) $ \n -> case n of
 	XmlNode (_, "nothing") [] [] [] -> yield Nothing >> checkNothing
-	_ -> yield (Just n) >> checkNothing
+	XmlNode (_, "m") [] [] [n] -> yield (Just (n, False)) >> checkNothing
+	_ -> yield (Just (n, True)) >> checkNothing
 
 addRandom :: (MonadBase IO m, Random r) => Pipe a (a, r) m ()
 addRandom = (await >>=) . maybe (return ()) $ \x -> do
@@ -156,9 +160,9 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-toResponse :: Maybe XmlNode -> Maybe BS.ByteString -> Maybe Mpi
+toResponse :: Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
 toResponse mn (Just i) = case mn of
-	Just n -> Just $ Iq (tagsType "result") {
+	Just (n, b) -> Just $ Iq (tagsType "result") {
 			tagId = Just i,
 			tagTo = Just $
 				Jid "yoshio" "localhost" (Just "profanity") } [n]
@@ -166,7 +170,7 @@ toResponse mn (Just i) = case mn of
 			tagId = Just i,
 			tagTo = Just $
 				Jid "yoshio" "localhost" (Just "profanity") } []
-toResponse mn _ = toMessage <$> mn
+toResponse mn _ = toMessage . fst <$> mn
 
 toIq :: XmlNode -> Int -> Mpi
 toIq n r = Iq (tagsType "get") {
