@@ -1,7 +1,8 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TupleSections, TypeFamilies, FlexibleContexts #-}
 
 module XmlPusher (
-	XmlPusher(..), SimplePusher,
+	XmlPusher(..), SimplePusher, Zero(..),
+	testPusher,
 	) where
 
 import Prelude hiding (filter)
@@ -36,24 +37,27 @@ data SimplePusher h = SimplePusher
 data Zero a = Zero deriving Show
 
 instance XmlPusher SimplePusher where
-	type PusherArg SimplePusher = ()
+	type PusherArg SimplePusher = (FilePath, FilePath)
 	type NumOfHandle SimplePusher = Zero
-	generate = const $ const simplePusher
+	generate = const $ uncurry simplePusher
+	readFrom (SimplePusher r _) = r
+	writeTo (SimplePusher _ w) = w
 
 simplePusher :: MonadBaseControl IO (HandleMonad h) =>
-	HandleMonad h (SimplePusher h)
-simplePusher = return $ SimplePusher readXml writeXml
+	FilePath -> FilePath -> HandleMonad h (SimplePusher h)
+simplePusher rf wf = return $ SimplePusher (readXml rf) (writeXml wf)
 
-readXml :: MonadBase IO m => Pipe () XmlNode m ()
-readXml = fromHandle stdin
+readXml :: MonadBaseControl IO m => FilePath -> Pipe () XmlNode m ()
+readXml rf = fromFile rf
 	=$= xmlEvent
 	=$= convert fromJust
 	=$= (xmlNode [] >> return ())
 
-writeXml :: MonadBase IO m => Pipe (Maybe (XmlNode, Bool))  () m ()
-writeXml = filter isJust
+writeXml :: MonadBaseControl IO m =>
+	FilePath -> Pipe (Maybe (XmlNode, Bool))  () m ()
+writeXml wf = filter isJust
 	=$= convert (xmlString . (: []) . fst . fromJust)
-	=$= toHandle stdout
+	=$= toFile wf
 
 testPusher :: XmlPusher xp => xp Handle ->
 	NumOfHandle xp Handle -> PusherArg xp -> IO ()
@@ -62,3 +66,9 @@ testPusher tp hs as = do
 	void . forkIO . runPipe_ $ readFrom xp
 		=$= convert (xmlString . (: []))
 		=$= toHandle stdout
+	runPipe_ $ fromHandle stdin
+		=$= xmlEvent
+		=$= convert fromJust
+		=$= xmlNode []
+		=$= convert (Just . (, False))
+		=$= writeTo xp
