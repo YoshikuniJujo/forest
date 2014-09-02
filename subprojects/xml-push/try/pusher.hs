@@ -3,6 +3,7 @@
 
 import Prelude hiding (filter)
 
+import Control.Applicative
 import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Writer
 import "monads-tf" Control.Monad.Error
@@ -33,8 +34,9 @@ class XmlPusher xp where
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
-		xp h -> Pipe XmlNode () (HandleMonad h) ()
+		xp h -> Pipe (Maybe XmlNode) () (HandleMonad h) ()
 
+{-
 data Xml h = Xml
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
@@ -50,6 +52,7 @@ makeXml h = return $ Xml r w
 	r = fromHandleLike h
 		=$= xmlEvent =$= convert fromJust =$= xmlNode [] >> return ()
 	w = convert (xmlString . (: [])) =$= toHandleLike h
+	-}
 
 data Xmpp h = Xmpp (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
@@ -69,12 +72,12 @@ instance XmlPusher Xmpp where
 		=$= w
 
 makeResponse :: MonadBase IO m =>
-	TChan (Maybe BS.ByteString) -> Pipe (XmlNode, Int) Mpi m ()
-makeResponse nr = (await >>=) . maybe (return ()) $ \(n, r) -> do
+	TChan (Maybe BS.ByteString) -> Pipe (Maybe XmlNode, Int) Mpi m ()
+makeResponse nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	if e then yield $ toIq n r else do
+	if e then maybe (return ()) (yield . flip toIq r) mn else do
 		i <- lift . liftBase . atomically $ readTChan nr
-		yield $ toResponse n i
+		maybe (return ()) yield $ toResponse mn i
 	makeResponse nr
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
@@ -121,10 +124,12 @@ fromHandleLike h = lift (hlGetContent h) >>= yield >> fromHandleLike h
 toHandleLike :: HandleLike h => h -> Pipe BS.ByteString () (HandleMonad h) ()
 toHandleLike h = await >>= maybe (return ()) ((>> toHandleLike h) . lift . hlPut h)
 
+{-
 main_ :: IO ()
 main_ = do
 	(x :: Xml (ReadWrite Handle)) <- generate $ RW stdin stdout
 	runPipe_ $ readFrom x =$= writeTo x
+	-}
 
 main :: IO ()
 main = do
@@ -137,7 +142,13 @@ main = do
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
+		=$= checkNothing
 		=$= writeTo x
+
+checkNothing :: Monad m => Pipe XmlNode (Maybe XmlNode) m ()
+checkNothing = (await >>=) . maybe (return ()) $ \n -> case n of
+	XmlNode (_, "nothing") [] [] [] -> yield Nothing >> checkNothing
+	_ -> yield (Just n) >> checkNothing
 
 addRandom :: (MonadBase IO m, Random r) => Pipe a (a, r) m ()
 addRandom = (await >>=) . maybe (return ()) $ \x -> do
@@ -145,11 +156,17 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-toResponse :: XmlNode -> Maybe BS.ByteString -> Mpi
-toResponse n (Just i) = Iq (tagsType "result") {
-	tagId = Just i,
-	tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
-toResponse n _ = toMessage n
+toResponse :: Maybe XmlNode -> Maybe BS.ByteString -> Maybe Mpi
+toResponse mn (Just i) = case mn of
+	Just n -> Just $ Iq (tagsType "result") {
+			tagId = Just i,
+			tagTo = Just $
+				Jid "yoshio" "localhost" (Just "profanity") } [n]
+	_ -> Just $ Iq (tagsType "result") {
+			tagId = Just i,
+			tagTo = Just $
+				Jid "yoshio" "localhost" (Just "profanity") } []
+toResponse mn _ = toMessage <$> mn
 
 toIq :: XmlNode -> Int -> Mpi
 toIq n r = Iq (tagsType "get") {
