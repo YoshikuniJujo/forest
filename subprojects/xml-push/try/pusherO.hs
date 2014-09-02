@@ -27,8 +27,7 @@ import qualified Data.ByteString.Char8 as BSC
 
 class XmlPusher xp where
 	generate :: (HandleLike h,
-		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h)),
-		MonadBase IO (HandleMonad h)
+		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 		) => h -> HandleMonad h (xp h)
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
@@ -51,48 +50,28 @@ makeXml h = return $ Xml r w
 		=$= xmlEvent =$= convert fromJust =$= xmlNode [] >> return ()
 	w = convert (xmlString . (: [])) =$= toHandleLike h
 
-data Xmpp h = Xmpp (TChan BS.ByteString)
+data Xmpp h = Xmpp
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
 instance XmlPusher Xmpp where
 	generate = makeXmpp
-	readFrom (Xmpp nr r _) = r
+	readFrom (Xmpp r _) = r
 		=$= debug
-		=$= pushId nr
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (Xmpp nr _ w) = addRandom
-		=$= makeResponse nr
---		=$= convert (uncurry toIq)
+	writeTo (Xmpp _ w) = addRandom
+		=$= convert (uncurry toIq)
 		=$= w
 
-makeResponse :: MonadBase IO m =>
-	TChan BS.ByteString -> Pipe (XmlNode, Int) Mpi m ()
-makeResponse nr = (await >>=) . maybe (return ()) $ \(n, r) -> do
-	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	if e then yield $ toIq n r else do
-		i <- lift . liftBase . atomically $ readTChan nr
-		yield $ toResponse n i
-	makeResponse nr
-
-pushId :: MonadBase IO m => TChan BS.ByteString -> Pipe Mpi Mpi m ()
-pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
-	Iq Tags { tagId = Just i } _ -> do
-		lift (liftBase . atomically $ writeTChan nr i)
-		yield mpi
-		pushId nr
-	_ -> yield mpi >> pushId nr
-
 makeXmpp :: (HandleLike h,
-	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h)),
-	MonadBase IO (HandleMonad h)
+	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
+--	MonadBase IO (HandleMonad h)
 	) => h -> HandleMonad h (Xmpp h)
 makeXmpp h = do
-	nr <- liftBase $ atomically newTChan
-	let	me@(Jid un d (Just rsc)) = toJid "yoshikuni@localhost/profanity"
-		you = toJid "yoshio@localhost"
+	let	me@(Jid un d (Just rsc)) = toJid "yoshio@localhost/profanity"
+		you = toJid "yoshikuni@localhost"
 		ss = St [
 			("username", un), ("authcid", un), ("password", "password"),
 			("cnonce", "00DEADBEEF00") ]
@@ -105,11 +84,11 @@ makeXmpp h = do
 	runPipe_ $ yield (Presence tagsNull []) =$= output =$= toHandleLike h
 	let	r = fromHandleLike h =$= input ns
 		w = output =$= toHandleLike h
-	return $ Xmpp nr r w
+	return $ Xmpp r w
 
 presence :: Mpi
 presence = Presence
-	(tagsNull { tagFrom = Just $ Jid "yoshikuni" "localhost" Nothing }) []
+	(tagsNull { tagFrom = Just $ Jid "yoshio" "localhost" Nothing }) []
 
 fromHandleLike :: HandleLike h => h -> Pipe () BS.ByteString (HandleMonad h) ()
 fromHandleLike h = lift (hlGetContent h) >>= yield >> fromHandleLike h
@@ -141,26 +120,21 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-toResponse :: XmlNode -> BS.ByteString -> Mpi
-toResponse n i = Iq (tagsType "result") {
-	tagId = Just i,
-	tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
-
 toIq :: XmlNode -> Int -> Mpi
 toIq n r = Iq (tagsType "get") {
 	tagId = Just . BSC.pack $ show r,
-	tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
+	tagTo = Just $ Jid "yoshikuni" "localhost" (Just "profanity") } [n]
 
 toMessage :: XmlNode -> Mpi
 toMessage n = Message (tagsType "chat") {
 	tagId = Just "hoge",
-	tagTo = Just $ Jid "yoshio" "localhost" Nothing } [n]
+	tagTo = Just $ Jid "yoshikuni" "localhost" Nothing } [n]
 
 mkMessage :: BS.ByteString -> Mpi
 mkMessage m = Message
 	(tagsType "chat") {
 		tagId = Just "hoge",
-		tagTo = Just $ Jid "yoshio" "localhost" Nothing }
+		tagTo = Just $ Jid "yoshikuni" "localhost" Nothing }
 	[XmlNode (nullQ "body") [] [] [XmlCharData m]]
 
 fromMessage :: Mpi -> Maybe XmlNode
