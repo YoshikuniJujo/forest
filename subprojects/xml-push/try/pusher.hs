@@ -36,24 +36,6 @@ class XmlPusher xp where
 	writeTo :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe (Maybe (XmlNode, Bool)) () (HandleMonad h) ()
 
-{-
-data Xml h = Xml
-	(Pipe () XmlNode (HandleMonad h) ())
-	(Pipe XmlNode () (HandleMonad h) ())
-
-instance XmlPusher Xml where
-	generate = makeXml
-	readFrom (Xml r _) = r
-	writeTo (Xml _ w) = w
-
-makeXml :: HandleLike h => h -> HandleMonad h (Xml h)
-makeXml h = return $ Xml r w
-	where
-	r = fromHandleLike h
-		=$= xmlEvent =$= convert fromJust =$= xmlNode [] >> return ()
-	w = convert (xmlString . (: [])) =$= toHandleLike h
-	-}
-
 data Xmpp h = Xmpp (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
@@ -68,7 +50,6 @@ instance XmlPusher Xmpp where
 		=$= convert fromJust
 	writeTo (Xmpp nr _ w) = addRandom
 		=$= makeResponse nr
---		=$= convert (uncurry toIq)
 		=$= w
 
 makeResponse :: MonadBase IO m =>
@@ -126,13 +107,6 @@ fromHandleLike h = lift (hlGetContent h) >>= yield >> fromHandleLike h
 
 toHandleLike :: HandleLike h => h -> Pipe BS.ByteString () (HandleMonad h) ()
 toHandleLike h = await >>= maybe (return ()) ((>> toHandleLike h) . lift . hlPut h)
-
-{-
-main_ :: IO ()
-main_ = do
-	(x :: Xml (ReadWrite Handle)) <- generate $ RW stdin stdout
-	runPipe_ $ readFrom x =$= writeTo x
-	-}
 
 main :: IO ()
 main = do
