@@ -110,14 +110,15 @@ makeXmppTls :: (
 	) => One h -> HandleMonad h (XmppTls h)
 makeXmppTls (One h) = do
 	nr <- liftBase $ atomically newTChan
+	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = toJid "yoshikuni@localhost/profanity"
+		(cn, g') = cprgGenerate 32 g
 		ss = St [
 			("username", un), ("authcid", un), ("password", "password"),
-			("cnonce", "00DEADBEEF00") ]
+			("cnonce", cn) ]
 	runPipe_ $ fromHandleLike h =$= starttls "localhost" =$= toHandleLike h
 	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
-	(g :: SystemRNG) <- cprgCreate <$> liftBase createEntropyPool
-	(inc, otc) <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
+	(inc, otc) <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g'
 	(`evalStateT` ss) . runPipe_ $ fromTChan inc
 		=$= sasl d mechanisms
 		=$= toTChan otc
