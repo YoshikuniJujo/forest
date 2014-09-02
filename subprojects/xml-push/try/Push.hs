@@ -111,7 +111,7 @@ clientLoop :: (HandleLike h, MonadBaseControl IO (HandleMonad h)
 	) => h -> Pipe XmlNode XmlNode (HandleMonad h) ()
 clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
 	r <- lift . request h $ post "localhost" 80 "/"
-				(Nothing, LBS.fromChunks [xmlString [n]])
+		(Nothing, LBS.fromChunks [xmlString [n]])
 	return ()
 		=$= responseBody r
 		=$= xmlEvent
