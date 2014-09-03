@@ -12,6 +12,6 @@ import Xmpp
 
 main :: IO ()
 main = do
-	me : you : _ <- map BSC.pack <$> getArgs
+	me : ps : you : _ <- map BSC.pack <$> getArgs
 	h <- connectTo "localhost" $ PortNumber 5222
-	testPusher (undefined :: Xmpp Handle) (One h) (toJid me, toJid you)
+	testPusher (undefined :: Xmpp Handle) (One h) (toJid me, ps, toJid you)

@@ -33,7 +33,7 @@ data Xmpp h = Xmpp Jid (TChan (Maybe BS.ByteString))
 
 instance XmlPusher Xmpp where
 	type NumOfHandle Xmpp = One
-	type PusherArg Xmpp = (Jid, Jid)
+	type PusherArg Xmpp = (Jid, BS.ByteString, Jid)
 	generate = makeXmpp
 	readFrom (Xmpp _you nr r _) = r
 		=$= pushId nr
@@ -97,14 +97,14 @@ mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 makeXmpp :: (
 	HandleLike h, MonadBase IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> (Jid, Jid) -> HandleMonad h (Xmpp h)
-makeXmpp (One h) (me, you) = do
+	) => One h -> (Jid, BS.ByteString, Jid) -> HandleMonad h (Xmpp h)
+makeXmpp (One h) (me, ps, you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(cn, _g') = cprgGenerate 32 g
 		(Jid un d (Just rsc)) = me
 		ss = St [
-			("username", un), ("authcid", un), ("password", "password"),
+			("username", un), ("authcid", un), ("password", ps),
 			("cnonce", cn) ]
 	void . (`evalStateT` ss) . runPipe $ fromHandleLike (THandle h)
 		=$= sasl d mechanisms
