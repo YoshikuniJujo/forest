@@ -46,7 +46,10 @@ instance XmlPusher Xmpp where
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
 pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
-	Iq Tags { tagId = Just i } _ -> do
+	Iq Tags { tagType = Just "get", tagId = Just i } _ -> do
+		lift . liftBase . atomically . writeTChan nr $ Just i
+		yield mpi >> pushId nr
+	Iq Tags { tagType = Just "set", tagId = Just i } _ -> do
 		lift . liftBase . atomically . writeTChan nr $ Just i
 		yield mpi >> pushId nr
 	Message _ _ -> do
