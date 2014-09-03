@@ -13,6 +13,7 @@ import Data.Pipe
 import Data.Pipe.IO (debug)
 import Data.Pipe.ByteString
 import Data.Pipe.TChan
+import Data.Char
 import Data.UUID
 import System.Random
 import Network
@@ -23,6 +24,7 @@ import Network.PeyoTLS.TChan.Server
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Network.Sasl.ScramSha1.Server as SS1
 import qualified Network.Sasl.DigestMd5.Server as DM5
 
@@ -30,6 +32,7 @@ main :: IO ()
 main = do
 	userlist <- atomically $ newTVar []
 	soc <- listenOn $ PortNumber 5222
+	ca <- readCertificateStore ["certs/cacert.sample_pem"]
 	k <- readKey "certs/localhost.sample_key"
 	c <- readCertificateChain ["certs/localhost.sample_crt"]
 	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
@@ -39,15 +42,24 @@ main = do
 		us <- map toASCIIBytes . randoms <$> lift getStdGen
 		_us' <- (`execStateT` us) . runPipe $
 			fromHandle h =$= starttls "localhost" =$= toHandle h
-		(_cn, (inp, otp)) <- lift $
-			open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] Nothing g
+		(Just cn, (inp, otp)) <- lift $
+			open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] (Just ca) g
+		lift . print $ cn "Yoshikuni"
+		lift . print $ cn "Yoshio"
+		let ck nm = cn (capitalize nm) || nm == "yoshio"
 		(Just ns, st) <- (`runStateT` initXSt) . runPipe $ do
-			fromTChan inp =$= sasl "localhost" retrieves =$= toTChan otp
+			fromTChan inp
+				=$= debug
+				=$= sasl "localhost" (retrieves ck)
+				=$= toTChan otp
 			fromTChan inp =$= bind "localhost" [] =@= toTChan otp
 		let u = user st; sl = selector userlist
 		lift . atomically $ modifyTVar userlist ((u, ch) :)
 		void . liftBaseDiscard forkIO . runPipe_ $ fromTChan ch =$= output =$= toTChan otp
 		lift . runPipe_ $ fromTChan inp =$= debug =$= input ns =$= select u =$= toTChansM sl
+
+capitalize :: String -> String
+capitalize (c : cs) = toUpper c : cs
 
 initXSt :: XSt
 initXSt = XSt {
@@ -86,8 +98,12 @@ select f = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
 		yield (to, Iq tgs { tagFrom = Just f } b) >> select f
 	_ -> select f
 
-retrieves :: (MonadError m, SaslError (ErrorType m)) => [Retrieve m]
-retrieves = [RTScramSha1 retrieveSS1, RTDigestMd5 retrieveDM5]
+retrieves :: (MonadError m, SaslError (ErrorType m)) =>
+	(String -> Bool) -> [Retrieve m]
+retrieves ck = [
+	RTScramSha1 retrieveSS1,
+	RTDigestMd5 retrieveDM5,
+	RTExternal $ retrieveExternal ck]
 
 retrieveSS1 :: (MonadError m, SaslError (ErrorType m)) =>
 	BS.ByteString -> m (BS.ByteString, BS.ByteString, BS.ByteString, Int)
@@ -102,3 +118,8 @@ retrieveDM5 :: (MonadError m, SaslError (ErrorType m)) =>
 retrieveDM5 "yoshikuni" = return $ DM5.mkStored "yoshikuni" "localhost" "password"
 retrieveDM5 "yoshio" = return $ DM5.mkStored "yoshio" "localhost" "password"
 retrieveDM5 _ = throwError $ fromSaslError NotAuthorized "auth failure"
+
+retrieveExternal :: (MonadError m, SaslError (ErrorType m)) =>
+	(String -> Bool) -> BS.ByteString -> m ()
+retrieveExternal ck nm = if ck $ BSC.unpack nm then return () else
+	throwError $ fromSaslError NotAuthorized "auth failure"

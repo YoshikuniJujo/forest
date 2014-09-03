@@ -101,7 +101,7 @@ toMessage you n = Message
 	(tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
 
 mechanisms :: [BS.ByteString]
-mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
+mechanisms = ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
