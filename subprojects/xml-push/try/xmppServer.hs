@@ -6,15 +6,21 @@ import Control.Arrow
 import Control.Monad
 import "monads-tf" Control.Monad.State
 import "monads-tf" Control.Monad.Error
+import Control.Monad.Trans.Control
 import Control.Concurrent hiding (yield)
 import Control.Concurrent.STM
 import Data.Pipe
 import Data.Pipe.IO (debug)
 import Data.Pipe.ByteString
 import Data.Pipe.TChan
+import Data.UUID
+import System.Random
 import Network
 import Network.Sasl
 import Network.XMPiPe.Core.C2S.Server
+import Network.PeyoTLS.ReadFile
+import Network.PeyoTLS.TChan.Server
+import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
 import qualified Network.Sasl.ScramSha1.Server as SS1
@@ -24,15 +30,24 @@ main :: IO ()
 main = do
 	userlist <- atomically $ newTVar []
 	soc <- listenOn $ PortNumber 5222
-	forever $ accept soc >>= \(h, _, _) -> forkIO $ do
-		c <- atomically newTChan
+	k <- readKey "certs/localhost.sample_key"
+	c <- readCertificateChain ["certs/localhost.sample_crt"]
+	g0 <- cprgCreate <$> createEntropyPool :: IO SystemRNG
+	(`evalStateT` g0) . forever $ lift (accept soc) >>= \(h, _, _) -> liftBaseDiscard forkIO $ do
+		g <- StateT $ return . cprgFork
+		ch <- lift $ atomically newTChan
+		us <- map toASCIIBytes . randoms <$> lift getStdGen
+		_us' <- (`execStateT` us) . runPipe $
+			fromHandle h =$= starttls "localhost" =$= toHandle h
+		(_cn, (inp, otp)) <- lift $
+			open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] Nothing g
 		(Just ns, st) <- (`runStateT` initXSt) . runPipe $ do
-			fromHandle h =$= sasl "localhost" retrieves =$= toHandle h
-			fromHandle h =$= bind "localhost" [] =@= toHandle h
+			fromTChan inp =$= sasl "localhost" retrieves =$= toTChan otp
+			fromTChan inp =$= bind "localhost" [] =@= toTChan otp
 		let u = user st; sl = selector userlist
-		atomically $ modifyTVar userlist ((u, c) :)
-		void . forkIO . runPipe_ $ fromTChan c =$= output =$= toHandle h
-		runPipe_ $ fromHandle h =$= debug =$= input ns =$= select u =$= toTChansM sl
+		lift . atomically $ modifyTVar userlist ((u, ch) :)
+		void . liftBaseDiscard forkIO . runPipe_ $ fromTChan ch =$= output =$= toTChan otp
+		lift . runPipe_ $ fromTChan inp =$= debug =$= input ns =$= select u =$= toTChansM sl
 
 initXSt :: XSt
 initXSt = XSt {
