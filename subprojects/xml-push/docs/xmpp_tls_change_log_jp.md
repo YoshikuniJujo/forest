@@ -12,5 +12,5 @@ XmppTls.hsに対する変更予定点
 
 * パスワードを引数で渡すようにした
 * idにUUIDを使うようにした
-* PLAINを削除する (しないかも)
+* 使用するmechanismsを引数で渡せるようにする
 * messageのほうのidにUUIDを使用する
