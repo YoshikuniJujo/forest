@@ -8,9 +8,9 @@ Xmpp.hsに対する変更点
 * パスワードを引数で渡すようにした
 * cnonceをランダムにした (XmppTlsでも対応済)
 * idにUUIDを使うようにした
+* PLAINを削除する
+* messageのほうのidにUUIDを使用する
 
 予定
 ----
 
-* messageのほうのidにUUIDを使用する
-* PLAINを削除する
