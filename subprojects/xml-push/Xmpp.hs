@@ -93,7 +93,7 @@ toMessage :: Jid -> XmlNode -> Mpi
 toMessage you n = Message (tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
 
 mechanisms :: [BS.ByteString]
-mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
+mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5"]
 
 makeXmpp :: (
 	HandleLike h, MonadBase IO (HandleMonad h),
