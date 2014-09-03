@@ -50,7 +50,10 @@ instance XmlPusher XmppTls where
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
 pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
-	Iq Tags { tagId = Just i } _ -> do
+	Iq Tags { tagType = Just "get", tagId = Just i } _ -> do
+		lift . liftBase . atomically . writeTChan nr $ Just i
+		yield mpi >> pushId nr
+	Iq Tags { tagType = Just "set", tagId = Just i } _ -> do
 		lift . liftBase . atomically . writeTChan nr $ Just i
 		yield mpi >> pushId nr
 	Message _ _ -> do
@@ -114,7 +117,10 @@ makeXmppTls (One h) (me, you) = do
 			("cnonce", cn) ]
 	runPipe_ $ fromHandleLike h =$= starttls "localhost" =$= toHandleLike h
 	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
-	(inc, otc) <- open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g'
+	k <- liftBase $ readKey "certs/yoshikuni.sample_key"
+	c <- liftBase $ readCertificateChain ["certs/yoshikuni.sample_crt"]
+	(inc, otc) <-
+		open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] ca g'
 	(`evalStateT` ss) . runPipe_ $ fromTChan inc
 		=$= sasl d mechanisms
 		=$= toTChan otc
