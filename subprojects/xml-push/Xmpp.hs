@@ -16,6 +16,7 @@ import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
 import Data.Pipe.Flow
+import Data.UUID
 import System.Random
 import Text.XML.Pipe
 import Network.Sasl
@@ -66,7 +67,7 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	addRandom
 
 makeResponse :: MonadBase IO m => Jid ->
-	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), Int) Mpi m ()
+	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), UUID) Mpi m ()
 makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
 	if e then maybe (return ()) (yield . makeIqMessage you r) mn else do
@@ -74,7 +75,7 @@ makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 		maybe (return ()) yield $ toResponse you mn i
 	makeResponse you nr
 
-makeIqMessage :: Jid -> Int -> (XmlNode, Bool) -> Mpi
+makeIqMessage :: Jid -> UUID -> (XmlNode, Bool) -> Mpi
 makeIqMessage you r (n, nr) = if nr then toIq you n r else toMessage you n
 
 toResponse :: Jid -> Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
@@ -84,9 +85,9 @@ toResponse you mn (Just i) = case mn of
 	_ -> Just $ Iq (tagsType "result") { tagId = Just i, tagTo = Just you } []
 toResponse you mn _ = toMessage you . fst <$> mn
 
-toIq :: Jid -> XmlNode -> Int -> Mpi
+toIq :: Jid -> XmlNode -> UUID -> Mpi
 toIq you n r =
-	Iq (tagsType "get") { tagId = Just . BSC.pack $ show r, tagTo = Just you } [n]
+	Iq (tagsType "get") { tagId = Just $ toASCIIBytes r, tagTo = Just you } [n]
 
 toMessage :: Jid -> XmlNode -> Mpi
 toMessage you n = Message (tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
