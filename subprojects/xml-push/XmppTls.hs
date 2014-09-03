@@ -31,21 +31,21 @@ import qualified Data.ByteString.Char8 as BSC
 
 import XmlPusher
 
-data XmppTls h = XmppTls (TChan (Maybe BS.ByteString))
+data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
 instance XmlPusher XmppTls where
-	type PusherArg XmppTls = ()
 	type NumOfHandle XmppTls = One
-	generate = const . makeXmppTls
-	readFrom (XmppTls nr r _) = r
+	type PusherArg XmppTls = (Jid, Jid)
+	generate = makeXmppTls
+	readFrom (XmppTls _you nr r _) = r
 		=$= pushId nr
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (XmppTls nr _ w) = addRandom
-		=$= makeResponse nr
+	writeTo (XmppTls you nr _ w) = addRandom
+		=$= makeResponse you nr
 		=$= w
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
@@ -69,37 +69,33 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-makeResponse :: MonadBase IO m =>
+makeResponse :: MonadBase IO m => Jid ->
 	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), Int) Mpi m ()
-makeResponse nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
+makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	if e then maybe (return ()) (yield . makeIqMessage r) mn else do
+	if e then maybe (return ()) (yield . makeIqMessage you r) mn else do
 		i <- lift . liftBase . atomically $ readTChan nr
-		maybe (return ()) yield $ toResponse mn i
-	makeResponse nr
+		maybe (return ()) yield $ toResponse you mn i
+	makeResponse you nr
 
-makeIqMessage :: Int -> (XmlNode, Bool) -> Mpi
-makeIqMessage r (n, nr) = if nr then toIq n r else toMessage n
+makeIqMessage :: Jid -> Int -> (XmlNode, Bool) -> Mpi
+makeIqMessage you r (n, nr) = if nr then toIq you n r else toMessage you n
 
-toResponse :: Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
-toResponse mn (Just i) = case mn of
-	Just (n, _) -> Just $ Iq (tagsType "result") {
-		tagId = Just i,
-		tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
-	_ -> Just $ Iq (tagsType "result") {
-		tagId = Just i,
-		tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } []
-toResponse mn _ = toMessage . fst <$> mn
+toResponse :: Jid -> Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
+toResponse you mn (Just i) = case mn of
+	Just (n, _) -> Just $
+		Iq (tagsType "result") { tagId = Just i, tagTo = Just $ you } [n]
+	_ -> Just $
+		Iq (tagsType "result") { tagId = Just i, tagTo = Just you } []
+toResponse you mn _ = toMessage you . fst <$> mn
 
-toIq :: XmlNode -> Int -> Mpi
-toIq n r = Iq (tagsType "get") {
-	tagId = Just . BSC.pack $ show r,
-	tagTo = Just $ Jid "yoshio" "localhost" (Just "profanity") } [n]
+toIq :: Jid -> XmlNode -> Int -> Mpi
+toIq you n r = Iq
+	(tagsType "get") { tagId = Just . BSC.pack $ show r, tagTo = Just you } [n]
 
-toMessage :: XmlNode -> Mpi
-toMessage n = Message (tagsType "chat") {
-	tagId = Just "hoge",
-	tagTo = Just $ Jid "yoshio" "localhost" Nothing } [n]
+toMessage :: Jid -> XmlNode -> Mpi
+toMessage you n = Message
+	(tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
 
 mechanisms :: [BS.ByteString]
 mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
@@ -107,11 +103,11 @@ mechanisms = ["SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> HandleMonad h (XmppTls h)
-makeXmppTls (One h) = do
+	) => One h -> (Jid, Jid) -> HandleMonad h (XmppTls h)
+makeXmppTls (One h) (me, you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
-	let	(Jid un d (Just rsc)) = toJid "yoshikuni@localhost/profanity"
+	let	(Jid un d (Just rsc)) = me
 		(cn, g') = cprgGenerate 32 g
 		ss = St [
 			("username", un), ("authcid", un), ("password", "password"),
@@ -128,7 +124,7 @@ makeXmppTls (One h) = do
 	runPipe_ $ yield (Presence tagsNull []) =$= output =$= toTChan otc
 	let	r = fromTChan inc =$= input ns
 		w = output =$= toTChan otc
-	return $ XmppTls nr r w
+	return $ XmppTls you nr r w
 
 data St = St [(BS.ByteString, BS.ByteString)]
 instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss
