@@ -2,7 +2,9 @@
 	FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
-module XmppTls (XmppTls, One(..), XmppArgs(..), TlsArgs(..), testPusher) where
+module XmppTls (
+	XmppTls, XmppPushType(..), One(..),
+	XmppArgs(..), TlsArgs(..), testPusher) where
 
 import Prelude hiding (filter)
 
@@ -32,7 +34,7 @@ import qualified Data.ByteString as BS
 
 import XmlPusher
 
-data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
+data XmppTls pt h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
@@ -48,10 +50,13 @@ data TlsArgs = TlsArgs {
 	keyChain :: [(CertSecretKey, CertificateChain)]
 	}
 
-instance XmlPusher XmppTls where
-	type NumOfHandle XmppTls = One
-	type PusherArg XmppTls = (XmppArgs, TlsArgs)
-	type PushedType XmppTls = Bool
+class XmppPushType pt where
+	needResponse :: pt -> Bool
+
+instance XmppPushType pt => XmlPusher (XmppTls pt) where
+	type NumOfHandle (XmppTls pt) = One
+	type PusherArg (XmppTls pt) = (XmppArgs, TlsArgs)
+	type PushedType (XmppTls pt) = pt
 	generate = makeXmppTls
 	readFrom (XmppTls _you nr r _) = r
 		=$= pushId nr
@@ -86,8 +91,8 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-makeResponse :: MonadBase IO m => Jid ->
-	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), UUID) Mpi m ()
+makeResponse :: (MonadBase IO m, XmppPushType pt) => Jid ->
+	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, pt), UUID) Mpi m ()
 makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
 	uuid <- lift $ liftBase randomIO
@@ -96,10 +101,11 @@ makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 		maybe (return ()) yield $ toResponse you mn i uuid
 	makeResponse you nr
 
-makeIqMessage :: Jid -> UUID -> UUID -> (XmlNode, Bool) -> Mpi
-makeIqMessage you r uuid (n, nr) = if nr then toIq you n r else toMessage you n uuid
+makeIqMessage :: XmppPushType pt => Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
+makeIqMessage you r uuid (n, nr) =
+	if needResponse nr then toIq you n r else toMessage you n uuid
 
-toResponse :: Jid -> Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> UUID -> Maybe Mpi
+toResponse :: Jid -> Maybe (XmlNode, pt) -> Maybe BS.ByteString -> UUID -> Maybe Mpi
 toResponse you mn (Just i) _ = case mn of
 	Just (n, _) -> Just $
 		Iq (tagsType "result") { tagId = Just i, tagTo = Just $ you } [n]
@@ -118,7 +124,7 @@ toMessage you n uuid = Message
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls h)
+	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls pt h)
 makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
