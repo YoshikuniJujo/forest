@@ -2,7 +2,7 @@
 	TypeFamilies, FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
-module Xmpp (Xmpp, One(..), testPusher) where
+module Xmpp (Xmpp, One(..), XmppArgs(..), testPusher) where
 
 import Prelude hiding (filter)
 
@@ -31,9 +31,15 @@ data Xmpp h = Xmpp Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
+data XmppArgs = XmppArgs {
+	mechanisms :: [BS.ByteString],
+	myJid :: Jid,
+	passowrd :: BS.ByteString,
+	yourJid :: Jid } deriving Show
+
 instance XmlPusher Xmpp where
 	type NumOfHandle Xmpp = One
-	type PusherArg Xmpp = ([BS.ByteString], Jid, BS.ByteString, Jid)
+	type PusherArg Xmpp = XmppArgs -- ([BS.ByteString], Jid, BS.ByteString, Jid)
 	generate = makeXmpp
 	readFrom (Xmpp _you nr r _) = r
 		=$= pushId nr
@@ -100,9 +106,8 @@ toMessage you n r = Message
 makeXmpp :: (
 	HandleLike h, MonadBase IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> ([BS.ByteString], Jid, BS.ByteString, Jid) ->
-		HandleMonad h (Xmpp h)
-makeXmpp (One h) (ms, me, ps, you) = do
+	) => One h -> XmppArgs -> HandleMonad h (Xmpp h)
+makeXmpp (One h) (XmppArgs ms me ps you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(cn, _g') = cprgGenerate 32 g
