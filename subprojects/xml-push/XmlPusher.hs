@@ -79,4 +79,5 @@ testPusher tp hs as = do
 		=$= convert fromJust
 		=$= xmlNode []
 		=$= convert (Just . (, True))
+--		=$= convert (Just . (, False))
 		=$= writeTo xp

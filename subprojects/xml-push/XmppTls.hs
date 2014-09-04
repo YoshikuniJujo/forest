@@ -28,7 +28,6 @@ import Network.PeyoTLS.ReadFile
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 
 import XmlPusher
 
@@ -84,29 +83,30 @@ makeResponse :: MonadBase IO m => Jid ->
 	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, Bool), UUID) Mpi m ()
 makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	if e then maybe (return ()) (yield . makeIqMessage you r) mn else do
+	uuid <- lift $ liftBase randomIO
+	if e then maybe (return ()) (yield . makeIqMessage you r uuid) mn else do
 		i <- lift . liftBase . atomically $ readTChan nr
-		maybe (return ()) yield $ toResponse you mn i
+		maybe (return ()) yield $ toResponse you mn i uuid
 	makeResponse you nr
 
-makeIqMessage :: Jid -> UUID -> (XmlNode, Bool) -> Mpi
-makeIqMessage you r (n, nr) = if nr then toIq you n r else toMessage you n
+makeIqMessage :: Jid -> UUID -> UUID -> (XmlNode, Bool) -> Mpi
+makeIqMessage you r uuid (n, nr) = if nr then toIq you n r else toMessage you n uuid
 
-toResponse :: Jid -> Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> Maybe Mpi
-toResponse you mn (Just i) = case mn of
+toResponse :: Jid -> Maybe (XmlNode, Bool) -> Maybe BS.ByteString -> UUID -> Maybe Mpi
+toResponse you mn (Just i) _ = case mn of
 	Just (n, _) -> Just $
 		Iq (tagsType "result") { tagId = Just i, tagTo = Just $ you } [n]
 	_ -> Just $
 		Iq (tagsType "result") { tagId = Just i, tagTo = Just you } []
-toResponse you mn _ = toMessage you . fst <$> mn
+toResponse you mn _ uuid = flip (toMessage you) uuid . fst <$> mn
 
 toIq :: Jid -> XmlNode -> UUID -> Mpi
 toIq you n r = Iq
 	(tagsType "get") { tagId = Just $ toASCIIBytes r, tagTo = Just you } [n]
 
-toMessage :: Jid -> XmlNode -> Mpi
-toMessage you n = Message
-	(tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
+toMessage :: Jid -> XmlNode -> UUID -> Mpi
+toMessage you n uuid = Message
+	(tagsType "chat") { tagId = Just $ toASCIIBytes uuid, tagTo = Just you } [n]
 
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
