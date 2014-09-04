@@ -2,7 +2,7 @@
 	FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
-module XmppTls (XmppTls, One(..), XmppTlsArgs(..), testPusher) where
+module XmppTls (XmppTls, One(..), XmppArgs(..), TlsArgs(..), testPusher) where
 
 import Prelude hiding (filter)
 
@@ -19,12 +19,13 @@ import Data.Pipe
 import Data.Pipe.Flow
 import Data.Pipe.TChan
 import Data.UUID
+import Data.X509
+import Data.X509.CertificateStore
 import System.Random
 import Text.XML.Pipe
 import Network.Sasl
 import Network.XMPiPe.Core.C2S.Client
 import Network.PeyoTLS.TChan.Client
-import Network.PeyoTLS.ReadFile
 import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
@@ -35,16 +36,21 @@ data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
-data XmppTlsArgs = XmppTlsArgs {
+data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
 	myJid :: Jid,
 	password :: BS.ByteString,
 	yourJid :: Jid
 	} deriving Show
 
+data TlsArgs = TlsArgs {
+	certificateAuthority :: CertificateStore,
+	keyChain :: [(CertSecretKey, CertificateChain)]
+	}
+
 instance XmlPusher XmppTls where
 	type NumOfHandle XmppTls = One
-	type PusherArg XmppTls = XmppTlsArgs
+	type PusherArg XmppTls = (XmppArgs, TlsArgs)
 	generate = makeXmppTls
 	readFrom (XmppTls _you nr r _) = r
 		=$= pushId nr
@@ -111,8 +117,8 @@ toMessage you n uuid = Message
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> XmppTlsArgs -> HandleMonad h (XmppTls h)
-makeXmppTls (One h) (XmppTlsArgs ms me ps you) = do
+	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls h)
+makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = me
@@ -121,11 +127,11 @@ makeXmppTls (One h) (XmppTlsArgs ms me ps you) = do
 			("username", un), ("authcid", un), ("password", ps),
 			("cnonce", cn) ]
 	runPipe_ $ fromHandleLike h =$= starttls "localhost" =$= toHandleLike h
-	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
-	k <- liftBase $ readKey "certs/yoshikuni.sample_key"
-	c <- liftBase $ readCertificateChain ["certs/yoshikuni.sample_crt"]
+--	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
+--	k <- liftBase $ readKey "certs/yoshikuni.sample_key"
+--	c <- liftBase $ readCertificateChain ["certs/yoshikuni.sample_crt"]
 	(inc, otc) <-
-		open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] ca g'
+		open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] kcs ca g'
 	(`evalStateT` ss) . runPipe_ $ fromTChan inc =$= sasl d ms =$= toTChan otc
 	(Just ns, _fts) <- runWriterT . runPipe $ fromTChan inc
 		=$= bind d rsc
