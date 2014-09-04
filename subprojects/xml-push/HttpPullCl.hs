@@ -2,7 +2,7 @@
 	PackageImports #-}
 
 module HttpPullCl (
-	HttpPullCl, One(..), testPusher,
+	HttpPullCl, HttpPullClArgs(..), One(..), testPusher,
 	) where
 
 import Prelude hiding (filter)
@@ -30,9 +30,15 @@ data HttpPullCl h = HttpPullCl
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
 
+data HttpPullClArgs = HttpPullClArgs {
+	domainName :: String,
+	path :: FilePath,
+	poll :: XmlNode
+	} deriving Show
+
 instance XmlPusher HttpPullCl where
 	type NumOfHandle HttpPullCl = One
-	type PusherArg HttpPullCl = (String, FilePath, XmlNode)
+	type PusherArg HttpPullCl = HttpPullClArgs
 	type PushedType HttpPullCl = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
@@ -41,8 +47,8 @@ instance XmlPusher HttpPullCl where
 		=$= w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	One h -> (String, FilePath, XmlNode) -> HandleMonad h (HttpPullCl h)
-makeHttpPull (One h) (hn, fp, pl) = do
+	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl h)
+makeHttpPull (One h) (HttpPullClArgs hn fp pl) = do
 	(inc, otc) <- talkC h hn fp pl
 	return $ HttpPullCl (fromTChan inc) (toTChan otc)
 
