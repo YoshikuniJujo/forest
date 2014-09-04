@@ -60,6 +60,7 @@ main = do
 
 capitalize :: String -> String
 capitalize (c : cs) = toUpper c : cs
+capitalize "" = ""
 
 initXSt :: XSt
 initXSt = XSt {
