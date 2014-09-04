@@ -33,6 +33,7 @@ data HttpPullCl h = HttpPullCl
 instance XmlPusher HttpPullCl where
 	type NumOfHandle HttpPullCl = One
 	type PusherArg HttpPullCl = (String, FilePath, XmlNode)
+	type PushedType HttpPullCl = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
 	writeTo (HttpPullCl _ w) = filter isJust

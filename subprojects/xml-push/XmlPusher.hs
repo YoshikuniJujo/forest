@@ -25,6 +25,7 @@ import Network.PeyoTLS.Client
 class XmlPusher xp where
 	type PusherArg xp
 	type NumOfHandle xp :: * -> *
+	type PushedType xp
 	generate :: (
 		ValidateHandle h,
 		MonadBaseControl IO (HandleMonad h),
@@ -34,11 +35,11 @@ class XmlPusher xp where
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
-		xp h -> Pipe (Maybe (XmlNode, Bool)) () (HandleMonad h) ()
+		xp h -> Pipe (Maybe (XmlNode, PushedType xp)) () (HandleMonad h) ()
 
 data SimplePusher h = SimplePusher
 	(Pipe () XmlNode (HandleMonad h) ())
-	(Pipe (Maybe (XmlNode, Bool)) () (HandleMonad h) ())
+	(Pipe (Maybe (XmlNode, ())) () (HandleMonad h) ())
 
 data Zero a = Zero deriving Show
 data One a = One a deriving Show
@@ -47,6 +48,7 @@ data Two a = Two a a deriving Show
 instance XmlPusher SimplePusher where
 	type PusherArg SimplePusher = (FilePath, FilePath)
 	type NumOfHandle SimplePusher = Zero
+	type PushedType SimplePusher = ()
 	generate = const $ uncurry simplePusher
 	readFrom (SimplePusher r _) = r
 	writeTo (SimplePusher _ w) = w
@@ -62,14 +64,14 @@ readXml rf = fromFile rf
 	=$= (xmlNode [] >> return ())
 
 writeXml :: MonadBaseControl IO m =>
-	FilePath -> Pipe (Maybe (XmlNode, Bool))  () m ()
+	FilePath -> Pipe (Maybe (XmlNode, ()))  () m ()
 writeXml wf = filter isJust
 	=$= convert (xmlString . (: []) . fst . fromJust)
 	=$= toFile wf
 
 testPusher :: XmlPusher xp => xp Handle ->
-	NumOfHandle xp Handle -> PusherArg xp -> IO ()
-testPusher tp hs as = do
+	NumOfHandle xp Handle -> PusherArg xp -> PushedType xp -> IO ()
+testPusher tp hs as pt = do
 	xp <- generate hs as >>= return . (`asTypeOf` tp)
 	void . forkIO . runPipe_ $ readFrom xp
 		=$= convert (xmlString . (: []))
@@ -78,6 +80,7 @@ testPusher tp hs as = do
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
-		=$= convert (Just . (, True))
+		=$= convert (Just . (, pt))
+--		=$= convert (Just . (, True))
 --		=$= convert (Just . (, False))
 		=$= writeTo xp

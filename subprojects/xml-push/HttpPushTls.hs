@@ -44,6 +44,7 @@ data HttpPushTls h = HttpPushTls {
 instance XmlPusher HttpPushTls where
 	type NumOfHandle HttpPushTls = Two
 	type PusherArg HttpPushTls = ()
+	type PushedType HttpPushTls = Bool
 	generate (Two ch sh) () = makeHttpPushTls ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)

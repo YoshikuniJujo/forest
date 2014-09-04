@@ -11,3 +11,4 @@ main = do
 	h <- connectTo "localhost" $ PortNumber 80
 	testPusher (undefined :: HttpPullCl Handle) (One h)
 		("localhost", "/", XmlNode (nullQ "poll") [] [] [])
+		True

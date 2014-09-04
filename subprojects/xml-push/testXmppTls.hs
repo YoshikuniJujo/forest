@@ -22,3 +22,4 @@ main = do
 		XmppArgs ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 			(toJid me) ps (toJid you),
 		TlsArgs ca [(k, c)] )
+		True

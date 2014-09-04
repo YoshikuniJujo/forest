@@ -11,3 +11,4 @@ main = do
 	h <- connectTo "localhost" $ PortNumber 443
 	testPusher (undefined :: HttpPullTlsCl Handle) (One h)
 		("localhost", "/", XmlNode (nullQ "poll") [] [] [])
+		True

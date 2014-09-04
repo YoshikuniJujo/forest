@@ -51,6 +51,7 @@ data TlsArgs = TlsArgs {
 instance XmlPusher XmppTls where
 	type NumOfHandle XmppTls = One
 	type PusherArg XmppTls = (XmppArgs, TlsArgs)
+	type PushedType XmppTls = Bool
 	generate = makeXmppTls
 	readFrom (XmppTls _you nr r _) = r
 		=$= pushId nr
