@@ -9,6 +9,6 @@ import HttpPullCl
 main :: IO ()
 main = do
 	h <- connectTo "localhost" $ PortNumber 80
-	testPusher (undefined :: HttpPullCl Handle) (One h)
+	testPusher (undefined :: HttpPullCl () Handle) (One h)
 		(HttpPullClArgs "localhost" "/" (XmlNode (nullQ "poll") [] [] []))
-		True
+		()

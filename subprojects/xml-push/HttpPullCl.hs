@@ -26,7 +26,7 @@ import qualified Data.ByteString.Lazy as LBS
 
 import XmlPusher
 
-data HttpPullCl h = HttpPullCl
+data HttpPullCl pt h = HttpPullCl
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
 
@@ -36,10 +36,10 @@ data HttpPullClArgs = HttpPullClArgs {
 	poll :: XmlNode
 	} deriving Show
 
-instance XmlPusher HttpPullCl where
-	type NumOfHandle HttpPullCl = One
-	type PusherArg HttpPullCl = HttpPullClArgs
-	type PushedType HttpPullCl = Bool
+instance XmlPusher (HttpPullCl pt) where
+	type NumOfHandle (HttpPullCl pt) = One
+	type PusherArg (HttpPullCl pt) = HttpPullClArgs
+	type PushedType (HttpPullCl pt) = pt
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
 	writeTo (HttpPullCl _ w) = filter isJust
@@ -47,7 +47,7 @@ instance XmlPusher HttpPullCl where
 		=$= w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl h)
+	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl pt h)
 makeHttpPull (One h) (HttpPullClArgs hn fp pl) = do
 	(inc, otc) <- talkC h hn fp pl
 	return $ HttpPullCl (fromTChan inc) (toTChan otc)
