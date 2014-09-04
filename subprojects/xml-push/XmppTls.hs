@@ -37,6 +37,7 @@ data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
 
 data XmppTlsArgs = XmppTlsArgs {
 	myJid :: Jid,
+	password :: BS.ByteString,
 	yourJid :: Jid
 	} deriving Show
 
@@ -112,13 +113,13 @@ makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 	) => One h -> XmppTlsArgs -> HandleMonad h (XmppTls h)
-makeXmppTls (One h) (XmppTlsArgs me you) = do
+makeXmppTls (One h) (XmppTlsArgs me ps you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = me
 		(cn, g') = cprgGenerate 32 g
 		ss = St [
-			("username", un), ("authcid", un), ("password", "password"),
+			("username", un), ("authcid", un), ("password", ps),
 			("cnonce", cn) ]
 	runPipe_ $ fromHandleLike h =$= starttls "localhost" =$= toHandleLike h
 	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
