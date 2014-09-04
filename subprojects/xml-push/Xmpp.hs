@@ -39,7 +39,7 @@ data XmppArgs = XmppArgs {
 
 instance XmlPusher Xmpp where
 	type NumOfHandle Xmpp = One
-	type PusherArg Xmpp = XmppArgs -- ([BS.ByteString], Jid, BS.ByteString, Jid)
+	type PusherArg Xmpp = XmppArgs
 	generate = makeXmpp
 	readFrom (Xmpp _you nr r _) = r
 		=$= pushId nr

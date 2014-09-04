@@ -2,7 +2,7 @@
 	FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
-module XmppTls (XmppTls, One(..), testPusher) where
+module XmppTls (XmppTls, One(..), XmppTlsArgs(..), testPusher) where
 
 import Prelude hiding (filter)
 
@@ -35,9 +35,14 @@ data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(Pipe Mpi () (HandleMonad h) ())
 
+data XmppTlsArgs = XmppTlsArgs {
+	myJid :: Jid,
+	yourJid :: Jid
+	} deriving Show
+
 instance XmlPusher XmppTls where
 	type NumOfHandle XmppTls = One
-	type PusherArg XmppTls = (Jid, Jid)
+	type PusherArg XmppTls = XmppTlsArgs
 	generate = makeXmppTls
 	readFrom (XmppTls _you nr r _) = r
 		=$= pushId nr
@@ -106,8 +111,8 @@ mechanisms = ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> (Jid, Jid) -> HandleMonad h (XmppTls h)
-makeXmppTls (One h) (me, you) = do
+	) => One h -> XmppTlsArgs -> HandleMonad h (XmppTls h)
+makeXmppTls (One h) (XmppTlsArgs me you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = me
