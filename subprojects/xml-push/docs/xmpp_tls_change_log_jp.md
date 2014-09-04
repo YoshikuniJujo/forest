@@ -12,8 +12,11 @@ XmppTls.hsに対する変更予定点
 予定
 ----
 
-* idにUUIDを使うようにする
 * 使用するmechanismsを引数で渡せるようにする
+
+* idにUUIDを使うようにする
 * messageのほうのidにUUIDを使用する
 
+* TLSに関する値を引数で渡すようにする
 * XMPP用の引数とTLS用の引数とを分けて(XmppArgs, TlsArgs)のようにすることを検討する
+	* XMPP用の引数はXmpp.hsと共通で使えると思う

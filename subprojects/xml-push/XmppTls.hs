@@ -36,6 +36,7 @@ data XmppTls h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe Mpi () (HandleMonad h) ())
 
 data XmppTlsArgs = XmppTlsArgs {
+	mechanisms :: [BS.ByteString],
 	myJid :: Jid,
 	password :: BS.ByteString,
 	yourJid :: Jid
@@ -106,14 +107,11 @@ toMessage :: Jid -> XmlNode -> Mpi
 toMessage you n = Message
 	(tagsType "chat") { tagId = Just "hoge", tagTo = Just you } [n]
 
-mechanisms :: [BS.ByteString]
-mechanisms = ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
-
 makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 	) => One h -> XmppTlsArgs -> HandleMonad h (XmppTls h)
-makeXmppTls (One h) (XmppTlsArgs me ps you) = do
+makeXmppTls (One h) (XmppTlsArgs ms me ps you) = do
 	nr <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = me
@@ -127,9 +125,7 @@ makeXmppTls (One h) (XmppTlsArgs me ps you) = do
 	c <- liftBase $ readCertificateChain ["certs/yoshikuni.sample_crt"]
 	(inc, otc) <-
 		open' h "localhost" ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] ca g'
-	(`evalStateT` ss) . runPipe_ $ fromTChan inc
-		=$= sasl d mechanisms
-		=$= toTChan otc
+	(`evalStateT` ss) . runPipe_ $ fromTChan inc =$= sasl d ms =$= toTChan otc
 	(Just ns, _fts) <- runWriterT . runPipe $ fromTChan inc
 		=$= bind d rsc
 		=@= toTChan otc
