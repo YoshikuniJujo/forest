@@ -30,3 +30,6 @@ XmppTls.hsに対する変更予定点
 * pushIdを変更する
 	+ wantResponseがFalseの場合にwriteTChan wc Nothingをする
 * pushIdでのnrへとwcへの書き込みをひとつのトランザクションで行うことを検討する
+
+* Xmpp型が保持する出力用の値は以下のようにする必要がある
+	+ (TChan (Either BS.ByteString (XmlNode, pt)))
