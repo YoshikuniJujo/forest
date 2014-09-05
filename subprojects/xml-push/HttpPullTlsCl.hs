@@ -2,7 +2,7 @@
 	PackageImports #-}
 
 module HttpPullTlsCl (
-	HttpPullTlsCl, One(..), testPusher,
+	HttpPullTlsCl, HttpPullTlsClArgs(..), One(..), testPusher,
 	) where
 
 import Prelude hiding (filter)
@@ -34,9 +34,15 @@ data HttpPullTlsCl h = HttpPullTlsCl
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
 
+data HttpPullTlsClArgs = HttpPullTlsClArgs {
+	domainName :: String,
+	path :: FilePath,
+	poll :: XmlNode
+	}
+
 instance XmlPusher HttpPullTlsCl where
 	type NumOfHandle HttpPullTlsCl = One
-	type PusherArg HttpPullTlsCl = (String, FilePath, XmlNode)
+	type PusherArg HttpPullTlsCl = HttpPullTlsClArgs
 	type PushedType HttpPullTlsCl = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullTlsCl r _) = r
@@ -45,8 +51,8 @@ instance XmlPusher HttpPullTlsCl where
 		=$= w
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
-	One h -> (String, FilePath, XmlNode) -> HandleMonad h (HttpPullTlsCl h)
-makeHttpPull (One h) (hn, fp, pl) = do
+	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
+makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl) = do
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
@@ -65,7 +71,7 @@ talkC h addr pth pl = do
 		=$= talk h addr pth
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . forever $ do
-		liftBase $ threadDelay 15000000
+		liftBase $ threadDelay 10000000
 		liftBase . atomically $ writeTChan otc pl
 	return (inc, otc)
 
