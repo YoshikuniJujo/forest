@@ -2,7 +2,7 @@
 	TypeFamilies, FlexibleContexts,
 	UndecidableInstances, PackageImports #-}
 
-module Xmpp (Xmpp, XmppPushType(..), One(..), XmppArgs(..), testPusher) where
+module Xmpp (Xmpp, One(..), XmppArgs(..), testPusher) where
 
 import Prelude hiding (filter)
 
@@ -30,11 +30,11 @@ import qualified Data.ByteString as BS
 
 import XmlPusher
 
-data Xmpp pt h = Xmpp
+data Xmpp h = Xmpp
 	(XmlNode -> Bool)
 	Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
-	(TChan (Either BS.ByteString (XmlNode, pt)))
+	(TChan (Either BS.ByteString (XmlNode, ())))
 
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
@@ -44,10 +44,10 @@ data XmppArgs = XmppArgs {
 	passowrd :: BS.ByteString,
 	yourJid :: Jid }
 
-instance XmppPushType pt => XmlPusher (Xmpp pt) where
-	type NumOfHandle (Xmpp pt) = One
-	type PusherArg (Xmpp pt) = XmppArgs
-	type PushedType (Xmpp pt) = pt
+instance XmlPusher Xmpp where
+	type NumOfHandle Xmpp = One
+	type PusherArg Xmpp = XmppArgs
+	type PushedType Xmpp = ()
 	generate = makeXmpp
 	readFrom (Xmpp wr _you nr r wc) = r
 		=$= pushId wr nr wc
@@ -98,10 +98,7 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-class XmppPushType tp where
-	needResponse :: tp -> Bool
-
-makeResponse :: (MonadBase IO m, XmppPushType pt) =>
+makeResponse :: MonadBase IO m =>
 	(XmlNode -> Bool) -> Jid ->
 	TChan (Maybe BS.ByteString) ->
 	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
@@ -121,8 +118,7 @@ makeResponse inr you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 				lift . liftBase . putStrLn $ "HERE: " ++ show i
 	makeResponse inr you nr
 
-makeIqMessage :: XmppPushType pt =>
-	(XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
+makeIqMessage :: (XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
 makeIqMessage inr you r uuid (n, nr) =
 	if inr n then toIq you n r else toMessage you n uuid
 
@@ -143,9 +139,9 @@ toMessage you n r = Message
 	(tagsType "chat") { tagId = Just $ toASCIIBytes r, tagTo = Just you } [n]
 
 makeXmpp :: (
-	HandleLike h, MonadBaseControl IO (HandleMonad h), XmppPushType pt,
+	HandleLike h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> XmppArgs -> HandleMonad h (Xmpp pt h)
+	) => One h -> XmppArgs -> HandleMonad h (Xmpp h)
 makeXmpp (One h) (XmppArgs ms wr inr me ps you) = do
 	nr <- liftBase $ atomically newTChan
 	wc <- liftBase $ atomically newTChan
