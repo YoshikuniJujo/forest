@@ -14,6 +14,7 @@ import "monads-tf" Control.Monad.Writer
 import "monads-tf" Control.Monad.Error
 import Control.Monad.Base
 import Control.Monad.Trans.Control
+import Control.Concurrent hiding (yield)
 import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
@@ -36,7 +37,8 @@ import XmlPusher
 
 data XmppTls pt h = XmppTls Jid (TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
-	(Pipe Mpi () (HandleMonad h) ())
+	(TChan (Either BS.ByteString (XmlNode, pt)))
+--	(Pipe Mpi () (HandleMonad h) ())
 
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
@@ -63,9 +65,12 @@ instance XmppPushType pt => XmlPusher (XmppTls pt) where
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (XmppTls you nr _ w) = addRandom
-		=$= makeResponse you nr
-		=$= w
+	writeTo (XmppTls you nr _ w) = convert maybeToEither =$= toTChan w
+	
+
+maybeToEither :: Maybe a -> Either BS.ByteString a
+maybeToEither (Just x) = Right x
+maybeToEither _ = Left ""
 
 pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
 pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
@@ -92,12 +97,14 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	addRandom
 
 makeResponse :: (MonadBase IO m, XmppPushType pt) => Jid ->
-	TChan (Maybe BS.ByteString) -> Pipe (Maybe (XmlNode, pt), UUID) Mpi m ()
+	TChan (Maybe BS.ByteString) ->
+	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
 makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	e <- lift . liftBase . atomically $ isEmptyTChan nr
 	uuid <- lift $ liftBase randomIO
-	if e then maybe (return ()) (yield . makeIqMessage you r uuid) mn else do
-		i <- lift . liftBase . atomically $ readTChan nr
+	if e
+	then either (const $ return ()) (yield . makeIqMessage you r uuid) mn
+	else do	i <- lift . liftBase . atomically $ readTChan nr
 		maybe (return ()) yield $ toResponse you mn i uuid
 	makeResponse you nr
 
@@ -105,13 +112,15 @@ makeIqMessage :: XmppPushType pt => Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
 makeIqMessage you r uuid (n, nr) =
 	if needResponse nr then toIq you n r else toMessage you n uuid
 
-toResponse :: Jid -> Maybe (XmlNode, pt) -> Maybe BS.ByteString -> UUID -> Maybe Mpi
+toResponse :: Jid -> Either BS.ByteString (XmlNode, pt) ->
+	Maybe BS.ByteString -> UUID -> Maybe Mpi
 toResponse you mn (Just i) _ = case mn of
-	Just (n, _) -> Just $
+	Right (n, _) -> Just $
 		Iq (tagsType "result") { tagId = Just i, tagTo = Just $ you } [n]
 	_ -> Just $
 		Iq (tagsType "result") { tagId = Just i, tagTo = Just you } []
-toResponse you mn _ uuid = flip (toMessage you) uuid . fst <$> mn
+toResponse you (Right n) _ uuid = Just . flip (toMessage you) uuid $ fst n
+toResponse _ _ _ _ = Nothing
 
 toIq :: Jid -> XmlNode -> UUID -> Mpi
 toIq you n r = Iq
@@ -122,11 +131,12 @@ toMessage you n uuid = Message
 	(tagsType "chat") { tagId = Just $ toASCIIBytes uuid, tagTo = Just you } [n]
 
 makeXmppTls :: (
-	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
+	ValidateHandle h, MonadBaseControl IO (HandleMonad h), XmppPushType pt,
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls pt h)
 makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
 	nr <- liftBase $ atomically newTChan
+	wc <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 	let	(Jid un d (Just rsc)) = me
 		(cn, g') = cprgGenerate 32 g
@@ -144,9 +154,10 @@ makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
 		=$= bind d rsc
 		=@= toTChan otc
 	runPipe_ $ yield (Presence tagsNull []) =$= output =$= toTChan otc
+	(>> return ()) . liftBaseDiscard forkIO . runPipe_ $ fromTChan wc
+		=$= addRandom =$= makeResponse you nr =$= output =$= toTChan otc
 	let	r = fromTChan inc =$= input ns
-		w = output =$= toTChan otc
-	return $ XmppTls you nr r w
+	return $ XmppTls you nr r wc
 
 data St = St [(BS.ByteString, BS.ByteString)]
 instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss

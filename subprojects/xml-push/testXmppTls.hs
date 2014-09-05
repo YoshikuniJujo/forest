@@ -22,7 +22,7 @@ main = do
 	h <- connectTo "localhost" $ PortNumber 5222
 	ca <- readCertificateStore ["certs/cacert.sample_pem"]
 	k <- readKey "certs/yoshikuni.sample_key"
-	c <- readCertificateChain ["certs/yoshiuni.sample_crt"]
+	c <- readCertificateChain ["certs/yoshikuni.sample_crt"]
 	testPusher (undefined :: XmppTls NeedResponse Handle) (One h) (
 		XmppArgs ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 			(toJid me) ps (toJid you),

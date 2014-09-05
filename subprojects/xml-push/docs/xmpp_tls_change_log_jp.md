@@ -19,17 +19,14 @@ XmppTls.hsに対する変更予定点
 	- certificate chain
 	- keyとcertificate chainはMaybe型またはリストにしておくか
 
+* Xmpp型が保持する出力用の値を変更する
+	+ (Pipe Mpi () (HandleMonad h) ())から
+	+ (TChan (Either BS.ByteString (XmlNode, pt)))にする
+	+ makeXmppでfromTChan wc =$= addRandom ...をforkIOで走らせる
+
 予定
 ----
-
-* Xmpp型が保持する出力用の値を変更する
-	+ (Pipe Mpi () (HandleMonad h) ())から(TChan (Maybe (XmlNode, pt)))にする
-	+ makeXmppでfromTChan wc =$= addRandom ...をforkIOで走らせる
 * Xmpp型が保持する値にwantResponseを追加する
 * Xmppの引数の型にwantResponse :: XmlNode -> Boolを追加する
 * pushIdを変更する
-	+ wantResponseがFalseの場合にwriteTChan wc Nothingをする
-* pushIdでのnrへとwcへの書き込みをひとつのトランザクションで行うことを検討する
-
-* Xmpp型が保持する出力用の値は以下のようにする必要がある
-	+ (TChan (Either BS.ByteString (XmlNode, pt)))
+	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする
