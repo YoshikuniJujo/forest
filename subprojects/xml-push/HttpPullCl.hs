@@ -27,7 +27,7 @@ import qualified Data.ByteString.Lazy as LBS
 
 import XmlPusher
 
-data HttpPullCl pt h = HttpPullCl
+data HttpPullCl h = HttpPullCl
 	(Pipe () XmlNode (HandleMonad h) ())
 	(Pipe XmlNode () (HandleMonad h) ())
 
@@ -40,10 +40,10 @@ data HttpPullClArgs = HttpPullClArgs {
 	getPath :: XmlNode -> FilePath
 	}
 
-instance XmlPusher (HttpPullCl pt) where
-	type NumOfHandle (HttpPullCl pt) = One
-	type PusherArg (HttpPullCl pt) = HttpPullClArgs
-	type PushedType (HttpPullCl pt) = pt
+instance XmlPusher HttpPullCl where
+	type NumOfHandle HttpPullCl = One
+	type PusherArg HttpPullCl = HttpPullClArgs
+	type PushedType HttpPullCl = ()
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
 	writeTo (HttpPullCl _ w) = filter isJust
@@ -51,7 +51,7 @@ instance XmlPusher (HttpPullCl pt) where
 		=$= w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl pt h)
+	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl h)
 makeHttpPull (One h) (HttpPullClArgs hn fp pl ip gdr gp) = do
 	dr <- liftBase . atomically $ newTVar Nothing
 	(inc, otc) <- talkC h hn fp gp pl ip dr gdr
