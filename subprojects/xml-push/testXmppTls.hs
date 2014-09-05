@@ -26,10 +26,15 @@ main = do
 	c <- readCertificateChain ["certs/yoshikuni.sample_crt"]
 	testPusher (undefined :: XmppTls NeedResponse Handle) (One h) (
 		XmppArgs ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
-			wntRspns (toJid me) ps (toJid you),
+			wntRspns iNdRspns (toJid me) ps (toJid you),
 		TlsArgs ca [(k, c)] )
 		(NeedResponse True)
 
 wntRspns :: XmlNode -> Bool
 wntRspns (XmlNode (_, "monologue") _ [] []) = False
+wntRspns (XmlNode (_, "message") _ [] []) = False
 wntRspns _ = True
+
+iNdRspns :: XmlNode -> Bool
+iNdRspns (XmlNode (_, "message") _ [] []) = False
+iNdRspns _ = True

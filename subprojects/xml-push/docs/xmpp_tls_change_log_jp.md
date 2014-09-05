@@ -27,6 +27,9 @@ XmppTls.hsに対する変更予定点
 * Xmppの引数の型にwantResponse :: XmlNode -> Boolを追加する
 * pushIdを変更する
 	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする
+* XmlNodeの値によってiqかmessageかを選べるようにした
 
 予定
 ----
+
+* 余計なクラス等を消去する
