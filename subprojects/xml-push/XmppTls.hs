@@ -63,8 +63,8 @@ instance XmppPushType pt => XmlPusher (XmppTls pt) where
 	type PusherArg (XmppTls pt) = (XmppArgs, TlsArgs)
 	type PushedType (XmppTls pt) = pt
 	generate = makeXmppTls
-	readFrom (XmppTls wr _you nr r _) = r
-		=$= pushId nr
+	readFrom (XmppTls wr _you nr r wc) = r
+		=$= pushId wr nr wc
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
@@ -75,18 +75,29 @@ maybeToEither :: Maybe a -> Either BS.ByteString a
 maybeToEither (Just x) = Right x
 maybeToEither _ = Left ""
 
-pushId :: MonadBase IO m => TChan (Maybe BS.ByteString) -> Pipe Mpi Mpi m ()
-pushId nr = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
-	Iq Tags { tagType = Just "get", tagId = Just i } _ -> do
-		lift . liftBase . atomically . writeTChan nr $ Just i
-		yield mpi >> pushId nr
-	Iq Tags { tagType = Just "set", tagId = Just i } _ -> do
-		lift . liftBase . atomically . writeTChan nr $ Just i
-		yield mpi >> pushId nr
-	Message _ _ -> do
-		lift . liftBase . atomically $ writeTChan nr Nothing
-		yield mpi >> pushId nr
-	_ -> yield mpi >> pushId nr
+pushId :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe BS.ByteString) ->
+	TChan (Either BS.ByteString (XmlNode, pt)) -> Pipe Mpi Mpi m ()
+pushId wr nr wc = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
+	Iq Tags { tagType = Just "get", tagId = Just i } [n]
+		| wr n -> do
+			lift . liftBase . atomically . writeTChan nr $ Just i
+			yield mpi >> pushId wr nr wc
+		| otherwise -> do
+			lift . liftBase . atomically . writeTChan wc $ Left i
+			yield mpi >> pushId wr nr wc
+	Iq Tags { tagType = Just "set", tagId = Just i } [n]
+		| wr n -> do
+			lift . liftBase . atomically . writeTChan nr $ Just i
+			yield mpi >> pushId wr nr wc
+		| otherwise -> do
+			lift . liftBase . atomically . writeTChan wc $ Left i
+			yield mpi >> pushId wr nr wc
+	Message _ [n]
+		| wr n -> do
+			lift . liftBase . atomically $ writeTChan nr Nothing
+			yield mpi >> pushId wr nr wc
+		| otherwise -> yield mpi >> pushId wr nr wc
+	_ -> yield mpi >> pushId wr nr wc
 
 fromMessage :: Mpi -> Maybe XmlNode
 fromMessage (Message _ts [n]) = Just n
@@ -103,12 +114,16 @@ makeResponse :: (MonadBase IO m, XmppPushType pt) => Jid ->
 	TChan (Maybe BS.ByteString) ->
 	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
 makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
-	e <- lift . liftBase . atomically $ isEmptyTChan nr
-	uuid <- lift $ liftBase randomIO
-	if e
-	then either (const $ return ()) (yield . makeIqMessage you r uuid) mn
-	else do	i <- lift . liftBase . atomically $ readTChan nr
-		maybe (return ()) yield $ toResponse you mn i uuid
+	case mn of
+		Left i | not $ BS.null i -> maybe (return ()) yield $
+			toResponse you mn (Just i) undefined
+		_ -> do	e <- lift . liftBase . atomically $ isEmptyTChan nr
+			uuid <- lift $ liftBase randomIO
+			if e
+			then either (const $ return ())
+				(yield . makeIqMessage you r uuid) mn
+			else do	i <- lift . liftBase . atomically $ readTChan nr
+				maybe (return ()) yield $ toResponse you mn i uuid
 	makeResponse you nr
 
 makeIqMessage :: XmppPushType pt => Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi

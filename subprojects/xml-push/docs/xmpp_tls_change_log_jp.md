@@ -25,9 +25,8 @@ XmppTls.hsに対する変更予定点
 	+ makeXmppでfromTChan wc =$= addRandom ...をforkIOで走らせる
 * Xmpp型が保持する値にwantResponseを追加する
 * Xmppの引数の型にwantResponse :: XmlNode -> Boolを追加する
+* pushIdを変更する
+	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする
 
 予定
 ----
-
-* pushIdを変更する
-	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする
