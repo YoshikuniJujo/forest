@@ -33,8 +33,9 @@ data HttpPullCl pt h = HttpPullCl
 data HttpPullClArgs = HttpPullClArgs {
 	domainName :: String,
 	path :: FilePath,
-	poll :: XmlNode
-	} deriving Show
+	poll :: XmlNode,
+	isPending :: XmlNode -> Bool
+	}
 
 instance XmlPusher (HttpPullCl pt) where
 	type NumOfHandle (HttpPullCl pt) = One
@@ -48,23 +49,37 @@ instance XmlPusher (HttpPullCl pt) where
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl pt h)
-makeHttpPull (One h) (HttpPullClArgs hn fp pl) = do
-	(inc, otc) <- talkC h hn fp pl
+makeHttpPull (One h) (HttpPullClArgs hn fp pl ip) = do
+	(inc, otc) <- talkC h hn fp pl ip
 	return $ HttpPullCl (fromTChan inc) (toTChan otc)
 
 talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String ->
-	FilePath -> XmlNode -> HandleMonad h (TChan XmlNode, TChan XmlNode)
-talkC h addr pth pl = do
+	h -> String -> FilePath -> XmlNode -> (XmlNode -> Bool) ->
+	HandleMonad h (TChan XmlNode, TChan XmlNode)
+talkC h addr pth pl ip = do
 	inc <- liftBase $ atomically newTChan
+	inc' <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= talk h addr pth
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . forever $ do
 		liftBase $ threadDelay 10000000
+		liftBase $ polling pl ip inc inc' otc
+		{-
 		liftBase . atomically $ writeTChan otc pl
-	return (inc, otc)
+		r <- liftBase $ readTChan inc
+		-}
+	return (inc', otc)
+
+polling :: XmlNode -> (XmlNode -> Bool) ->
+	TChan XmlNode -> TChan XmlNode -> TChan XmlNode -> IO ()
+polling pl ip i i' o = do
+	atomically $ writeTChan o pl
+	r <- atomically $ readTChan i
+	if ip r
+	then atomically (writeTChan i' r) >> polling pl ip i i' o
+	else return ()
 
 talk :: (HandleLike h) =>
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
