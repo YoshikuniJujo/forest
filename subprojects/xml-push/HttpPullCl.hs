@@ -62,7 +62,7 @@ talkC h addr pth pl = do
 		=$= talk h addr pth
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . forever $ do
-		liftBase $ threadDelay 15000000
+		liftBase $ threadDelay 10000000
 		liftBase . atomically $ writeTChan otc pl
 	return (inc, otc)
 

@@ -67,8 +67,8 @@ talk h ip ep inc otc = do
 		=$= xmlNode []
 		=$= toList
 	if case rns of [n] -> ip n; _ -> False
-	then (flushOr otc ep =$=) . (await >>=) . maybe (return ()) $ \ns ->
-		lift . putResponse h . responseP $ LBS.fromChunks [xmlString ns]
+	then (flushOr otc ep =$=) . (await >>=) . maybe (return ()) $ \n ->
+		lift . putResponse h . responseP $ LBS.fromChunks [xmlString [n]]
 	else do	mapM_ yield rns =$= toTChan inc
 		(fromTChan otc =$=) . (await >>=) . maybe (return ()) $ \n ->
 			lift . putResponse h . responseP
@@ -79,10 +79,12 @@ responseP :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	LBS.ByteString -> Response Pipe h
 responseP = response
 
-flushOr :: MonadBase IO m => TChan XmlNode -> XmlNode -> Pipe () [XmlNode] m ()
+flushOr :: MonadBase IO m => TChan XmlNode -> XmlNode -> Pipe () XmlNode m ()
 flushOr c ep = do
 	e <- lift . liftBase . atomically $ isEmptyTChan c
-	if e then yield [ep] else flushTChan c
+	if e then yield ep else do
+		po <- lift . liftBase . atomically $ readTChan c
+		yield po
 
 flushTChan :: MonadBase IO m => TChan a -> Pipe () [a] m ()
 flushTChan c = lift (liftBase . atomically $ allTChan c) >>= yield
