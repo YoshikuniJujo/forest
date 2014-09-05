@@ -3,7 +3,7 @@
 	UndecidableInstances, PackageImports #-}
 
 module XmppTls (
-	XmppTls, XmppPushType(..), One(..),
+	XmppTls, One(..),
 	XmppArgs(..), TlsArgs(..), testPusher) where
 
 import Prelude hiding (filter)
@@ -35,12 +35,12 @@ import qualified Data.ByteString as BS
 
 import XmlPusher
 
-data XmppTls pt h = XmppTls
+data XmppTls h = XmppTls
 	(XmlNode -> Bool)
 	Jid
 	(TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
-	(TChan (Either BS.ByteString (XmlNode, pt)))
+	(TChan (Either BS.ByteString (XmlNode, ())))
 
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
@@ -56,13 +56,10 @@ data TlsArgs = TlsArgs {
 	keyChain :: [(CertSecretKey, CertificateChain)]
 	}
 
-class XmppPushType pt where
-	needResponse :: pt -> Bool
-
-instance XmppPushType pt => XmlPusher (XmppTls pt) where
-	type NumOfHandle (XmppTls pt) = One
-	type PusherArg (XmppTls pt) = (XmppArgs, TlsArgs)
-	type PushedType (XmppTls pt) = pt
+instance XmlPusher XmppTls where
+	type NumOfHandle XmppTls = One
+	type PusherArg XmppTls = (XmppArgs, TlsArgs)
+	type PushedType XmppTls = ()
 	generate = makeXmppTls
 	readFrom (XmppTls wr _you nr r wc) = r
 		=$= pushId wr nr wc
@@ -111,7 +108,7 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 	yield (x, r)
 	addRandom
 
-makeResponse :: (MonadBase IO m, XmppPushType pt) =>
+makeResponse :: MonadBase IO m =>
 	(XmlNode -> Bool) -> Jid ->
 	TChan (Maybe BS.ByteString) ->
 	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
@@ -128,8 +125,7 @@ makeResponse inr you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 				maybe (return ()) yield $ toResponse you mn i uuid
 	makeResponse inr you nr
 
-makeIqMessage :: XmppPushType pt =>
-	(XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
+makeIqMessage :: (XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
 makeIqMessage inr you r uuid (n, nr) =
 	if inr n then toIq you n r else toMessage you n uuid
 
@@ -152,9 +148,9 @@ toMessage you n uuid = Message
 	(tagsType "chat") { tagId = Just $ toASCIIBytes uuid, tagTo = Just you } [n]
 
 makeXmppTls :: (
-	ValidateHandle h, MonadBaseControl IO (HandleMonad h), XmppPushType pt,
+	ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
-	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls pt h)
+	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls h)
 makeXmppTls (One h) (XmppArgs ms wr inr me ps you, TlsArgs ca kcs) = do
 	nr <- liftBase $ atomically newTChan
 	wc <- liftBase $ atomically newTChan

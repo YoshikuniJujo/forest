@@ -28,8 +28,7 @@ XmppTls.hsに対する変更予定点
 * pushIdを変更する
 	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする
 * XmlNodeの値によってiqかmessageかを選べるようにした
+	+ 余計なクラス等を消去する
 
 予定
 ----
-
-* 余計なクラス等を消去する
