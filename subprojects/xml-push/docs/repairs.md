@@ -1,6 +1,16 @@
 修正点
 ======
 
+XML PUSHER
+----------
+
+### 対応済
+
+### 予定
+
+* 明示的にNothingを渡す代わりに以下の最初に引数を与えることにする
+	+ noNeedResponse :: XmlNode -> Bool
+
 HTTP PULL Client
 ----------------
 
