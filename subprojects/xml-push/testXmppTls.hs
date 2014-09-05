@@ -3,6 +3,7 @@
 import Control.Applicative
 import System.IO
 import System.Environment
+import Text.XML.Pipe
 import Network
 import Network.XMPiPe.Core.C2S.Client
 import Network.PeyoTLS.ReadFile
@@ -25,6 +26,10 @@ main = do
 	c <- readCertificateChain ["certs/yoshikuni.sample_crt"]
 	testPusher (undefined :: XmppTls NeedResponse Handle) (One h) (
 		XmppArgs ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
-			(toJid me) ps (toJid you),
+			wntRspns (toJid me) ps (toJid you),
 		TlsArgs ca [(k, c)] )
 		(NeedResponse True)
+
+wntRspns :: XmlNode -> Bool
+wntRspns (XmlNode (_, "monologue") _ [] []) = False
+wntRspns _ = True

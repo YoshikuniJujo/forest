@@ -23,10 +23,11 @@ XmppTls.hsに対する変更予定点
 	+ (Pipe Mpi () (HandleMonad h) ())から
 	+ (TChan (Either BS.ByteString (XmlNode, pt)))にする
 	+ makeXmppでfromTChan wc =$= addRandom ...をforkIOで走らせる
+* Xmpp型が保持する値にwantResponseを追加する
+* Xmppの引数の型にwantResponse :: XmlNode -> Boolを追加する
 
 予定
 ----
-* Xmpp型が保持する値にwantResponseを追加する
-* Xmppの引数の型にwantResponse :: XmlNode -> Boolを追加する
+
 * pushIdを変更する
 	+ wantResponseがFalseの場合にwriteTChan wc (Left i)をする

@@ -35,17 +35,20 @@ import qualified Data.ByteString as BS
 
 import XmlPusher
 
-data XmppTls pt h = XmppTls Jid (TChan (Maybe BS.ByteString))
+data XmppTls pt h = XmppTls
+	(XmlNode -> Bool)
+	Jid
+	(TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(TChan (Either BS.ByteString (XmlNode, pt)))
---	(Pipe Mpi () (HandleMonad h) ())
 
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
+	wantResponse :: XmlNode -> Bool,
 	myJid :: Jid,
 	password :: BS.ByteString,
 	yourJid :: Jid
-	} deriving Show
+	}
 
 data TlsArgs = TlsArgs {
 	certificateAuthority :: CertificateStore,
@@ -60,12 +63,12 @@ instance XmppPushType pt => XmlPusher (XmppTls pt) where
 	type PusherArg (XmppTls pt) = (XmppArgs, TlsArgs)
 	type PushedType (XmppTls pt) = pt
 	generate = makeXmppTls
-	readFrom (XmppTls _you nr r _) = r
+	readFrom (XmppTls wr _you nr r _) = r
 		=$= pushId nr
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (XmppTls you nr _ w) = convert maybeToEither =$= toTChan w
+	writeTo (XmppTls _ you nr _ w) = convert maybeToEither =$= toTChan w
 	
 
 maybeToEither :: Maybe a -> Either BS.ByteString a
@@ -134,7 +137,7 @@ makeXmppTls :: (
 	ValidateHandle h, MonadBaseControl IO (HandleMonad h), XmppPushType pt,
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 	) => One h -> (XmppArgs, TlsArgs) -> HandleMonad h (XmppTls pt h)
-makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
+makeXmppTls (One h) (XmppArgs ms wr me ps you, TlsArgs ca kcs) = do
 	nr <- liftBase $ atomically newTChan
 	wc <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
@@ -157,7 +160,7 @@ makeXmppTls (One h) (XmppArgs ms me ps you, TlsArgs ca kcs) = do
 	(>> return ()) . liftBaseDiscard forkIO . runPipe_ $ fromTChan wc
 		=$= addRandom =$= makeResponse you nr =$= output =$= toTChan otc
 	let	r = fromTChan inc =$= input ns
-	return $ XmppTls you nr r wc
+	return $ XmppTls wr you nr r wc
 
 data St = St [(BS.ByteString, BS.ByteString)]
 instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss
