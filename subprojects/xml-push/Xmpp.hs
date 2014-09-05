@@ -39,6 +39,7 @@ data Xmpp pt h = Xmpp
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
 	wantResponse :: XmlNode -> Bool,
+	iNeedResponse :: XmlNode -> Bool,
 	myJid :: Jid,
 	passowrd :: BS.ByteString,
 	yourJid :: Jid }
@@ -100,10 +101,11 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 class XmppPushType tp where
 	needResponse :: tp -> Bool
 
-makeResponse :: (MonadBase IO m, XmppPushType pt) => Jid ->
+makeResponse :: (MonadBase IO m, XmppPushType pt) =>
+	(XmlNode -> Bool) -> Jid ->
 	TChan (Maybe BS.ByteString) ->
 	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
-makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
+makeResponse inr you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	case mn of
 		Left i | not $ BS.null i -> do
 			either (const $ return ()) yield $
@@ -112,16 +114,17 @@ makeResponse you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 			uuid <- lift $ liftBase randomIO
 			if e
 			then either (const $ return ())
-				(yield . makeIqMessage you r uuid) mn
+				(yield . makeIqMessage inr you r uuid) mn
 			else do	i <- lift . liftBase . atomically $ readTChan nr
 				either (const $ return ()) yield $
 					toResponse you mn i uuid
 				lift . liftBase . putStrLn $ "HERE: " ++ show i
-	makeResponse you nr
+	makeResponse inr you nr
 
-makeIqMessage :: XmppPushType pt => Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
-makeIqMessage you r uuid (n, nr) =
-	if needResponse nr then toIq you n r else toMessage you n uuid
+makeIqMessage :: XmppPushType pt =>
+	(XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
+makeIqMessage inr you r uuid (n, nr) =
+	if inr n then toIq you n r else toMessage you n uuid
 
 toResponse ::
 	Jid -> Either BS.ByteString (XmlNode, pt) -> Maybe BS.ByteString -> UUID -> Either BS.ByteString Mpi
@@ -143,7 +146,7 @@ makeXmpp :: (
 	HandleLike h, MonadBaseControl IO (HandleMonad h), XmppPushType pt,
 	MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 	) => One h -> XmppArgs -> HandleMonad h (Xmpp pt h)
-makeXmpp (One h) (XmppArgs ms wr me ps you) = do
+makeXmpp (One h) (XmppArgs ms wr inr me ps you) = do
 	nr <- liftBase $ atomically newTChan
 	wc <- liftBase $ atomically newTChan
 	(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
@@ -160,7 +163,7 @@ makeXmpp (One h) (XmppArgs ms wr me ps you) = do
 		=@= toHandleLike (THandle h)
 	runPipe_ $ yield (Presence tagsNull []) =$= output =$= toHandleLike h
 	(>> return ()) . liftBaseDiscard forkIO . runPipe_ $ fromTChan wc
-		=$= addRandom =$= makeResponse you nr =$= output =$= toHandleLike h
+		=$= addRandom =$= makeResponse inr you nr =$= output =$= toHandleLike h
 	let	r = fromHandleLike h =$= input ns
 	return $ Xmpp wr you nr r wc
 
