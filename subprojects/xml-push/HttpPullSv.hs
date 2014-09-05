@@ -16,6 +16,7 @@ import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
+import Data.Pipe.IO (debug)
 import Data.Pipe.List
 import Data.Pipe.Flow
 import Data.Pipe.TChan
@@ -61,6 +62,7 @@ talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	TChan XmlNode -> TChan XmlNode -> Pipe () () (HandleMonad h) ()
 talk h ip ep inc otc = do
 	r <- lift $ getRequest h
+	lift . liftBase . print $ requestPath r
 	rns <- requestBody r
 		=$= xmlEvent
 		=$= convert fromJust
@@ -82,6 +84,7 @@ responseP = response
 flushOr :: MonadBase IO m => TChan XmlNode -> XmlNode -> Pipe () XmlNode m ()
 flushOr c ep = do
 	e <- lift . liftBase . atomically $ isEmptyTChan c
+	lift . liftBase $ print e
 	if e then yield ep else do
 		po <- lift . liftBase . atomically $ readTChan c
 		yield po
