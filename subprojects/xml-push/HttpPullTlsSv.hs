@@ -36,7 +36,7 @@ data HttpPullTlsSv h = HttpPullTlsSv
 
 instance XmlPusher HttpPullTlsSv where
 	type NumOfHandle HttpPullTlsSv = One
-	type PusherArg HttpPullTlsSv = XmlNode -> Bool
+	type PusherArg HttpPullTlsSv = (XmlNode -> Bool, XmlNode)
 	type PushedType HttpPullTlsSv = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullTlsSv r _) = r
@@ -45,28 +45,28 @@ instance XmlPusher HttpPullTlsSv where
 		=$= w
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
-	One h -> (XmlNode -> Bool) -> HandleMonad h (HttpPullTlsSv h)
-makeHttpPull (One h) ip = do
+	One h -> (XmlNode -> Bool, XmlNode) -> HandleMonad h (HttpPullTlsSv h)
+makeHttpPull (One h) (ip, ep) = do
 	k <- liftBase $ readKey "certs/localhost.sample_key"
 	c <- liftBase $ readCertificateChain ["certs/localhost.sample_crt"]
 	g <- liftBase (cprgCreate <$> createEntropyPool :: IO SystemRNG)
 	(inc, otc) <- (`run` g) $ do
 		t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [(k, c)] Nothing
-		runXml t ip
+		runXml t ip ep
 	return $ HttpPullTlsSv (fromTChan inc) (toTChan otc)
 
-runXml :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> (XmlNode -> Bool) -> HandleMonad h (TChan XmlNode, TChan XmlNode)
-runXml h ip = do
+runXml :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) => h ->
+	(XmlNode -> Bool) -> XmlNode -> HandleMonad h (TChan XmlNode, TChan XmlNode)
+runXml h ip ep = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
-	_ <- liftBaseDiscard forkIO . runPipe_ $ talk h ip inc otc
+	_ <- liftBaseDiscard forkIO . runPipe_ $ talk h ip ep inc otc
 	return (inc, otc)
 
 talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
-	h -> (XmlNode -> Bool) ->
+	h -> (XmlNode -> Bool) -> XmlNode ->
 	TChan XmlNode -> TChan XmlNode -> Pipe () () (HandleMonad h) ()
-talk h ip inc otc = do
+talk h ip ep inc otc = do
 	r <- lift $ getRequest h
 	rns <- requestBody r
 		=$= xmlEvent
@@ -74,17 +74,25 @@ talk h ip inc otc = do
 		=$= xmlNode []
 		=$= toList
 	if case rns of [n] -> ip n; _ -> False
-	then (flushTChan otc =$=) . (await >>=) . maybe (return ()) $ \ns ->
-		lift . putResponse h . responseP $ LBS.fromChunks [xmlString ns]
+	then (flushOr otc ep =$=) . (await >>=) . maybe (return ()) $ \n ->
+		lift . putResponse h . responseP $ LBS.fromChunks [xmlString [n]]
 	else do	mapM_ yield rns =$= toTChan inc
 		(fromTChan otc =$=) . (await >>=) . maybe (return ()) $ \n ->
 			lift . putResponse h . responseP
 				$ LBS.fromChunks [xmlString [n]]
-	talk h ip inc otc
+	talk h ip ep inc otc
 
 responseP :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	LBS.ByteString -> Response Pipe h
 responseP = response
+
+flushOr :: MonadBase IO m => TChan XmlNode -> XmlNode -> Pipe () XmlNode m ()
+flushOr c ep = do
+	e <- lift . liftBase . atomically $ isEmptyTChan c
+	lift . liftBase $ print e
+	if e
+	then yield ep
+	else lift (liftBase . atomically $ readTChan c) >>= yield
 
 flushTChan :: MonadBase IO m => TChan a -> Pipe () [a] m ()
 flushTChan c = lift (liftBase . atomically $ allTChan c) >>= yield

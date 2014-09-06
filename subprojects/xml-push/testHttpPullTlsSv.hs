@@ -13,9 +13,12 @@ main = do
 	soc <- listenOn $ PortNumber 443
 	forever $ do
 		(h, _, _) <- accept soc
-		void . forkIO $ testPusher
-			(undefined :: HttpPullTlsSv Handle) (One h) isPoll True
+		void . forkIO $ testPusher (undefined :: HttpPullTlsSv Handle)
+			(One h) (isPoll, endPoll) True
 
 isPoll :: XmlNode -> Bool
 isPoll (XmlNode (_, "poll") _ _ _) = True
 isPoll _ = False
+
+endPoll :: XmlNode
+endPoll = XmlNode (nullQ "nothing") [] [] []
