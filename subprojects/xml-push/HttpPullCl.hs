@@ -69,12 +69,10 @@ talkC h addr pth gp pl ip dr gdr = do
 	otc <- liftBase $ atomically newTChan
 	otc' <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
-		=$= talk lock h addr pth gp
-		=$= setDuration dr gdr
+		=$= conversation lock h addr pth gp dr gdr
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc'
-		=$= talk lock h addr pth gp
-		=$= setDuration dr gdr
+		=$= conversation lock h addr pth gp dr gdr
 		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
 		d <- liftBase . atomically $ do
@@ -82,18 +80,18 @@ talkC h addr pth gp pl ip dr gdr = do
 			case md of
 				Just d -> return d
 				_ -> retry
-		liftBase $ threadDelay d -- 10000000
---		liftBase . atomically $ readTChan lock
+		liftBase $ threadDelay d
 		liftBase $ polling pl ip inc' inc otc'
---		liftBase . atomically $ writeTChan lock ()
-{-
-	void . liftBaseDiscard forkIO . forever $ do
-		liftBase . atomically $ readTChan lock
-		liftBase . atomically $ readTChan inc >>= writeTChan inc'
-		liftBase . atomically $ writeTChan lock ()
-		-}
 	return (inc, otc)
 
+conversation :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
+	TChan () -> h -> String -> FilePath -> (XmlNode -> FilePath) ->
+	TVar (Maybe a) -> (XmlNode -> Maybe a) ->
+	Pipe XmlNode XmlNode (HandleMonad h) ()
+conversation lock h addr pth gp dr gdr =
+	talk lock h addr pth gp =$= setDuration dr gdr
+
+setDuration :: MonadBase IO m => TVar (Maybe a) -> (o -> Maybe a) -> Pipe o o m ()
 setDuration dr gdr = (await >>=) . maybe (return ()) $ \n -> case gdr n of
 	Just d -> do
 		lift . liftBase . atomically $ writeTVar dr (Just d)
@@ -104,10 +102,7 @@ polling :: XmlNode -> (XmlNode -> Bool) ->
 	TChan XmlNode -> TChan XmlNode -> TChan XmlNode -> IO ()
 polling pl ip i i' o = do
 	atomically $ writeTChan o pl
---	threadDelay 1000000
 	r <- atomically $ readTChan i
---	putStr "\n"
---	print $ ip r
 	hFlush stdout
 	if ip r
 	then atomically (writeTChan i' r) >> polling pl ip i i' o
