@@ -37,7 +37,8 @@ data HttpPullTlsCl h = HttpPullTlsCl
 data HttpPullTlsClArgs = HttpPullTlsClArgs {
 	domainName :: String,
 	path :: FilePath,
-	poll :: XmlNode
+	poll :: XmlNode,
+	isPending :: XmlNode -> Bool
 	}
 
 instance XmlPusher HttpPullTlsCl where
@@ -52,7 +53,7 @@ instance XmlPusher HttpPullTlsCl where
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
-makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl) = do
+makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip) = do
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
