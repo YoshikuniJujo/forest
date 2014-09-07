@@ -9,6 +9,9 @@ HttpPullTlsCl.hsに対する変更点
 予定
 ----
 
+* peyotlsのTChanのほうを利用するようにする
+	+ スレッドを使うためにはTChan版が必要となる
+
 * repair_polling.mdを参照のこと
 	+ [x] サーバ側の変更
 	+ [ ] クライアント側の変更
