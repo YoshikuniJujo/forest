@@ -98,13 +98,13 @@ makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip) = do
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 		(ic, oc) <- open' h "localhost"
 			["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
-		liftBase $ talkC (TChanHandle ic oc) hn fp pl
+		liftBase $ talkC (TChanHandle ic oc) hn fp pl ip
 	return $ HttpPullTlsCl (fromTChan inc) (toTChan otc)
 
 talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String ->
-	FilePath -> XmlNode -> HandleMonad h (TChan XmlNode, TChan XmlNode)
-talkC h addr pth pl = do
+	h -> String -> FilePath -> XmlNode -> (XmlNode -> Bool) ->
+	HandleMonad h (TChan XmlNode, TChan XmlNode)
+talkC h addr pth pl ip = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	inc' <- liftBase $ atomically newTChan
@@ -117,9 +117,21 @@ talkC h addr pth pl = do
 		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
 		liftBase $ threadDelay 5000000
+		liftBase $ polling pl ip inc' inc otc'
+		{-
 		liftBase . atomically $ writeTChan otc' pl
 		liftBase . atomically $ readTChan inc' >>= writeTChan inc
+		-}
 	return (inc, otc)
+
+polling :: XmlNode -> (XmlNode -> Bool) ->
+	TChan XmlNode -> TChan XmlNode -> TChan XmlNode -> IO ()
+polling pl ip i i' o = do
+	atomically $ writeTChan o pl
+	r <- atomically $ readTChan i
+	if ip r
+	then atomically (writeTChan i' r) >> polling pl ip i i' o
+	else return ()
 
 talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
