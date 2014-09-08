@@ -105,23 +105,23 @@ talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> String -> FilePath -> XmlNode -> (XmlNode -> Bool) ->
 	HandleMonad h (TChan XmlNode, TChan XmlNode)
 talkC h addr pth pl ip = do
+	lock <- liftBase . atomically $ do
+		l <- newTChan
+		writeTChan l ()
+		return l
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	inc' <- liftBase $ atomically newTChan
 	otc' <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
-		=$= talk h addr pth
+		=$= talk lock h addr pth
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc'
-		=$= talk h addr pth
+		=$= talk lock h addr pth
 		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
 		liftBase $ threadDelay 5000000
 		liftBase $ polling pl ip inc' inc otc'
-		{-
-		liftBase . atomically $ writeTChan otc' pl
-		liftBase . atomically $ readTChan inc' >>= writeTChan inc
-		-}
 	return (inc, otc)
 
 polling :: XmlNode -> (XmlNode -> Bool) ->
@@ -133,14 +133,16 @@ polling pl ip i i' o = do
 	then atomically (writeTChan i' r) >> polling pl ip i i' o
 	else return ()
 
-talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
+talk :: (HandleLike h, MonadBase IO (HandleMonad h)) => TChan () ->
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
-talk h addr pth = (await >>=) . (maybe (return ())) $ \n -> do
+talk lock h addr pth = (await >>=) . (maybe (return ())) $ \n -> do
 	let m = LBS.fromChunks [xmlString [n]]
+	lift . liftBase . atomically $ readTChan lock
 	r <- lift . request h $ post addr 80 pth (Nothing, m)
 	void $ return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
-	talk h addr pth
+	lift . liftBase . atomically $ writeTChan lock ()
+	talk lock h addr pth
