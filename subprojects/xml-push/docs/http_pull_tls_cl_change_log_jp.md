@@ -15,8 +15,9 @@ HttpPullTlsCl.hsに対する変更点
 ----
 
 * pollの間隔をサーバからのデータによって変えられるようにする
-	+ XmlNode -> Maybe Intを引数として取るようにし
-	+ それによってTVar (Maybe Int)の値を変更していく
+	+ [x] XmlNode -> Maybe Intを引数として取るようにし
+	+ [ ] makeHttpPull関数でTVar (Maybe Int)の値を作成する
+	+ [ ] TVar (Maybe Int)の値を受けとったXmlNodeによって変更していく
 
 * パスを送信ごとに変えられるようにする
 	+ [ ] XmlNode -> BS.ByteString型の引数を追加する
