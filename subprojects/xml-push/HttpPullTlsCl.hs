@@ -23,9 +23,11 @@ import Text.XML.Pipe
 import Network.TigHTTP.Client
 import Network.TigHTTP.Types
 import Network.PeyoTLS.ReadFile
-import Network.PeyoTLS.Client
+import Network.PeyoTLS.TChan.Client
 import "crypto-random" Crypto.Random
 
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 
 import XmlPusher
@@ -51,15 +53,52 @@ instance XmlPusher HttpPullTlsCl where
 		=$= convert (fst . fromJust)
 		=$= w
 
+data TChanHandle = TChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
+
+instance HandleLike TChanHandle where
+	type HandleMonad TChanHandle = IO
+	hlPut (TChanHandle _ o) = atomically . writeTChan o
+	hlGet (TChanHandle i _) = atomically . getBS i
+	hlGetLine (TChanHandle i _) = atomically $ bsGetLine i
+	hlGetContent (TChanHandle i _) = atomically $ readTChan i
+	hlDebug _ "critical" = BSC.putStrLn
+	hlDebug _ _ = const $ return ()
+	hlClose = const $ return ()
+
+bsGetLine :: TChan BS.ByteString -> STM BS.ByteString
+bsGetLine c = do
+	bs <- readTChan c
+	case BSC.span (/= '\n') bs of
+		(_, "") -> (bs `BS.append`) <$> bsGetLine c
+		(l, r) -> do
+			unGetTChan c $ BS.tail r
+			return $ chomp l
+
+chomp :: BS.ByteString -> BS.ByteString
+chomp bs = case (BSC.null bs, BSC.init bs, BSC.last bs) of
+	(True, _, _) -> bs
+	(_, ln, '\r') -> ln
+	_ -> bs
+
+getBS :: TChan BS.ByteString -> Int -> STM BS.ByteString
+getBS _ 0 = return ""
+getBS i n = do
+	bs <- readTChan i
+	if BS.length bs > n
+	then do	let (rtn, rst) = BS.splitAt n bs
+		unGetTChan i rst
+		return rtn
+	else (bs `BS.append`) <$> getBS i (n - BS.length bs)
+
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
 makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip) = do
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
-		(`run` g) $ do
-			t <- open h ["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca
-			talkC t hn fp pl
+		(ic, oc) <- open' h "localhost"
+			["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
+		liftBase $ talkC (TChanHandle ic oc) hn fp pl
 	return $ HttpPullTlsCl (fromTChan inc) (toTChan otc)
 
 talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
@@ -72,11 +111,11 @@ talkC h addr pth pl = do
 		=$= talk h addr pth
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . forever $ do
-		liftBase $ threadDelay 10000000
+		liftBase $ threadDelay 5000000
 		liftBase . atomically $ writeTChan otc pl
 	return (inc, otc)
 
-talk :: (HandleLike h) =>
+talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	h -> String -> FilePath -> Pipe XmlNode XmlNode (HandleMonad h) ()
 talk h addr pth = (await >>=) . (maybe (return ())) $ \n -> do
 	let m = LBS.fromChunks [xmlString [n]]

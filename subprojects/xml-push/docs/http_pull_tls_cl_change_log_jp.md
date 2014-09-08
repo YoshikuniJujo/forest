@@ -5,12 +5,11 @@ HttpPullTlsCl.hsに対する変更点
 ------
 
 * 引数用のデータ型を作成する
+* peyotlsのTChanのほうを利用するようにする
+	+ スレッドを使うためにはTChan版が必要となる
 
 予定
 ----
-
-* peyotlsのTChanのほうを利用するようにする
-	+ スレッドを使うためにはTChan版が必要となる
 
 * repair_polling.mdを参照のこと
 	+ [x] サーバ側の変更
