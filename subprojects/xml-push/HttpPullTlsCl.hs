@@ -12,7 +12,7 @@ import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
 import Control.Monad.Trans.Control
-import Control.Concurrent
+import Control.Concurrent hiding (yield)
 import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
@@ -94,18 +94,20 @@ getBS i n = do
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
 makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip gd) = do
+	dr <- liftBase . atomically $ newTVar Nothing
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 		(ic, oc) <- open' h "localhost"
 			["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
-		liftBase $ talkC (TChanHandle ic oc) hn fp pl ip
+		liftBase $ talkC (TChanHandle ic oc) hn fp pl ip dr gd
 	return $ HttpPullTlsCl (fromTChan inc) (toTChan otc)
 
 talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> String -> FilePath -> XmlNode -> (XmlNode -> Bool) ->
+	TVar (Maybe Int)  -> (XmlNode -> Maybe Int) ->
 	HandleMonad h (TChan XmlNode, TChan XmlNode)
-talkC h addr pth pl ip = do
+talkC h addr pth pl ip dr gd = do
 	lock <- liftBase . atomically $ do
 		l <- newTChan
 		writeTChan l ()
@@ -116,14 +118,28 @@ talkC h addr pth pl ip = do
 	otc' <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= talk lock h addr pth
+		=$= setDuration dr gd
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc'
 		=$= talk lock h addr pth
+		=$= setDuration dr gd
 		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
-		liftBase $ threadDelay 5000000
+		d <- liftBase . atomically $ do
+			md <- readTVar dr
+			case md of
+				Just d -> return d
+				_ -> retry
+		liftBase $ threadDelay d
 		liftBase $ polling pl ip inc' inc otc'
 	return (inc, otc)
+
+setDuration :: MonadBase IO m => TVar (Maybe a) -> (o -> Maybe a) -> Pipe o o m ()
+setDuration dr gd = (await >>=) . maybe (return ()) $ \n -> case gd n of
+	Just d -> do
+		lift . liftBase . atomically $ writeTVar dr (Just d)
+		yield n >> setDuration dr gd
+	_ -> yield n >> setDuration dr gd
 
 polling :: XmlNode -> (XmlNode -> Bool) ->
 	TChan XmlNode -> TChan XmlNode -> TChan XmlNode -> IO ()
