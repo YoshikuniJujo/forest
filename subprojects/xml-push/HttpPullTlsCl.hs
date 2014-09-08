@@ -107,12 +107,18 @@ talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 talkC h addr pth pl = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
+	inc' <- liftBase $ atomically newTChan
+	otc' <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= talk h addr pth
 		=$= toTChan inc
+	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc'
+		=$= talk h addr pth
+		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
 		liftBase $ threadDelay 5000000
-		liftBase . atomically $ writeTChan otc pl
+		liftBase . atomically $ writeTChan otc' pl
+		liftBase . atomically $ readTChan inc' >>= writeTChan inc
 	return (inc, otc)
 
 talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
