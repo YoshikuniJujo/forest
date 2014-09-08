@@ -7,13 +7,12 @@ HttpPullTlsCl.hsに対する変更点
 * 引数用のデータ型を作成する
 * peyotlsのTChanのほうを利用するようにする
 	+ スレッドを使うためにはTChan版が必要となる
+* repair_polling.mdを参照のこと
+	+ [x] サーバ側の変更
+	+ [x] クライアント側の変更
 
 予定
 ----
-
-* repair_polling.mdを参照のこと
-	+ [x] サーバ側の変更
-	+ [ ] クライアント側の変更
 
 * pollの間隔をサーバからのデータによって変えられるようにする
 	+ XmlNode -> Maybe Intを引数として取るようにし
@@ -22,5 +21,3 @@ HttpPullTlsCl.hsに対する変更点
 * パスを送信ごとに変えられるようにする
 	+ [ ] XmlNode -> BS.ByteString型の引数を追加する
 	+ [ ] 上記の関数によって得た値をパスに追加する
-
-* pollingと普通のやりとりとを並列化した
