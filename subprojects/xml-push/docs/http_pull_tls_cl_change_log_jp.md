@@ -14,10 +14,11 @@ HttpPullTlsCl.hsに対する変更点
 	+ [x] XmlNode -> Maybe Intを引数として取るようにし
 	+ [x] makeHttpPull関数でTVar (Maybe Int)の値を作成する
 	+ [x] TVar (Maybe Int)の値を受けとったXmlNodeによって変更していく
+* パスを送信ごとに変えられるようにする
+	+ [x] XmlNode -> BS.ByteString型の引数を追加する
+	+ [x] 上記の関数によって得た値をパスに追加する
 
 予定
 ----
 
-* パスを送信ごとに変えられるようにする
-	+ [x] XmlNode -> BS.ByteString型の引数を追加する
-	+ [ ] 上記の関数によって得た値をパスに追加する
+* ポート番号を引数で指定できるようにする
