@@ -10,7 +10,7 @@ main :: IO ()
 main = do
 	h <- connectTo "localhost" $ PortNumber 80
 	testPusher (undefined :: HttpPullCl Handle) (One h)
-		(HttpPullClArgs "localhost" "/"
+		(HttpPullClArgs "localhost" 80 "/"
 			(XmlNode (nullQ "poll") [] [] []) pendingQ drtn gtPth)
 		()
 
