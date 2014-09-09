@@ -12,9 +12,13 @@ main = do
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
 	testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
-		(HttpPushTlsArgs wntRspns)
+		(HttpPushTlsArgs "" gtPth wntRspns)
 		True
 
 wntRspns :: XmlNode -> Bool
 wntRspns (XmlNode (_, "monologue") _ [] []) = False
 wntRspns _ = True
+
+gtPth :: XmlNode -> FilePath
+gtPth (XmlNode (_, "father") _ [] []) = "family"
+gtPth _ = "others"

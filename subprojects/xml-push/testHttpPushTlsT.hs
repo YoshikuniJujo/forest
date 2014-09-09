@@ -13,9 +13,13 @@ main = do
 		(sh, _, _) <- accept soc
 		ch <- connectTo "localhost" $ PortNumber 8080
 		testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
-			(HttpPushTlsArgs wntRspns)
+			(HttpPushTlsArgs "" gtPth wntRspns)
 			True
 
 wntRspns :: XmlNode -> Bool
 wntRspns (XmlNode (_, "monologue") _ [] []) = False
 wntRspns _ = True
+
+gtPth :: XmlNode -> FilePath
+gtPth (XmlNode (_, "father") _ [] []) = "family"
+gtPth _ = "others"

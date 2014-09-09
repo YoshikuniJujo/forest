@@ -42,6 +42,8 @@ data HttpPushTls h = HttpPushTls {
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
 data HttpPushTlsArgs = HttpPushTlsArgs {
+	path :: FilePath,
+	getPath :: XmlNode -> FilePath,
 	wantResponse :: XmlNode -> Bool
 	}
 
@@ -65,15 +67,16 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 
 makeHttpPushTls :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> h -> HttpPushTlsArgs -> HandleMonad h (HttpPushTls h)
-makeHttpPushTls ch sh (HttpPushTlsArgs wr) = do
+makeHttpPushTls ch sh (HttpPushTlsArgs pt gp wr) = do
 	v <- liftBase . atomically $ newTVar False
-	(ci, co) <- clientC ch
+	(ci, co) <- clientC ch pt gp
 	(si, so) <- talk wr sh
 	return $ HttpPushTls v ci co si so
 
 clientC :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-clientC h = do
+	h -> FilePath -> (XmlNode -> FilePath) ->
+	HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
+clientC h pt gp = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
@@ -83,22 +86,23 @@ clientC h = do
 		runPipe_ $ fromTChan otc
 			=$= filter isJust
 			=$= convert fromJust
-			=$= clientLoop t
+			=$= clientLoop t pt gp
 			=$= convert (, False)
 			=$= toTChan inc
 	return (inc, otc)
 
 clientLoop :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> Pipe XmlNode XmlNode (HandleMonad h) ()
-clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
-	r <- lift . request h $ post "localhost" 80 "/"
+	h -> FilePath -> (XmlNode -> FilePath) ->
+	Pipe XmlNode XmlNode (HandleMonad h) ()
+clientLoop h pt gp = (await >>=) . maybe (return ()) $ \n -> do
+	r <- lift . request h $ post "localhost" 80 (pt ++ "/" ++ gp n)
 		(Nothing, LBS.fromChunks [xmlString [n]])
 	return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= (xmlNode [] >> return ())
-	clientLoop h
+	clientLoop h pt gp
 
 talk :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	(XmlNode -> Bool) ->
@@ -118,7 +122,6 @@ talk wr h = do
 				=$= convert fromJust
 				=$= xmlNode []
 				=$= checkReply wr otc
---				=$= convert (, True)
 				=$= toTChan inc
 			fromTChan otc =$= await >>= maybe (return ()) (\mn ->
 				lift . putResponse t . responseP $ case mn of
