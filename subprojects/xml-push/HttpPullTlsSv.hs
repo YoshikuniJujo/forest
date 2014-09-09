@@ -68,6 +68,7 @@ talk :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 	TChan XmlNode -> TChan XmlNode -> Pipe () () (HandleMonad h) ()
 talk h ip ep inc otc = do
 	r <- lift $ getRequest h
+	lift . liftBase . print $ requestPath r
 	rns <- requestBody r
 		=$= xmlEvent
 		=$= convert fromJust
