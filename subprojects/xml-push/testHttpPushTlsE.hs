@@ -12,7 +12,7 @@ main = do
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
 	testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
-		(HttpPushTlsArgs "" gtPth wntRspns)
+		(HttpPushTlsArgs "localhost" 80 "" gtPth wntRspns)
 		True
 
 wntRspns :: XmlNode -> Bool

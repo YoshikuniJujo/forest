@@ -42,6 +42,8 @@ data HttpPushTls h = HttpPushTls {
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
 data HttpPushTlsArgs = HttpPushTlsArgs {
+	domainName :: String,
+	portNumber :: Int,
 	path :: FilePath,
 	getPath :: XmlNode -> FilePath,
 	wantResponse :: XmlNode -> Bool
@@ -67,16 +69,16 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 
 makeHttpPushTls :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> h -> HttpPushTlsArgs -> HandleMonad h (HttpPushTls h)
-makeHttpPushTls ch sh (HttpPushTlsArgs pt gp wr) = do
+makeHttpPushTls ch sh (HttpPushTlsArgs hn pn pt gp wr) = do
 	v <- liftBase . atomically $ newTVar False
-	(ci, co) <- clientC ch pt gp
+	(ci, co) <- clientC ch hn pn pt gp
 	(si, so) <- talk wr sh
 	return $ HttpPushTls v ci co si so
 
 clientC :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-clientC h pt gp = do
+clientC h hn pn pt gp = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
@@ -86,23 +88,23 @@ clientC h pt gp = do
 		runPipe_ $ fromTChan otc
 			=$= filter isJust
 			=$= convert fromJust
-			=$= clientLoop t pt gp
+			=$= clientLoop t hn pn pt gp
 			=$= convert (, False)
 			=$= toTChan inc
 	return (inc, otc)
 
 clientLoop :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	Pipe XmlNode XmlNode (HandleMonad h) ()
-clientLoop h pt gp = (await >>=) . maybe (return ()) $ \n -> do
-	r <- lift . request h $ post "localhost" 80 (pt ++ "/" ++ gp n)
+clientLoop h hn pn pt gp = (await >>=) . maybe (return ()) $ \n -> do
+	r <- lift . request h $ post hn pn (pt ++ "/" ++ gp n)
 		(Nothing, LBS.fromChunks [xmlString [n]])
 	return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= (xmlNode [] >> return ())
-	clientLoop h pt gp
+	clientLoop h hn pn pt gp
 
 talk :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	(XmlNode -> Bool) ->
