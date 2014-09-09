@@ -8,4 +8,6 @@ main = do
 	ch <- connectTo "localhost" $ PortNumber 80
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
-	testPusher (undefined :: HttpPushTls Handle) (Two ch sh) () True
+	testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
+		(HttpPushTlsArgs)
+		True

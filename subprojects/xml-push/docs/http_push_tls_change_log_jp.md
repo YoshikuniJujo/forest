@@ -4,10 +4,11 @@ HttpPush.hsに対する変更点
 対応済
 ------
 
+* data HttpPushTlsArgsを作成する
+
 予定
 ----
 
-* data HttpPushTlsArgsを作成する
 * 返答の必要がないXmlNodeを引数で指定する
 	+ [ ] 返答の必要があるかどうかを示す関数を引数に取る
 	+ [ ] 返答の必要がないものに対しては自動で返答する

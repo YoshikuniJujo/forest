@@ -10,4 +10,6 @@ main = do
 	forever  $ do
 		(sh, _, _) <- accept soc
 		ch <- connectTo "localhost" $ PortNumber 8080
-		testPusher (undefined :: HttpPushTls Handle) (Two ch sh) () True
+		testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
+			(HttpPushTlsArgs)
+			True

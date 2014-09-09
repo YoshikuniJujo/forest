@@ -3,7 +3,7 @@
 	PackageImports #-}
 
 module HttpPushTls (
-	HttpPushTls, Two(..), testPusher,
+	HttpPushTls, HttpPushTlsArgs(..), Two(..), testPusher,
 	) where
 
 import Prelude hiding (filter)
@@ -41,11 +41,14 @@ data HttpPushTls h = HttpPushTls {
 	serverReadChan :: TChan (XmlNode, Bool),
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
+data HttpPushTlsArgs = HttpPushTlsArgs {
+	}
+
 instance XmlPusher HttpPushTls where
 	type NumOfHandle HttpPushTls = Two
-	type PusherArg HttpPushTls = ()
+	type PusherArg HttpPushTls = HttpPushTlsArgs
 	type PushedType HttpPushTls = Bool
-	generate (Two ch sh) () = makeHttpPushTls ch sh
+	generate (Two ch sh) = makeHttpPushTls ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
 	writeTo hp = (convert (((), ) . Just . fst) =$=) . toTChansM $ do
@@ -60,8 +63,8 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 	lift (liftBase . atomically $ writeTVar nr b) >> yield x >> setNeedReply nr)
 
 makeHttpPushTls :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> h -> HandleMonad h (HttpPushTls h)
-makeHttpPushTls ch sh = do
+	h -> h -> HttpPushTlsArgs -> HandleMonad h (HttpPushTls h)
+makeHttpPushTls ch sh (HttpPushTlsArgs) = do
 	v <- liftBase . atomically $ newTVar False
 	(ci, co) <- clientC ch
 	(si, so) <- talk sh
