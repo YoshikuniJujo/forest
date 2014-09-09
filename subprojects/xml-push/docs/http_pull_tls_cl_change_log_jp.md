@@ -19,5 +19,5 @@ HttpPullTlsCl.hsに対する変更点
 ----
 
 * パスを送信ごとに変えられるようにする
-	+ [ ] XmlNode -> BS.ByteString型の引数を追加する
+	+ [x] XmlNode -> BS.ByteString型の引数を追加する
 	+ [ ] 上記の関数によって得た値をパスに追加する

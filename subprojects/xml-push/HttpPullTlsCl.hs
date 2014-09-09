@@ -41,7 +41,8 @@ data HttpPullTlsClArgs = HttpPullTlsClArgs {
 	path :: FilePath,
 	poll :: XmlNode,
 	isPending :: XmlNode -> Bool,
-	duration :: XmlNode -> Maybe Int
+	duration :: XmlNode -> Maybe Int,
+	getPath :: XmlNode -> FilePath
 	}
 
 instance XmlPusher HttpPullTlsCl where
@@ -93,7 +94,7 @@ getBS i n = do
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
-makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip gd) = do
+makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip gd gp) = do
 	dr <- liftBase . atomically $ newTVar Nothing
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]

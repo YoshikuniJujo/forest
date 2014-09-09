@@ -11,7 +11,7 @@ main = do
 	h <- connectTo "localhost" $ PortNumber 443
 	testPusher (undefined :: HttpPullTlsCl Handle) (One h)
 		(HttpPullTlsClArgs "localhost" "/"
-			(XmlNode (nullQ "poll") [] [] []) pendingQ drtn)
+			(XmlNode (nullQ "poll") [] [] []) pendingQ drtn gtPth)
 		True
 
 pendingQ :: XmlNode -> Bool
@@ -25,3 +25,7 @@ drtn (XmlNode (_, "fast") _ [] []) = Just 5000000
 drtn (XmlNode (_, "very_fast") _ [] []) = Just 1000000
 drtn (XmlNode (_, "fastest") _ [] []) = Just 100000
 drtn _ = Nothing
+
+gtPth :: XmlNode -> FilePath
+gtPth (XmlNode (_, "father") _ [] []) = "family"
+gtPth _ = "others"
