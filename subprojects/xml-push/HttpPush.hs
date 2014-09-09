@@ -36,6 +36,7 @@ data HttpPush h = HttpPush {
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
 data HttpPushArgs = HttpPushArgs {
+	path :: FilePath,
 	wantResponse :: XmlNode -> Bool
 	}
 
@@ -59,36 +60,38 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 
 makeHttpPush :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> h -> HttpPushArgs -> HandleMonad h (HttpPush h)
-makeHttpPush ch sh (HttpPushArgs wr) = do
+makeHttpPush ch sh (HttpPushArgs pt wr) = do
 	v <- liftBase . atomically $ newTVar False
-	(ci, co) <- clientC ch
+	(ci, co) <- clientC ch pt
 	(si, so) <- talk wr sh
 	return $ HttpPush v ci co si so
 
 clientC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-clientC h = do
+	h -> FilePath ->
+	HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
+clientC h pt = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= filter isJust
 		=$= convert fromJust
-		=$= clientLoop h
+		=$= clientLoop h pt
 		=$= convert (, False)
 		=$= toTChan inc
 	return (inc, otc)
 
 clientLoop :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> Pipe XmlNode XmlNode (HandleMonad h) ()
-clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
-	r <- lift . request h $ post "localhost" 80 "/"
+	h -> FilePath ->
+	Pipe XmlNode XmlNode (HandleMonad h) ()
+clientLoop h pt = (await >>=) . maybe (return ()) $ \n -> do
+	r <- lift . request h $ post "localhost" 80 pt
 		(Nothing, LBS.fromChunks [xmlString [n]])
 	return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= (xmlNode [] >> return ())
-	clientLoop h
+	clientLoop h pt
 
 talk :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	(XmlNode -> Bool) ->
@@ -102,7 +105,6 @@ talk wr h = do
 			=$= xmlEvent
 			=$= convert fromJust
 			=$= xmlNode []
---			=$= convert (, True)
 			=$= checkReply wr otc
 			=$= toTChan inc
 		fromTChan otc =$= await >>= maybe (return ()) (\mn ->
