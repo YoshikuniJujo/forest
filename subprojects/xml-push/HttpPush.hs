@@ -62,7 +62,7 @@ makeHttpPush :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 makeHttpPush ch sh (HttpPushArgs wr) = do
 	v <- liftBase . atomically $ newTVar False
 	(ci, co) <- clientC ch
-	(si, so) <- talk sh
+	(si, so) <- talk wr sh
 	return $ HttpPush v ci co si so
 
 clientC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
@@ -91,8 +91,9 @@ clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
 	clientLoop h
 
 talk :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
+	(XmlNode -> Bool) ->
 	h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-talk h = do
+talk wr h = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ . forever $ do
@@ -101,13 +102,23 @@ talk h = do
 			=$= xmlEvent
 			=$= convert fromJust
 			=$= xmlNode []
-			=$= convert (, True)
+--			=$= convert (, True)
+			=$= checkReply wr otc
 			=$= toTChan inc
 		fromTChan otc =$= await >>= maybe (return ()) (\mn ->
 			lift . putResponse h . responseP $ case mn of
 				Just n -> LBS.fromChunks [xmlString [n]]
 				_ -> "")
 	return (inc, otc)
+
+checkReply :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe XmlNode) ->
+	Pipe XmlNode (XmlNode, Bool) m ()
+checkReply wr o = (await >>=) . maybe (return ()) $ \n ->
+	if wr n
+	then yield (n, True) >> checkReply wr o
+	else do	lift (liftBase . atomically $ writeTChan o Nothing)
+		yield (n, False)
+		checkReply wr o
 
 responseP :: HandleLike h => LBS.ByteString -> Response Pipe h
 responseP = response
