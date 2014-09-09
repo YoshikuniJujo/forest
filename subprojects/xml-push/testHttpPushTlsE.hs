@@ -1,4 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import System.IO
+import Text.XML.Pipe
 import Network
 
 import HttpPushTls
@@ -9,5 +12,9 @@ main = do
 	soc <- listenOn $ PortNumber 8080
 	(sh, _, _) <- accept soc
 	testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
-		(HttpPushTlsArgs)
+		(HttpPushTlsArgs wntRspns)
 		True
+
+wntRspns :: XmlNode -> Bool
+wntRspns (XmlNode (_, "monologue") _ [] []) = False
+wntRspns _ = True

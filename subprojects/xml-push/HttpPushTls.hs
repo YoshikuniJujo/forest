@@ -42,6 +42,7 @@ data HttpPushTls h = HttpPushTls {
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
 data HttpPushTlsArgs = HttpPushTlsArgs {
+	wantResponse :: XmlNode -> Bool
 	}
 
 instance XmlPusher HttpPushTls where
@@ -64,10 +65,10 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 
 makeHttpPushTls :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> h -> HttpPushTlsArgs -> HandleMonad h (HttpPushTls h)
-makeHttpPushTls ch sh (HttpPushTlsArgs) = do
+makeHttpPushTls ch sh (HttpPushTlsArgs wr) = do
 	v <- liftBase . atomically $ newTVar False
 	(ci, co) <- clientC ch
-	(si, so) <- talk sh
+	(si, so) <- talk wr sh
 	return $ HttpPushTls v ci co si so
 
 clientC :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
@@ -100,8 +101,9 @@ clientLoop h = (await >>=) . maybe (return ()) $ \n -> do
 	clientLoop h
 
 talk :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
+	(XmlNode -> Bool) ->
 	h -> HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-talk h = do
+talk wr h = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	k <- liftBase $ readKey "certs/localhost.sample_key"
@@ -115,13 +117,23 @@ talk h = do
 				=$= xmlEvent
 				=$= convert fromJust
 				=$= xmlNode []
-				=$= convert (, True)
+				=$= checkReply wr otc
+--				=$= convert (, True)
 				=$= toTChan inc
 			fromTChan otc =$= await >>= maybe (return ()) (\mn ->
 				lift . putResponse t . responseP $ case mn of
 					Just n -> LBS.fromChunks [xmlString [n]]
 					_ -> "")
 	return (inc, otc)
+
+checkReply :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe XmlNode) ->
+	Pipe XmlNode (XmlNode, Bool) m ()
+checkReply wr o = (await >>=) . maybe (return ()) $ \n ->
+	if wr n
+	then yield (n, True) >> checkReply wr o
+	else do	lift . liftBase . atomically $ writeTChan o Nothing
+		yield (n, False)
+		checkReply wr o
 
 responseP :: HandleLike h => LBS.ByteString -> Response Pipe h
 responseP = response
