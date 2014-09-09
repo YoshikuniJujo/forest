@@ -35,13 +35,15 @@ data HttpPush h = HttpPush {
 	serverReadChan :: TChan (XmlNode, Bool),
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
-data HttpPushArgs = HttpPushArgs
+data HttpPushArgs = HttpPushArgs {
+	wantResponse :: XmlNode -> Bool
+	}
 
 instance XmlPusher HttpPush where
 	type NumOfHandle HttpPush = Two
 	type PusherArg HttpPush = HttpPushArgs
 	type PushedType HttpPush = Bool
-	generate (Two ch sh) _ = makeHttpPush ch sh
+	generate (Two ch sh) = makeHttpPush ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
 	writeTo hp = (convert (((), ) . (fst <$>)) =$=) . toTChansM $ do
@@ -56,8 +58,8 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 	lift (liftBase . atomically $ writeTVar nr b) >> yield x >> setNeedReply nr)
 
 makeHttpPush :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> h -> HandleMonad h (HttpPush h)
-makeHttpPush ch sh = do
+	h -> h -> HttpPushArgs -> HandleMonad h (HttpPush h)
+makeHttpPush ch sh (HttpPushArgs wr) = do
 	v <- liftBase . atomically $ newTVar False
 	(ci, co) <- clientC ch
 	(si, so) <- talk sh
