@@ -37,7 +37,6 @@ import XmlPusher
 
 data XmppTls h = XmppTls
 	(XmlNode -> Bool)
-	Jid
 	(TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(TChan (Either BS.ByteString (XmlNode, ())))
@@ -61,17 +60,16 @@ instance XmlPusher XmppTls where
 	type PusherArg XmppTls = (XmppArgs, TlsArgs)
 	type PushedType XmppTls = ()
 	generate = makeXmppTls
-	readFrom (XmppTls wr _you nr r wc) = r
+	readFrom (XmppTls wr nr r wc) = r
 		=$= pushId wr nr wc
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (XmppTls _ you nr _ w) = convert maybeToEither =$= toTChan w
+	writeTo (XmppTls _ _nr _ w) = convert maybeToEither =$= toTChan w
 	
 
-maybeToEither :: Maybe a -> Either BS.ByteString a
-maybeToEither (Just x) = Right x
-maybeToEither _ = Left ""
+maybeToEither :: a -> Either BS.ByteString a
+maybeToEither x = Right x
 
 pushId :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe BS.ByteString) ->
 	TChan (Either BS.ByteString (XmlNode, pt)) -> Pipe Mpi Mpi m ()
@@ -174,7 +172,7 @@ makeXmppTls (One h) (XmppArgs ms wr inr me ps you, TlsArgs ca kcs) = do
 	(>> return ()) . liftBaseDiscard forkIO . runPipe_ $ fromTChan wc
 		=$= addRandom =$= makeResponse inr you nr =$= output =$= toTChan otc
 	let	r = fromTChan inc =$= input ns
-	return $ XmppTls wr you nr r wc
+	return $ XmppTls wr nr r wc
 
 data St = St [(BS.ByteString, BS.ByteString)]
 instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss

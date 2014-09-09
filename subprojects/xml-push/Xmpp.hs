@@ -32,7 +32,7 @@ import XmlPusher
 
 data Xmpp h = Xmpp
 	(XmlNode -> Bool)
-	Jid (TChan (Maybe BS.ByteString))
+	(TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
 	(TChan (Either BS.ByteString (XmlNode, ())))
 
@@ -49,17 +49,16 @@ instance XmlPusher Xmpp where
 	type PusherArg Xmpp = XmppArgs
 	type PushedType Xmpp = ()
 	generate = makeXmpp
-	readFrom (Xmpp wr _you nr r wc) = r
+	readFrom (Xmpp wr nr r wc) = r
 		=$= pushId wr nr wc
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (Xmpp _ you _ _ w) = convert maybeToEither
+	writeTo (Xmpp _ _ _ w) = convert maybeToEither
 		=$= toTChan w
 
-maybeToEither :: Maybe a -> Either BS.ByteString a
-maybeToEither (Just x) = Right x
-maybeToEither _ = Left ""
+maybeToEither :: a -> Either BS.ByteString a
+maybeToEither x = Right x
 
 pushId :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe BS.ByteString) ->
 	TChan (Either BS.ByteString (XmlNode, pt)) -> Pipe Mpi Mpi m ()
@@ -161,7 +160,7 @@ makeXmpp (One h) (XmppArgs ms wr inr me ps you) = do
 	(>> return ()) . liftBaseDiscard forkIO . runPipe_ $ fromTChan wc
 		=$= addRandom =$= makeResponse inr you nr =$= output =$= toHandleLike h
 	let	r = fromHandleLike h =$= input ns
-	return $ Xmpp wr you nr r wc
+	return $ Xmpp wr nr r wc
 
 data St = St [(BS.ByteString, BS.ByteString)]
 instance SaslState St where getSaslState (St ss) = ss; putSaslState ss _ = St ss

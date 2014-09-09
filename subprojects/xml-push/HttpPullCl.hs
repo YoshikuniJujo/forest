@@ -16,7 +16,6 @@ import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.Flow
 import Data.Pipe.TChan
 import System.IO
 import Text.XML.Pipe
@@ -47,9 +46,7 @@ instance XmlPusher HttpPullCl where
 	type PushedType HttpPullCl = ()
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
-	writeTo (HttpPullCl _ w) = filter isJust
-		=$= convert (fst . fromJust)
-		=$= w
+	writeTo (HttpPullCl _ w) = convert fst =$= w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl h)

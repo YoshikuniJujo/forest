@@ -48,7 +48,7 @@ instance XmlPusher HttpPushTls where
 	generate (Two ch sh) () = makeHttpPushTls ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
-	writeTo hp = (convert (((), ) . (fst <$>)) =$=) . toTChansM $ do
+	writeTo hp = (convert (((), ) . Just . fst) =$=) . toTChansM $ do
 		nr <- liftBase . atomically . readTVar $ needReply hp
 		liftBase . atomically $ writeTVar (needReply hp) False
 		return [

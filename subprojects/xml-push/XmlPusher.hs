@@ -16,7 +16,6 @@ import Control.Concurrent
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.Flow
 import Data.Pipe.ByteString
 import System.IO
 import Text.XML.Pipe
@@ -35,11 +34,11 @@ class XmlPusher xp where
 	readFrom :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
 		xp h -> Pipe () XmlNode (HandleMonad h) ()
 	writeTo :: (HandleLike h, MonadBase IO (HandleMonad h)) =>
-		xp h -> Pipe (Maybe (XmlNode, PushedType xp)) () (HandleMonad h) ()
+		xp h -> Pipe (XmlNode, PushedType xp) () (HandleMonad h) ()
 
 data SimplePusher h = SimplePusher
 	(Pipe () XmlNode (HandleMonad h) ())
-	(Pipe (Maybe (XmlNode, ())) () (HandleMonad h) ())
+	(Pipe (XmlNode, ()) () (HandleMonad h) ())
 
 data Zero a = Zero deriving Show
 data One a = One a deriving Show
@@ -63,11 +62,8 @@ readXml rf = fromFile rf
 	=$= convert fromJust
 	=$= (xmlNode [] >> return ())
 
-writeXml :: MonadBaseControl IO m =>
-	FilePath -> Pipe (Maybe (XmlNode, ()))  () m ()
-writeXml wf = filter isJust
-	=$= convert (xmlString . (: []) . fst . fromJust)
-	=$= toFile wf
+writeXml :: MonadBaseControl IO m => FilePath -> Pipe (XmlNode, ())  () m ()
+writeXml wf = convert (xmlString . (: []) . fst) =$= toFile wf
 
 testPusher :: XmlPusher xp => xp Handle ->
 	NumOfHandle xp Handle -> PusherArg xp -> PushedType xp -> IO ()
@@ -80,7 +76,5 @@ testPusher tp hs as pt = do
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
-		=$= convert (Just . (, pt))
---		=$= convert (Just . (, True))
---		=$= convert (Just . (, False))
+		=$= convert (, pt)
 		=$= writeTo xp

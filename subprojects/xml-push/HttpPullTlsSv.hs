@@ -17,7 +17,6 @@ import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
 import Data.Pipe.List
-import Data.Pipe.Flow
 import Data.Pipe.TChan
 import Text.XML.Pipe
 import Network.TigHTTP.Server
@@ -40,9 +39,7 @@ instance XmlPusher HttpPullTlsSv where
 	type PushedType HttpPullTlsSv = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullTlsSv r _) = r
-	writeTo (HttpPullTlsSv _ w) = filter isJust
-		=$= convert (fst . fromJust)
-		=$= w
+	writeTo (HttpPullTlsSv _ w) = convert fst =$= w
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> (XmlNode -> Bool, XmlNode) -> HandleMonad h (HttpPullTlsSv h)
@@ -94,11 +91,3 @@ flushOr c ep = do
 	if e
 	then yield ep
 	else lift (liftBase . atomically $ readTChan c) >>= yield
-
-flushTChan :: MonadBase IO m => TChan a -> Pipe () [a] m ()
-flushTChan c = lift (liftBase . atomically $ allTChan c) >>= yield
-
-allTChan :: TChan a -> STM [a]
-allTChan c = do
-	e <- isEmptyTChan c
-	if e then return [] else (:) <$> readTChan c <*> allTChan c

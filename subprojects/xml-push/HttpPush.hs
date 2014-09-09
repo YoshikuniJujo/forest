@@ -7,7 +7,6 @@ module HttpPush (
 
 import Prelude hiding (filter)
 
-import Control.Applicative
 import Control.Monad
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
@@ -50,7 +49,7 @@ instance XmlPusher HttpPush where
 	generate (Two ch sh) = makeHttpPush ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
-	writeTo hp = (convert (((), ) . (fst <$>)) =$=) . toTChansM $ do
+	writeTo hp = (convert ((() ,) . Just . fst) =$=) . toTChansM $ do
 		nr <- liftBase . atomically . readTVar $ needReply hp
 		liftBase . atomically $ writeTVar (needReply hp) False
 		return [

@@ -17,7 +17,6 @@ import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.Flow
 import Data.Pipe.TChan
 import Text.XML.Pipe
 import Network.TigHTTP.Client
@@ -52,9 +51,7 @@ instance XmlPusher HttpPullTlsCl where
 	type PushedType HttpPullTlsCl = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullTlsCl r _) = r
-	writeTo (HttpPullTlsCl _ w) = filter isJust
-		=$= convert (fst . fromJust)
-		=$= w
+	writeTo (HttpPullTlsCl _ w) = convert fst =$= w
 
 data TChanHandle = TChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
 

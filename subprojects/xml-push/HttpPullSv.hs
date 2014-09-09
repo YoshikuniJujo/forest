@@ -7,7 +7,6 @@ module HttpPullSv (
 
 import Prelude hiding (filter)
 
-import Control.Applicative
 import "monads-tf" Control.Monad.Trans
 import Control.Monad.Base
 import Control.Monad.Trans.Control
@@ -16,9 +15,7 @@ import Control.Concurrent.STM
 import Data.Maybe
 import Data.HandleLike
 import Data.Pipe
-import Data.Pipe.IO (debug)
 import Data.Pipe.List
-import Data.Pipe.Flow
 import Data.Pipe.TChan
 import Text.XML.Pipe
 import Network.TigHTTP.Server
@@ -38,9 +35,7 @@ instance XmlPusher HttpPullSv where
 	type PushedType HttpPullSv = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullSv r _) = r
-	writeTo (HttpPullSv _ w) = filter isJust
-		=$= convert (fst . fromJust)
-		=$= w
+	writeTo (HttpPullSv _ w) = convert fst =$= w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> (XmlNode -> Bool, XmlNode) -> HandleMonad h (HttpPullSv h)
@@ -88,11 +83,3 @@ flushOr c ep = do
 	if e then yield ep else do
 		po <- lift . liftBase . atomically $ readTChan c
 		yield po
-
-flushTChan :: MonadBase IO m => TChan a -> Pipe () [a] m ()
-flushTChan c = lift (liftBase . atomically $ allTChan c) >>= yield
-
-allTChan :: TChan a -> STM [a]
-allTChan c = do
-	e <- isEmptyTChan c
-	if e then return [] else (:) <$> readTChan c <*> allTChan c
