@@ -14,7 +14,7 @@ main = do
 		(sh, _, _) <- accept soc
 		ch <- connectTo "localhost" $ PortNumber 8080
 		testPusher (undefined :: HttpPush Handle) (Two ch sh)
-			(HttpPushArgs "localhost" "/" gtPth wntRspns)
+			(HttpPushArgs "localhost" 8080 "/" gtPth wntRspns)
 			True
 
 wntRspns :: XmlNode -> Bool

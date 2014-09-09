@@ -37,6 +37,7 @@ data HttpPush h = HttpPush {
 
 data HttpPushArgs = HttpPushArgs {
 	domainName :: String,
+	portNumber :: Int,
 	path :: FilePath,
 	getPath :: XmlNode -> FilePath,
 	wantResponse :: XmlNode -> Bool
@@ -62,38 +63,38 @@ setNeedReply nr = await >>= maybe (return ()) (\(x, b) ->
 
 makeHttpPush :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	h -> h -> HttpPushArgs -> HandleMonad h (HttpPush h)
-makeHttpPush ch sh (HttpPushArgs hn pt gp wr) = do
+makeHttpPush ch sh (HttpPushArgs hn pn pt gp wr) = do
 	v <- liftBase . atomically $ newTVar False
-	(ci, co) <- clientC ch hn pt gp
+	(ci, co) <- clientC ch hn pn pt gp
 	(si, so) <- talk wr sh
 	return $ HttpPush v ci co si so
 
 clientC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	HandleMonad h (TChan (XmlNode, Bool), TChan (Maybe XmlNode))
-clientC h hn pt gp = do
+clientC h hn pn pt gp = do
 	inc <- liftBase $ atomically newTChan
 	otc <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
 		=$= filter isJust
 		=$= convert fromJust
-		=$= clientLoop h hn pt gp
+		=$= clientLoop h hn pn pt gp
 		=$= convert (, False)
 		=$= toTChan inc
 	return (inc, otc)
 
 clientLoop :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	Pipe XmlNode XmlNode (HandleMonad h) ()
-clientLoop h hn pt gp = (await >>=) . maybe (return ()) $ \n -> do
-	r <- lift . request h $ post hn 80 (pt ++ "/" ++ gp n)
+clientLoop h hn pn pt gp = (await >>=) . maybe (return ()) $ \n -> do
+	r <- lift . request h $ post hn pn (pt ++ "/" ++ gp n)
 		(Nothing, LBS.fromChunks [xmlString [n]])
 	return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= (xmlNode [] >> return ())
-	clientLoop h hn pt gp
+	clientLoop h hn pn pt gp
 
 talk :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	(XmlNode -> Bool) ->
