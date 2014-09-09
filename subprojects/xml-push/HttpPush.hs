@@ -2,7 +2,7 @@
 	PackageImports #-}
 
 module HttpPush (
-	HttpPush, Two(..), testPusher,
+	HttpPush, HttpPushArgs(..), Two(..), testPusher,
 	) where
 
 import Prelude hiding (filter)
@@ -35,11 +35,13 @@ data HttpPush h = HttpPush {
 	serverReadChan :: TChan (XmlNode, Bool),
 	serverWriteChan :: TChan (Maybe XmlNode) }
 
+data HttpPushArgs = HttpPushArgs
+
 instance XmlPusher HttpPush where
 	type NumOfHandle HttpPush = Two
-	type PusherArg HttpPush = ()
+	type PusherArg HttpPush = HttpPushArgs
 	type PushedType HttpPush = Bool
-	generate (Two ch sh) () = makeHttpPush ch sh
+	generate (Two ch sh) _ = makeHttpPush ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
 	writeTo hp = (convert (((), ) . (fst <$>)) =$=) . toTChansM $ do
