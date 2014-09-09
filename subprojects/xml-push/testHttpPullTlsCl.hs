@@ -10,7 +10,7 @@ main :: IO ()
 main = do
 	h <- connectTo "localhost" $ PortNumber 443
 	testPusher (undefined :: HttpPullTlsCl Handle) (One h)
-		(HttpPullTlsClArgs "localhost" "/"
+		(HttpPullTlsClArgs "localhost" 443 "/"
 			(XmlNode (nullQ "poll") [] [] []) pendingQ drtn gtPth)
 		True
 

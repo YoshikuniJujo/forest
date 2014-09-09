@@ -38,6 +38,7 @@ data HttpPullTlsCl h = HttpPullTlsCl
 
 data HttpPullTlsClArgs = HttpPullTlsClArgs {
 	domainName :: String,
+	portNumber :: Int,
 	path :: FilePath,
 	poll :: XmlNode,
 	isPending :: XmlNode -> Bool,
@@ -94,22 +95,22 @@ getBS i n = do
 
 makeHttpPull :: (ValidateHandle h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullTlsClArgs -> HandleMonad h (HttpPullTlsCl h)
-makeHttpPull (One h) (HttpPullTlsClArgs hn fp pl ip gd gp) = do
+makeHttpPull (One h) (HttpPullTlsClArgs hn pn fp pl ip gd gp) = do
 	dr <- liftBase . atomically $ newTVar Nothing
 	(inc, otc) <- do
 		ca <- liftBase $ readCertificateStore ["certs/cacert.sample_pem"]
 		(g :: SystemRNG) <- liftBase $ cprgCreate <$> createEntropyPool
 		(ic, oc) <- open' h "localhost"
 			["TLS_RSA_WITH_AES_128_CBC_SHA"] [] ca g
-		liftBase $ talkC (TChanHandle ic oc) hn fp gp pl ip dr gd
+		liftBase $ talkC (TChanHandle ic oc) hn pn fp gp pl ip dr gd
 	return $ HttpPullTlsCl (fromTChan inc) (toTChan otc)
 
 talkC :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
-	h -> String -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	XmlNode -> (XmlNode -> Bool) ->
 	TVar (Maybe Int)  -> (XmlNode -> Maybe Int) ->
 	HandleMonad h (TChan XmlNode, TChan XmlNode)
-talkC h addr pth gp pl ip dr gd = do
+talkC h addr pn pth gp pl ip dr gd = do
 	lock <- liftBase . atomically $ do
 		l <- newTChan
 		writeTChan l ()
@@ -119,11 +120,11 @@ talkC h addr pth gp pl ip dr gd = do
 	inc' <- liftBase $ atomically newTChan
 	otc' <- liftBase $ atomically newTChan
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc
-		=$= talk lock h addr pth gp
+		=$= talk lock h addr pn pth gp
 		=$= setDuration dr gd
 		=$= toTChan inc
 	void . liftBaseDiscard forkIO . runPipe_ $ fromTChan otc'
-		=$= talk lock h addr pth gp
+		=$= talk lock h addr pn pth gp
 		=$= setDuration dr gd
 		=$= toTChan inc'
 	void . liftBaseDiscard forkIO . forever $ do
@@ -153,16 +154,16 @@ polling pl ip i i' o = do
 	else return ()
 
 talk :: (HandleLike h, MonadBase IO (HandleMonad h)) => TChan () ->
-	h -> String -> FilePath -> (XmlNode -> FilePath) ->
+	h -> String -> Int -> FilePath -> (XmlNode -> FilePath) ->
 	Pipe XmlNode XmlNode (HandleMonad h) ()
-talk lock h addr pth gp = (await >>=) . (maybe (return ())) $ \n -> do
+talk lock h addr pn pth gp = (await >>=) . (maybe (return ())) $ \n -> do
 	let m = LBS.fromChunks [xmlString [n]]
 	lift . liftBase . atomically $ readTChan lock
-	r <- lift . request h $ post addr 80 (pth ++ "/" ++ gp n) (Nothing, m)
+	r <- lift . request h $ post addr pn (pth ++ "/" ++ gp n) (Nothing, m)
 	void $ return ()
 		=$= responseBody r
 		=$= xmlEvent
 		=$= convert fromJust
 		=$= xmlNode []
 	lift . liftBase . atomically $ writeTChan lock ()
-	talk lock h addr pth gp
+	talk lock h addr pn pth gp
