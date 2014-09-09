@@ -34,7 +34,7 @@ data Xmpp h = Xmpp
 	(XmlNode -> Bool)
 	(TChan (Maybe BS.ByteString))
 	(Pipe () Mpi (HandleMonad h) ())
-	(TChan (Either BS.ByteString (XmlNode, ())))
+	(TChan (Either BS.ByteString XmlNode))
 
 data XmppArgs = XmppArgs {
 	mechanisms :: [BS.ByteString],
@@ -47,21 +47,19 @@ data XmppArgs = XmppArgs {
 instance XmlPusher Xmpp where
 	type NumOfHandle Xmpp = One
 	type PusherArg Xmpp = XmppArgs
-	type PushedType Xmpp = ()
 	generate = makeXmpp
 	readFrom (Xmpp wr nr r wc) = r
 		=$= pushId wr nr wc
 		=$= convert fromMessage
 		=$= filter isJust
 		=$= convert fromJust
-	writeTo (Xmpp _ _ _ w) = convert maybeToEither
-		=$= toTChan w
+	writeTo (Xmpp _ _ _ w) = convert maybeToEither =$= toTChan w
 
 maybeToEither :: a -> Either BS.ByteString a
 maybeToEither x = Right x
 
 pushId :: MonadBase IO m => (XmlNode -> Bool) -> TChan (Maybe BS.ByteString) ->
-	TChan (Either BS.ByteString (XmlNode, pt)) -> Pipe Mpi Mpi m ()
+	TChan (Either BS.ByteString XmlNode) -> Pipe Mpi Mpi m ()
 pushId wr nr wc = (await >>=) . maybe (return ()) $ \mpi -> case mpi of
 	Iq Tags { tagType = Just "get", tagId = Just i } [n]
 		| wr n -> do
@@ -100,7 +98,7 @@ addRandom = (await >>=) . maybe (return ()) $ \x -> do
 makeResponse :: MonadBase IO m =>
 	(XmlNode -> Bool) -> Jid ->
 	TChan (Maybe BS.ByteString) ->
-	Pipe (Either BS.ByteString (XmlNode, pt), UUID) Mpi m ()
+	Pipe (Either BS.ByteString XmlNode, UUID) Mpi m ()
 makeResponse inr you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 	case mn of
 		Left i | not $ BS.null i -> do
@@ -117,17 +115,17 @@ makeResponse inr you nr = (await >>=) . maybe (return ()) $ \(mn, r) -> do
 				lift . liftBase . putStrLn $ "HERE: " ++ show i
 	makeResponse inr you nr
 
-makeIqMessage :: (XmlNode -> Bool) -> Jid -> UUID -> UUID -> (XmlNode, pt) -> Mpi
-makeIqMessage inr you r uuid (n, nr) =
+makeIqMessage :: (XmlNode -> Bool) -> Jid -> UUID -> UUID -> XmlNode -> Mpi
+makeIqMessage inr you r uuid n =
 	if inr n then toIq you n r else toMessage you n uuid
 
 toResponse ::
-	Jid -> Either BS.ByteString (XmlNode, pt) -> Maybe BS.ByteString -> UUID -> Either BS.ByteString Mpi
+	Jid -> Either BS.ByteString XmlNode -> Maybe BS.ByteString -> UUID -> Either BS.ByteString Mpi
 toResponse you mn (Just i) _ = case mn of
-	Right (n, _) ->
-		Right $ Iq (tagsType "result") { tagId = Just i, tagTo = Just you } [n]
+	Right n -> Right $
+		Iq (tagsType "result") { tagId = Just i, tagTo = Just you } [n]
 	_ -> Right $ Iq (tagsType "result") { tagId = Just i, tagTo = Just you } []
-toResponse you mn _ uuid = flip (toMessage you) uuid . fst <$> mn
+toResponse you mn _ uuid = flip (toMessage you) uuid <$> mn
 
 toIq :: Jid -> XmlNode -> UUID -> Mpi
 toIq you n r = Iq
