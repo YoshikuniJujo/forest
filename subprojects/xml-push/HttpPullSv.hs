@@ -23,7 +23,7 @@ import Network.TigHTTP.Types
 
 import qualified Data.ByteString.Lazy as LBS
 
-import XmlPusher
+import TestPusher
 
 data HttpPullSv h = HttpPullSv
 	(Pipe () XmlNode (HandleMonad h) ())

@@ -28,7 +28,7 @@ import "crypto-random" Crypto.Random
 
 import qualified Data.ByteString as BS
 
-import XmlPusher
+import TestPusher
 
 data Xmpp h = Xmpp
 	(XmlNode -> Bool)

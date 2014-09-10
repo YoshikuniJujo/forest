@@ -32,7 +32,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Network.PeyoTLS.Client as Cl
 import qualified Network.PeyoTLS.Server as Sv
 
-import XmlPusher
+import TestPusher
 
 data HttpPushTls h = HttpPushTls {
 	needReply :: TVar Bool,

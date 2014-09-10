@@ -25,7 +25,7 @@ import Network.TigHTTP.Types
 
 import qualified Data.ByteString.Lazy as LBS
 
-import XmlPusher
+import TestPusher
 
 data HttpPush h = HttpPush {
 	needReply :: TVar Bool,
