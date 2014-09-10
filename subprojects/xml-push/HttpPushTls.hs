@@ -52,11 +52,10 @@ data HttpPushTlsArgs = HttpPushTlsArgs {
 instance XmlPusher HttpPushTls where
 	type NumOfHandle HttpPushTls = Two
 	type PusherArg HttpPushTls = HttpPushTlsArgs
-	type PushedType HttpPushTls = Bool
 	generate (Two ch sh) = makeHttpPushTls ch sh
 	readFrom hp = fromTChans [clientReadChan hp, serverReadChan hp] =$=
 		setNeedReply (needReply hp)
-	writeTo hp = (convert (((), ) . Just . fst) =$=) . toTChansM $ do
+	writeTo hp = (convert (((), ) . Just) =$=) . toTChansM $ do
 		nr <- liftBase . atomically . readTVar $ needReply hp
 		liftBase . atomically $ writeTVar (needReply hp) False
 		return [

@@ -13,7 +13,6 @@ main = do
 	(sh, _, _) <- accept soc
 	testPusher (undefined :: HttpPushTls Handle) (Two ch sh)
 		(HttpPushTlsArgs "localhost" 80 "" gtPth wntRspns)
-		True
 
 wntRspns :: XmlNode -> Bool
 wntRspns (XmlNode (_, "monologue") _ [] []) = False
