@@ -22,7 +22,7 @@ main = do
 	testPusher (undefined :: XmppTls Handle) (One h) (
 		XmppArgs ["EXTERNAL", "SCRAM-SHA-1", "DIGEST-MD5", "PLAIN"]
 			wntRspns iNdRspns (toJid me) ps (toJid you),
-		TlsArgs ca [(k, c)] ) ()
+		TlsArgs ca [(k, c)] )
 
 wntRspns :: XmlNode -> Bool
 wntRspns (XmlNode (_, "monologue") _ [] []) = False
