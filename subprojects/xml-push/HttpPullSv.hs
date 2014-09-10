@@ -32,10 +32,9 @@ data HttpPullSv h = HttpPullSv
 instance XmlPusher HttpPullSv where
 	type NumOfHandle HttpPullSv = One
 	type PusherArg HttpPullSv = (XmlNode -> Bool, XmlNode)
-	type PushedType HttpPullSv = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullSv r _) = r
-	writeTo (HttpPullSv _ w) = convert fst =$= w
+	writeTo (HttpPullSv _ w) = w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> (XmlNode -> Bool, XmlNode) -> HandleMonad h (HttpPullSv h)

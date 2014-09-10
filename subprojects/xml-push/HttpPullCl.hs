@@ -43,10 +43,9 @@ data HttpPullClArgs = HttpPullClArgs {
 instance XmlPusher HttpPullCl where
 	type NumOfHandle HttpPullCl = One
 	type PusherArg HttpPullCl = HttpPullClArgs
-	type PushedType HttpPullCl = ()
 	generate = makeHttpPull
 	readFrom (HttpPullCl r _) = r
-	writeTo (HttpPullCl _ w) = convert fst =$= w
+	writeTo (HttpPullCl _ w) = w
 
 makeHttpPull :: (HandleLike h, MonadBaseControl IO (HandleMonad h)) =>
 	One h -> HttpPullClArgs -> HandleMonad h (HttpPullCl h)

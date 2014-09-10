@@ -12,7 +12,6 @@ main = do
 	testPusher (undefined :: HttpPullCl Handle) (One h)
 		(HttpPullClArgs "localhost" 80 "/"
 			(XmlNode (nullQ "poll") [] [] []) pendingQ drtn gtPth)
-		()
 
 pendingQ :: XmlNode -> Bool
 pendingQ (XmlNode (_, "nothing") _ [] []) = False

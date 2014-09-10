@@ -14,7 +14,7 @@ main = do
 	forever $ do
 		(h, _, _) <- accept soc
 		void . forkIO $ testPusher (undefined :: HttpPullTlsSv Handle)
-			(One h) (isPoll, endPoll) True
+			(One h) (isPoll, endPoll)
 
 isPoll :: XmlNode -> Bool
 isPoll (XmlNode (_, "poll") _ _ _) = True

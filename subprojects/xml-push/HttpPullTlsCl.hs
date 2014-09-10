@@ -48,10 +48,9 @@ data HttpPullTlsClArgs = HttpPullTlsClArgs {
 instance XmlPusher HttpPullTlsCl where
 	type NumOfHandle HttpPullTlsCl = One
 	type PusherArg HttpPullTlsCl = HttpPullTlsClArgs
-	type PushedType HttpPullTlsCl = Bool
 	generate = makeHttpPull
 	readFrom (HttpPullTlsCl r _) = r
-	writeTo (HttpPullTlsCl _ w) = convert fst =$= w
+	writeTo (HttpPullTlsCl _ w) = w
 
 data TChanHandle = TChanHandle (TChan BS.ByteString) (TChan BS.ByteString)
 
