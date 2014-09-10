@@ -1,8 +1,6 @@
-{-# LANGUAGE TupleSections, TypeFamilies, FlexibleContexts, PackageImports #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, PackageImports #-}
 
 module XmlPusher (XmlPusher(..), Zero(..), One(..), Two(..)) where
-
-import Prelude hiding (filter)
 
 import "monads-tf" Control.Monad.Error
 import Control.Monad.Base
@@ -16,8 +14,7 @@ class XmlPusher xp where
 	type PusherArg xp
 	type NumOfHandle xp :: * -> *
 	generate :: (
-		ValidateHandle h,
-		MonadBaseControl IO (HandleMonad h),
+		ValidateHandle h, MonadBaseControl IO (HandleMonad h),
 		MonadError (HandleMonad h), Error (ErrorType (HandleMonad h))
 		) =>
 		NumOfHandle xp h -> PusherArg xp -> HandleMonad h (xp h)

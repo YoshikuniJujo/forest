@@ -1,7 +1,7 @@
 {-# LANGUAGE TupleSections, TypeFamilies, FlexibleContexts,
 	PackageImports #-}
 
-module SimplePusher (SimplePusher) where
+module FilePusher (SimplePusher(..)) where
 
 import Data.Maybe
 import Data.HandleLike
