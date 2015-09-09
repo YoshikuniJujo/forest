@@ -11,7 +11,7 @@ import Data.String
 
 import System.IO
 
-class (Monad (HandleMonad h),
+class (Monad (HandleMonad h :: * -> *),
 	IsString (DebugLevel h), Ord (DebugLevel h), Bounded (DebugLevel h)) =>
 	HandleLike h where
 	type HandleMonad h
